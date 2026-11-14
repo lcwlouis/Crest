@@ -10,7 +10,9 @@
 #include "chrome/browser/ui/crest/crest_engine_page.h"
 #include "chrome/browser/ui/crest/crest_linux_ui.h"
 #include "chrome/browser/ui/crest/crest_webui_linux.h"
+#include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
+#include "third_party/skia/include/core/SkColor.h"
 #include "ui/gfx/geometry/rounded_corners_f.h"
 #include "ui/views/controls/native/native_view_host.h"
 #include "ui/views/controls/webview/webview.h"
@@ -60,6 +62,7 @@ LinuxWindow* LinuxWindow::Current() {
 
 LinuxWindow::LinuxWindow(Profile* profile) {
   g_window = this;
+  SetLinuxUI(&ui_shell_);
   delegate_.SetTitle(u"Crest");
   delegate_.SetHasWindowSizeControls(true);
   delegate_.RegisterWindowClosingCallback(base::BindOnce(&LinuxWindow::Closing, base::Unretained(this)));
@@ -86,6 +89,7 @@ LinuxWindow::LinuxWindow(Profile* profile) {
 }
 
 LinuxWindow::~LinuxWindow() {
+  if (GetLinuxUI() == &ui_shell_) SetLinuxUI(nullptr);
   // The widget goes before the delegate it holds.
   widget_.reset();
   if (g_window == this) g_window = nullptr;
@@ -123,14 +127,74 @@ void LinuxWindow::SetPageBounds(const gfx::Rect& bounds) {
   contents->InvalidateLayout();
 }
 
+void LinuxWindow::SetOverlay(bool raised) {
+  if (raised == overlay_raised_) return;
+  overlay_raised_ = raised;
+  auto* contents = static_cast<Contents*>(delegate_.GetContentsView());
+  // The WebUI paints its own backdrop; where it paints nothing, raised, the
+  // page under it shows through.
+  content::WebContents* ui_contents = ui_->web_contents();
+  if (content::RenderWidgetHostView* view = ui_contents ? ui_contents->GetRenderWidgetHostView() : nullptr) {
+    view->SetBackgroundColor(SK_ColorTRANSPARENT);
+  }
+  // The views' order is the native windows' order: the last child draws on
+  // top and takes the pointer.
+  contents->ReorderChildView(ui_, raised ? contents->children().size() : 0);
+  widget_->ReorderNativeViews();
+  if (raised) {
+    ui_->RequestFocus();
+  } else if (page_->web_contents()) {
+    page_->RequestFocus();
+  }
+}
+
 void LinuxWindow::Closing() {
   // The window does not own the pages it shows; it lets go before they go.
   page_->SetWebContents(nullptr);
   shown_page_.clear();
   g_window = nullptr;
+  if (GetLinuxUI() == &ui_shell_) SetLinuxUI(nullptr);
   // The widget is still closing on this stack; it goes once that returns.
   base::SequencedTaskRunner::GetCurrentDefault()->DeleteSoon(FROM_HERE, this);
   CrestWindowClosed();
 }
+
+gfx::Rect LinuxWindow::UI::RestoredBounds(views::Widget* window) {
+  return window->GetRestoredBounds();
+}
+
+// TODO(linux): remember whether the window was maximized when it entered
+// fullscreen, as the Mac's shell does.
+bool LinuxWindow::UI::WasMaximizedBeforeFullscreen(views::Widget* window) {
+  return false;
+}
+
+// TODO(linux): Crest's quit preparation (downloads, unsaved pages) asks
+// through Crest's own dialogs, which the Linux WebUI does not draw yet.
+bool LinuxWindow::UI::DeferQuit() {
+  return false;
+}
+
+bool LinuxWindow::UI::Reopen() {
+  return false;
+}
+
+bool LinuxWindow::UI::HandleShortcut(const input::NativeWebKeyboardEvent& event, bool page_declined) {
+  return ClaimShortcut(event, page_declined);
+}
+
+void LinuxWindow::UI::FocusLocation() {
+  PerformCommand("OpenLocation");
+}
+
+// TODO(linux): the rest arrive with the WebUI surfaces that answer them.
+void LinuxWindow::UI::BookmarkActivePage() {}
+void LinuxWindow::UI::TranslatePage() {}
+void LinuxWindow::UI::TranslateText(const std::u16string& text) {}
+void LinuxWindow::UI::ShowTabSearch() {
+  PerformCommand("NewTab");
+}
+void LinuxWindow::UI::ShowUnavailable(UnavailableFeature feature) {}
+void LinuxWindow::UI::ShowEngineNotice(const std::u16string& message, EngineNoticeKind kind) {}
 
 }  // namespace crest

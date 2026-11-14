@@ -12,6 +12,7 @@
 #include <string>
 
 #include "base/memory/raw_ptr.h"
+#include "chrome/browser/ui/crest/crest_linux_ui.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/views/widget/widget_delegate.h"
 
@@ -42,6 +43,10 @@ class LinuxWindow final {
   // Where the page goes, in the WebUI's coordinates, which are the window
   // contents' (the WebUI fills them at its natural zoom).
   void SetPageBounds(const gfx::Rect& bounds);
+  // Raises the WebUI over the page while it draws a floating surface (the
+  // command bar, a menu, Peek), and lowers it again after. Raised, the WebUI
+  // is transparent where the page shows through and takes the input.
+  void SetOverlay(bool raised);
 
  private:
   explicit LinuxWindow(Profile* profile);
@@ -49,12 +54,32 @@ class LinuxWindow final {
   // The person closed the window.
   void Closing();
 
+  // What the engine's browser window asks of Crest's UI, which the WebUI
+  // answers where it can.
+  class UI final : public LinuxUI {
+   public:
+    gfx::Rect RestoredBounds(views::Widget* window) override;
+    bool WasMaximizedBeforeFullscreen(views::Widget* window) override;
+    bool DeferQuit() override;
+    bool Reopen() override;
+    bool HandleShortcut(const input::NativeWebKeyboardEvent& event, bool page_declined) override;
+    void FocusLocation() override;
+    void BookmarkActivePage() override;
+    void TranslatePage() override;
+    void TranslateText(const std::u16string& text) override;
+    void ShowTabSearch() override;
+    void ShowUnavailable(UnavailableFeature feature) override;
+    void ShowEngineNotice(const std::u16string& message, EngineNoticeKind kind) override;
+  };
+  UI ui_shell_;
+
   // The window owns its widget and the widget's delegate.
   views::WidgetDelegate delegate_;
   std::unique_ptr<views::Widget> widget_;
   raw_ptr<views::WebView> ui_ = nullptr;
   raw_ptr<views::WebView> page_ = nullptr;
   std::string shown_page_;
+  bool overlay_raised_ = false;
 };
 
 }  // namespace crest

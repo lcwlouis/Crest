@@ -54,13 +54,13 @@ constexpr base::TimeDelta kPageEscapeHoldGuard = base::Milliseconds(2000);
 // shortcuts fire reliably while web content has focus, instead of racing the
 // app-level NSEvent monitor and Chromium's native accelerators (the
 // intermittent "needs two presses" behavior).
-bool HandleCrestShortcut(const input::NativeWebKeyboardEvent& event) {
+bool HandleCrestShortcut(const input::NativeWebKeyboardEvent& event, bool page_declined) {
   // Only fire on the raw key-down; ignore synthesized char and key-up events.
   if (event.GetType() != input::NativeWebKeyboardEvent::Type::kRawKeyDown) {
     return false;
   }
   crest::LinuxUI* ui = crest::GetLinuxUI();
-  return ui && ui->HandleShortcut(event);
+  return ui && ui->HandleShortcut(event, page_declined);
 }
 
 class CrestAutofillBubbleHandler final : public autofill::AutofillBubbleHandler {
@@ -829,7 +829,7 @@ void CrestBrowserWindow::PreHandleDragExit() {}
 void CrestBrowserWindow::HandleDragEnded() {}
 
 content::KeyboardEventProcessingResult CrestBrowserWindow::PreHandleKeyboardEvent( const input::NativeWebKeyboardEvent& event) {
-  if (HandleCrestShortcut(event)) {
+  if (HandleCrestShortcut(event, /*page_declined=*/false)) {
     return content::KeyboardEventProcessingResult::HANDLED;
   }
   return content::KeyboardEventProcessingResult::NOT_HANDLED;
@@ -838,7 +838,7 @@ content::KeyboardEventProcessingResult CrestBrowserWindow::PreHandleKeyboardEven
 bool CrestBrowserWindow::HandleKeyboardEvent( const input::NativeWebKeyboardEvent& event) {
   // Chromium offers shortcuts to the document first; whatever it left goes
   // to Crest's own commands, as the Mac shell's main menu takes it.
-  return HandleCrestShortcut(event);
+  return HandleCrestShortcut(event, /*page_declined=*/true);
 }
 
 std::unique_ptr<FindBar> CrestBrowserWindow::CreateFindBar() {
