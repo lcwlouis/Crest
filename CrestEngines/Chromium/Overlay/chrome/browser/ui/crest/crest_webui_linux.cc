@@ -27,6 +27,7 @@
 #include "content/public/browser/webui_config_map.h"
 #include "content/public/common/url_constants.h"
 #include "services/network/public/mojom/content_security_policy.mojom.h"
+#include "ui/gfx/geometry/rect.h"
 
 namespace crest {
 
@@ -80,6 +81,8 @@ class CrestUIHandler final : public content::WebUIMessageHandler, public CoreHos
         "pageRequest", base::BindRepeating(&CrestUIHandler::HandleCall, base::Unretained(this), Call::kPageRequest));
     web_ui()->RegisterMessageCallback(
         "showPage", base::BindRepeating(&CrestUIHandler::HandleShowPage, base::Unretained(this)));
+    web_ui()->RegisterMessageCallback(
+        "setPageBounds", base::BindRepeating(&CrestUIHandler::HandleSetPageBounds, base::Unretained(this)));
   }
 
   void OnJavascriptDisallowed() override { observation_.Reset(); }
@@ -146,6 +149,21 @@ class CrestUIHandler final : public content::WebUIMessageHandler, public CoreHos
     const std::optional<engine::Guid> page = ParseGuid(args[0].GetString());
     if (!page) return;
     if (LinuxWindow* window = LinuxWindow::Current()) window->ShowPage(GuidText(*page));
+  }
+
+  // args: x, y, width, height of the page's place in the WebUI, in CSS
+  // pixels, which are the window contents' at the WebUI's natural zoom.
+  void HandleSetPageBounds(const base::ListValue& args) {
+    if (args.size() != 4) return;
+    int values[4];
+    for (size_t index = 0; index < 4; ++index) {
+      if (!args[index].is_int() && !args[index].is_double()) return;
+      values[index] = static_cast<int>(args[index].GetDouble());
+    }
+    if (values[2] < 0 || values[3] < 0) return;
+    if (LinuxWindow* window = LinuxWindow::Current()) {
+      window->SetPageBounds(gfx::Rect(values[0], values[1], values[2], values[3]));
+    }
   }
 
   base::ScopedObservation<CoreHost, CoreHost::Observer> observation_{this};

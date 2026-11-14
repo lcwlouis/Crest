@@ -26,13 +26,29 @@ html, body {
   user-select: none;
 }
 
+/* The window: the sidebar beside the page's card, which the page's own view
+   covers (BrowserChromeLayout on the Mac: sidebar 289, page inset 8, page
+   corners 13). */
+body {
+  display: grid;
+  grid-template-columns: var(--sidebar-width, 289px) 1fr;
+  overflow: hidden;
+}
+
 #sidebar {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  min-width: 0;
   height: 100%;
   box-sizing: border-box;
   padding: 12px 8px;
+}
+
+#page {
+  margin: 8px 8px 8px 0;
+  border-radius: 13px;
+  background: var(--page-empty, rgb(255 255 255 / 0.5));
 }
 
 .space-name {
@@ -149,7 +165,9 @@ html, body {
 
 #status {
   position: fixed;
-  inset: auto 8px 44px;
+  left: 16px;
+  bottom: 44px;
+  width: calc(var(--sidebar-width, 289px) - 32px);
   margin: 0;
   color: var(--muted);
   font-size: 12px;

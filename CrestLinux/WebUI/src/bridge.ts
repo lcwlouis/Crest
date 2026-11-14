@@ -147,7 +147,12 @@ export async function query<K extends Query["kind"] & keyof QueryAnswers>(
     return result;
 }
 
-/** Shows the engine's page `pageId` beside the sidebar. */
+/** Places the page's view over the window's page card, in CSS pixels. */
+export function setPageBounds(x: number, y: number, width: number, height: number): void {
+    chrome.send("setPageBounds", [x, y, width, height]);
+}
+
+/** Shows the engine's page `pageId` in the window's page card. */
 export function showPage(pageId: string): void {
     chrome.send("showPage", [pageId]);
 }

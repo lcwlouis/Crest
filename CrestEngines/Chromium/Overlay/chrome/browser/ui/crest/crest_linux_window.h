@@ -1,15 +1,18 @@
 #ifndef CHROME_BROWSER_UI_CREST_CREST_LINUX_WINDOW_H_
 #define CHROME_BROWSER_UI_CREST_CREST_LINUX_WINDOW_H_
 
-// A Crest window on Linux: Crest's sidebar, drawn by the chrome://crest WebUI,
-// beside the page the window shows. Chromium draws both, so the same window
-// serves Fedora and Windows. The Mac's SwiftUI window hosts each page's view
-// the same way, asking the shell for it by the page's id.
+// A Crest window on Linux: the chrome://crest WebUI draws the whole window,
+// Crest's sidebar, toolbar and everything around the page, and the page the
+// window shows sits over it, where the WebUI says the page goes. Chromium
+// draws both, so the same window serves Fedora and Windows. The Mac's SwiftUI
+// window hosts each page's view the same way, asking the shell for it by the
+// page's id.
 
 #include <memory>
 #include <string>
 
 #include "base/memory/raw_ptr.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/views/widget/widget_delegate.h"
 
 class Profile;
@@ -36,6 +39,9 @@ class LinuxWindow final {
   bool ShowPage(const std::string& page);
   // The engine let `page` go; the window stops showing it.
   void ReleasePage(const std::string& page);
+  // Where the page goes, in the WebUI's coordinates, which are the window
+  // contents' (the WebUI fills them at its natural zoom).
+  void SetPageBounds(const gfx::Rect& bounds);
 
  private:
   explicit LinuxWindow(Profile* profile);
@@ -46,7 +52,7 @@ class LinuxWindow final {
   // The window owns its widget and the widget's delegate.
   views::WidgetDelegate delegate_;
   std::unique_ptr<views::Widget> widget_;
-  raw_ptr<views::WebView> sidebar_ = nullptr;
+  raw_ptr<views::WebView> ui_ = nullptr;
   raw_ptr<views::WebView> page_ = nullptr;
   std::string shown_page_;
 };

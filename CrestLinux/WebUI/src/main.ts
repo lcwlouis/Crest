@@ -2,7 +2,7 @@
 // it, as the Mac app does at launch, then draws the shown Space's tabs and
 // shows the selected tab's page beside the sidebar.
 
-import { connect, dispatch, query, Refused, showPage } from "./bridge.js";
+import { connect, dispatch, query, Refused, setPageBounds, showPage } from "./bridge.js";
 import { TabIcons } from "./icons.js";
 import type { Guid, LaunchEnvironment, TabState } from "../generated/crest_contracts.js";
 import { Model } from "./model.js";
@@ -254,4 +254,20 @@ async function start(): Promise<void> {
     say("");
 }
 
+/**
+ * Tells the window where the page goes: over the page's card, which the
+ * WebUI lays out. The window places the page's own view there.
+ */
+function followPageCard(): void {
+    const card = document.getElementById("page")!;
+    const send = (): void => {
+        const box = card.getBoundingClientRect();
+        setPageBounds(Math.round(box.left), Math.round(box.top), Math.round(box.width), Math.round(box.height));
+    };
+    new ResizeObserver(send).observe(card);
+    window.addEventListener("resize", send);
+    send();
+}
+
+followPageCard();
 start().catch(report);
