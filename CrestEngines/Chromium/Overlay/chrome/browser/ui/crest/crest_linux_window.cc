@@ -114,6 +114,15 @@ bool LinuxWindow::ShowPage(const std::string& page) {
   return engine_page->Answer(engine::ShowPage{.page_id = engine_page->id()});
 }
 
+void LinuxWindow::ShowNoPage() {
+  if (shown_page_.empty()) return;
+  if (EnginePage* hidden = EngineBinding::Get().Find(shown_page_)) {
+    hidden->Answer(engine::HidePage{.page_id = hidden->id()});
+  }
+  shown_page_.clear();
+  page_->SetWebContents(nullptr);
+}
+
 void LinuxWindow::ReleasePage(const std::string& page) {
   if (page != shown_page_) return;
   shown_page_.clear();

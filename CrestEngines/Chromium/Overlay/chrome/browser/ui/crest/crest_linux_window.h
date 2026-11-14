@@ -38,6 +38,8 @@ class LinuxWindow final {
   // Shows the page `page` (a core page id) beside the sidebar. False when the
   // engine has no such page.
   bool ShowPage(const std::string& page);
+  // Shows no page: the WebUI draws the page's card itself.
+  void ShowNoPage();
   // The engine let `page` go; the window stops showing it.
   void ReleasePage(const std::string& page);
   // Where the page goes, in the WebUI's coordinates, which are the window

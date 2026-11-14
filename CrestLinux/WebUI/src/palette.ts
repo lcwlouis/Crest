@@ -80,6 +80,8 @@ export class Palette {
     private readonly results = element("div", "palette-results");
 
     private mode: PaletteMode = "newTab";
+    /** Where an embedded bar lives (the Start Page), or null for the floating one. */
+    private readonly embedded: HTMLElement | null;
     private items: Item[] = [];
     private selected = 0;
     private asked = 0;
@@ -92,8 +94,9 @@ export class Palette {
     private completion: AddressCompletion | null = null;
     private waitingKey: (() => void) | null = null;
 
-    constructor(host: PaletteHost) {
+    constructor(host: PaletteHost, embedIn: HTMLElement | null = null) {
         this.host = host;
+        this.embedded = embedIn;
         this.layer.hidden = true;
         const scrim = element("div", "palette-scrim");
         scrim.addEventListener("mousedown", () => this.close());
@@ -106,8 +109,15 @@ export class Palette {
         this.field.setAttribute("aria-label", "Search or enter address");
         bar.append(leading, this.chip, this.field);
         this.card.append(bar, this.results);
-        this.layer.append(scrim, this.card);
-        document.body.append(this.layer);
+        if (embedIn) {
+            this.mode = "current";
+            this.card.classList.add("embedded");
+            this.layer.hidden = false;
+            embedIn.append(this.card);
+        } else {
+            this.layer.append(scrim, this.card);
+            document.body.append(this.layer);
+        }
 
         this.field.addEventListener("input", (event) => {
             const input = event as InputEvent;
@@ -122,6 +132,11 @@ export class Palette {
     }
 
     open(mode: PaletteMode, text = ""): void {
+        if (this.embedded) {
+            this.reset();
+            this.field.focus();
+            return;
+        }
         this.mode = mode;
         this.provider = null;
         this.scope = null;
@@ -138,7 +153,24 @@ export class Palette {
         this.ask();
     }
 
+    /** Empties an embedded bar, which stays where it is. */
+    reset(): void {
+        this.provider = null;
+        this.scope = null;
+        this.completion = null;
+        this.mayComplete = false;
+        this.selected = 0;
+        this.field.value = "";
+        this.drawChip();
+        this.ask();
+    }
+
     close(): void {
+        if (this.embedded) {
+            this.reset();
+            this.field.blur();
+            return;
+        }
         if (!this.isOpen) return;
         this.layer.hidden = true;
         this.waitingKey = null;
@@ -163,7 +195,8 @@ export class Palette {
         void query("PaletteSuggestions", {
             windowId: this.host.windowId(),
             text,
-            commands: this.host.commands.paletteCommands(),
+            // The Start Page's bar offers no commands at rest, as the Mac's.
+            commands: this.embedded && text.trim().length === 0 ? [] : this.host.commands.paletteCommands(),
             settingsPages: [],
             remote: [],
             provider: this.provider,

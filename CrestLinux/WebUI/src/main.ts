@@ -4,7 +4,7 @@
 
 import { connect, dispatch, pageRequest, query, Refused, registerShortcuts, setPageBounds, showPage } from "./bridge.js";
 import { Commands, shortcutTable } from "./commands.js";
-import { ShortcutCommand } from "../generated/crest_contracts.js";
+import { NavigationError, ShortcutCommand } from "../generated/crest_contracts.js";
 import { Palette } from "./palette.js";
 import { TabIcons } from "./icons.js";
 import type { Guid, LaunchEnvironment, PageState, TabState } from "../generated/crest_contracts.js";
@@ -135,6 +135,80 @@ const palette = new Palette({
     report,
 });
 
+// The Start Page, which Crest draws in the page's card for a tab that shows
+// it (and when the window shows no tab), as the Mac's BrowserStartPage: the
+// mark, its title and a command bar embedded in the page.
+const startPage = element("div", "start-page");
+const startMark = element("div", "start-mark");
+startMark.innerHTML =
+    '<svg viewBox="0 0 64 64" aria-hidden="true"><path d="M32 4l24 9v17c0 15-10 26-24 30C18 56 8 45 8 30V13z" fill="var(--space-tint)"/><path d="M32 16l4 9 9 1-7 6 2 9-8-5-8 5 2-9-7-6 9-1z" fill="white" opacity="0.9"/></svg>';
+startPage.append(startMark, element("h1", "start-title", "Start Page"));
+const startBar = element("div", "start-bar");
+startPage.append(startBar);
+startPage.hidden = true;
+document.getElementById("page")!.append(startPage);
+const startPalette = new Palette(
+    {
+        icons,
+        commands,
+        windowId: () => windowId,
+        workspace: () => model.workspace,
+        space: shownSpace,
+        tab: shownTab,
+        page: shownPage,
+        send: (intent) => void dispatch(intent).catch(report),
+        report,
+    },
+    startBar,
+);
+
+// A page that failed to load shows Crest's own explanation in the card, as
+// the Mac's BrowserNavigationFailureView, over the page it hides.
+const failureView = element("div", "failure");
+failureView.hidden = true;
+document.getElementById("page")!.append(failureView);
+
+function showFailure(page: PageState | undefined): void {
+    const failure = page?.live.failure ?? null;
+    failureView.hidden = !page || !failure;
+    if (!page || !failure) return;
+    const facts = NavigationError.facts[failure.error];
+    let host = failure.url ?? page.live.url ?? "";
+    try {
+        host = new URL(host).host || host;
+    } catch {
+        // The address stays as the engine gave it.
+    }
+    const key = `${page.id}:${failure.error}:${host}`;
+    if (failureView.dataset.key === key) return;
+    failureView.dataset.key = key;
+    const retry = element("button", "failure-button prominent", "Try Again");
+    retry.addEventListener("click", () =>
+        void pageRequest("ReloadPage", { pageId: page.id, bypassesCache: false }).catch(report),
+    );
+    const actions = element("div", "failure-actions");
+    if (page.live.canGoBack) {
+        const back = element("button", "failure-button", "Go Back");
+        back.addEventListener("click", () => void dispatch({ kind: "StepHistory", value: { pageId: page.id, offset: -1 } }).catch(report));
+        actions.append(back);
+    }
+    actions.append(retry);
+    failureView.replaceChildren(
+        element("h1", "failure-title", facts.title.text),
+        element("p", "failure-message", facts.message.text.replace("%@", host)),
+        element("p", "failure-suggestion", facts.primarySuggestion.text),
+        element("p", "failure-suggestion", facts.secondarySuggestion.text),
+        actions,
+        element("p", "failure-code", facts.code),
+    );
+}
+
+function showStartPage(shown: boolean): void {
+    if (startPage.hidden !== shown) return;
+    startPage.hidden = !shown;
+    if (shown) startPalette.open("current");
+}
+
 // Crest's keys, while the window's own UI has the focus. The page's view
 // hands Crest the keys it reserves from pages through the host.
 document.addEventListener("keydown", (event) => {
@@ -204,7 +278,6 @@ function showAddress(page: PageState | undefined): void {
     address.textContent = host.replace(/^www\./, "") || "Search or enter address";
     address.classList.toggle("empty", host.length === 0);
     address.title = url ?? "";
-    document.body.classList.toggle("has-page", page !== undefined && page.phase === "Live");
 }
 
 /** Tabs this window asked the core to open a page for, until the page appears. */
@@ -216,15 +289,34 @@ const opening = new Set<Guid>();
  * shows a tab that has none; the core asks the engine to create it.
  */
 function followShownPage(): void {
+    followShownPageView();
+    // The card is see-through only while the window shows a page under it.
+    document.body.classList.toggle("has-page", shownPageId !== null);
+}
+
+function followShownPageView(): void {
     const workspace = model.workspace;
     const space = shownSpace();
     const tabId = shownTabId();
     const tab = tabId ? space?.tabs.find((held) => held.id === tabId) : undefined;
-    if (!workspace || !space || !tab) return;
-    const page = model.pageFor(tab.id);
+    if (!workspace || !space) return;
+    const page = tab ? model.pageFor(tab.id) : undefined;
+    // A tab with no page of its own, or no tab: the card shows Crest's own
+    // view, and the window shows no page over it.
+    const showsNoPage = !tab || (!page && tab.surface === "StartPage");
+    showStartPage(showsNoPage && (!tab || tab.surface === "StartPage"));
+    const failed = page?.live.failure != null;
+    showFailure(failed ? page : undefined);
+    if (!page || page.phase !== "Live" || failed) {
+        if (shownPageId !== null && (showsNoPage || failed || model.pages.get(shownPageId)?.tabId !== tab?.id)) {
+            shownPageId = null;
+            showPage("");
+        }
+    }
+    if (!tab) return;
     if (!page) {
-        // TODO(linux): a tab with native content (the start page) shows a
-        // view Crest draws itself, which the Linux window does not draw yet.
+        // TODO(linux): other native views (settings, history) are drawn
+        // with the surfaces they belong to.
         if (tab.nativeContent || opening.has(tab.id)) return;
         opening.add(tab.id);
         const pageId = crypto.randomUUID();
@@ -249,7 +341,7 @@ function followShownPage(): void {
             .finally(() => opening.delete(tab.id));
         return;
     }
-    if (page.phase !== "Live" || page.id === shownPageId) return;
+    if (page.phase !== "Live" || failed || page.id === shownPageId) return;
     shownPageId = page.id;
     showPage(page.id);
 }
