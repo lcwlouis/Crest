@@ -1,7 +1,13 @@
 #include "chrome/browser/ui/crest/crest_engine_page.h"
 
+#include "build/build_config.h"
+
+#if BUILDFLAG(IS_MAC)
 #include <os/log.h>
 #include <os/signpost.h>
+#else
+#include "base/trace_event/trace_event.h"
+#endif
 
 #include <algorithm>
 #include <cmath>
@@ -104,11 +110,13 @@ constexpr double kMaximumZoom = 5;
 constexpr double kMaximumCaptureWidth = 16384;
 constexpr base::TimeDelta kCaptureTimeout = base::Seconds(2);
 
+#if BUILDFLAG(IS_MAC)
 // Where reading and reporting a page's history shows in Instruments.
 os_log_t HistoryLog() {
   static os_log_t log = os_log_create("com.pauldavis.crest", "PageHistory");
   return log;
 }
+#endif
 
 engine::Guid NewEntryId() {
   return *ParseGuid(base::Uuid::GenerateRandomV4().AsLowercaseString());
@@ -1081,14 +1089,21 @@ void EnginePage::ReportState() {
 }
 
 void EnginePage::ReportHistory() {
+#if BUILDFLAG(IS_MAC)
   const os_signpost_id_t signpost = os_signpost_id_generate(HistoryLog());
   os_signpost_interval_begin(HistoryLog(), signpost, "Report Page History");
+#else
+  // Where it shows in Chromium's tracing elsewhere.
+  TRACE_EVENT0("browser", "Report Page History");
+#endif
   engine::PageHistoryReported history = History();
   if (history != reported_history_) {
     reported_history_ = history;
     Report(std::move(history));
   }
+#if BUILDFLAG(IS_MAC)
   os_signpost_interval_end(HistoryLog(), signpost, "Report Page History");
+#endif
 }
 
 engine::PageHistoryReported EnginePage::History() {
@@ -1130,7 +1145,11 @@ void EnginePage::ExpectEntry(const std::optional<engine::Guid>& entry_id) {
 }
 
 void EnginePage::GoToEntry(const engine::Guid& entry_id) {
+#if BUILDFLAG(IS_MAC)
   os_signpost_event_emit(HistoryLog(), OS_SIGNPOST_ID_EXCLUSIVE, "Go To History Entry");
+#else
+  TRACE_EVENT_INSTANT0("browser", "Go To History Entry", TRACE_EVENT_SCOPE_THREAD);
+#endif
   if (web_contents()) {
     auto& controller = web_contents()->GetController();
     for (int index = 0; index < controller.GetEntryCount(); ++index) {

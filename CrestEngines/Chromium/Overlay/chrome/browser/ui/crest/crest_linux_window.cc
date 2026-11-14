@@ -2,6 +2,9 @@
 
 #include <memory>
 
+#include "base/functional/bind.h"
+#include "base/location.h"
+#include "base/task/sequenced_task_runner.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/crest/crest_engine_binding.h"
 #include "chrome/browser/ui/crest/crest_engine_page.h"
@@ -10,6 +13,7 @@
 #include "content/public/browser/web_contents.h"
 #include "ui/views/controls/webview/webview.h"
 #include "ui/views/layout/box_layout.h"
+#include "ui/views/view.h"
 #include "ui/views/widget/widget.h"
 #include "url/gurl.h"
 
@@ -27,18 +31,7 @@ LinuxWindow* g_window = nullptr;
 // static
 LinuxWindow* LinuxWindow::Open(Profile* profile) {
   CHECK(!g_window);
-  auto* window = new LinuxWindow(profile);
-  views::Widget::InitParams params(views::Widget::InitParams::NATIVE_WIDGET_OWNS_WIDGET,
-                                   views::Widget::InitParams::TYPE_WINDOW);
-  params.delegate = window;
-  params.bounds = gfx::Rect(80, 80, 1280, 820);
-  params.wm_class_name = "crest";
-  params.wm_class_class = "Crest";
-  params.name = "CrestWindow";
-  auto* widget = new views::Widget();
-  widget->Init(std::move(params));
-  widget->Show();
-  return window;
+  return new LinuxWindow(profile);
 }
 
 // static
@@ -48,22 +41,36 @@ LinuxWindow* LinuxWindow::Current() {
 
 LinuxWindow::LinuxWindow(Profile* profile) {
   g_window = this;
-  SetOwnedByWidget(OwnedByWidgetPassKey());
-  SetTitle(u"Crest");
-  SetCanResize(true);
-  SetCanMaximize(true);
-  SetCanMinimize(true);
+  delegate_.SetTitle(u"Crest");
+  delegate_.SetHasWindowSizeControls(true);
+  delegate_.RegisterWindowClosingCallback(base::BindOnce(&LinuxWindow::Closing, base::Unretained(this)));
 
-  auto* layout = SetLayoutManager(std::make_unique<views::BoxLayout>(views::BoxLayout::Orientation::kHorizontal));
+  auto contents = std::make_unique<views::View>();
+  auto* layout = contents->SetLayoutManager(
+      std::make_unique<views::BoxLayout>(views::BoxLayout::Orientation::kHorizontal));
   auto sidebar = std::make_unique<views::WebView>(profile);
   sidebar->SetPreferredSize(gfx::Size(kSidebarWidth, 0));
-  sidebar_ = AddChildView(std::move(sidebar));
-  page_ = AddChildView(std::make_unique<views::WebView>(profile));
+  sidebar_ = contents->AddChildView(std::move(sidebar));
+  page_ = contents->AddChildView(std::make_unique<views::WebView>(profile));
   layout->SetFlexForView(page_, 1);
+  delegate_.SetContentsView(std::move(contents));
+
+  widget_ = std::make_unique<views::Widget>();
+  views::Widget::InitParams params(views::Widget::InitParams::CLIENT_OWNS_WIDGET,
+                                   views::Widget::InitParams::TYPE_WINDOW);
+  params.delegate = &delegate_;
+  params.bounds = gfx::Rect(80, 80, 1280, 820);
+  params.wm_class_name = "crest";
+  params.wm_class_class = "Crest";
+  params.name = "CrestWindow";
+  widget_->Init(std::move(params));
   sidebar_->LoadInitialURL(GURL(kCrestUIURL));
+  widget_->Show();
 }
 
 LinuxWindow::~LinuxWindow() {
+  // The widget goes before the delegate it holds.
+  widget_.reset();
   if (g_window == this) g_window = nullptr;
 }
 
@@ -83,10 +90,13 @@ void LinuxWindow::ReleasePage(const std::string& page) {
   page_->SetWebContents(nullptr);
 }
 
-void LinuxWindow::WindowClosing() {
+void LinuxWindow::Closing() {
   // The window does not own the pages it shows; it lets go before they go.
   page_->SetWebContents(nullptr);
   shown_page_.clear();
+  g_window = nullptr;
+  // The widget is still closing on this stack; it goes once that returns.
+  base::SequencedTaskRunner::GetCurrentDefault()->DeleteSoon(FROM_HERE, this);
   CrestWindowClosed();
 }
 

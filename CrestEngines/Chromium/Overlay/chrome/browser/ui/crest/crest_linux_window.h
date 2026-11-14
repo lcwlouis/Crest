@@ -6,43 +6,46 @@
 // serves Fedora and Windows. The Mac's SwiftUI window hosts each page's view
 // the same way, asking the shell for it by the page's id.
 
+#include <memory>
 #include <string>
 
 #include "base/memory/raw_ptr.h"
 #include "ui/views/widget/widget_delegate.h"
 
 class Profile;
-namespace content { class WebContents; }
 namespace views { class WebView; class Widget; }
 
 namespace crest {
 
-class LinuxWindow final : public views::WidgetDelegateView {
+class LinuxWindow final {
  public:
   // Opens a window whose sidebar runs in `profile`, Crest's bootstrap
-  // profile. The window owns itself and closes with its widget.
+  // profile. The window lives until the person closes it.
   static LinuxWindow* Open(Profile* profile);
-  // The window, or null before one opens.
+  // The window, or null before one opens and once it closes.
   static LinuxWindow* Current();
 
   LinuxWindow(const LinuxWindow&) = delete;
   LinuxWindow& operator=(const LinuxWindow&) = delete;
+  ~LinuxWindow();
+
+  views::Widget* widget() const { return widget_.get(); }
 
   // Shows the page `page` (a core page id) beside the sidebar. False when the
   // engine has no such page.
   bool ShowPage(const std::string& page);
-  // The page shown, or empty.
-  const std::string& shown_page() const { return shown_page_; }
   // The engine let `page` go; the window stops showing it.
   void ReleasePage(const std::string& page);
 
-  // views::WidgetDelegateView:
-  void WindowClosing() override;
-
  private:
   explicit LinuxWindow(Profile* profile);
-  ~LinuxWindow() override;
 
+  // The person closed the window.
+  void Closing();
+
+  // The window owns its widget and the widget's delegate.
+  views::WidgetDelegate delegate_;
+  std::unique_ptr<views::Widget> widget_;
   raw_ptr<views::WebView> sidebar_ = nullptr;
   raw_ptr<views::WebView> page_ = nullptr;
   std::string shown_page_;
