@@ -22,6 +22,7 @@ export interface CommandContext {
     readonly send: (intent: Intent) => void;
     readonly report: (error: unknown) => void;
     readonly openPalette: (mode: "newTab" | "current") => void;
+    readonly find: (action: "open" | "next" | "previous") => void;
 }
 
 /** The commands the Linux window performs; the rest wait for their surfaces. */
@@ -29,7 +30,7 @@ const known = new Set<string>([
     "NewTab", "OpenLocation", "CloseTabOrWindow", "ArchiveTab", "Back", "Forward", "ReloadPage", "ReloadFromOrigin",
     "StopLoading", "ToggleSelectedTabPinned", "DuplicateTab", "ReopenClosedTab", "ClearUnpinnedTabs", "PreviousTab",
     "NextTab", "PreviousSpace", "NextSpace", "SelectNumbered", "ZoomIn", "ZoomOut", "ActualSize", "CopyPageLink",
-    "CopyPageLinkAsMarkdown",
+    "CopyPageLinkAsMarkdown", "FindInPage", "FindNext", "FindPrevious",
 ]);
 
 /** Chromium's zoom steps, which the Mac's page zoom also follows. */
@@ -140,6 +141,13 @@ export class Commands {
             case "ActualSize": {
                 const kind = facts.kind;
                 return page ? () => this.zoomPage(page, kind) : null;
+            }
+            case "FindInPage":
+                return page ? () => this.context.find("open") : null;
+            case "FindNext":
+            case "FindPrevious": {
+                const action = facts.kind === "FindNext" ? "next" : "previous";
+                return page ? () => this.context.find(action) : null;
             }
             case "CopyPageLink":
             case "CopyPageLinkAsMarkdown": {

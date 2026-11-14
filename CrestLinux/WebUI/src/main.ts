@@ -2,8 +2,21 @@
 // it, as the Mac app does at launch, then draws the shown Space's tabs and
 // shows the selected tab's page beside the sidebar.
 
-import { connect, dispatch, pageRequest, query, Refused, registerShortcuts, setPageBounds, showPage } from "./bridge.js";
+import {
+    connect,
+    decodePresentation,
+    dispatch,
+    listenToFloat,
+    pageRequest,
+    query,
+    Refused,
+    registerShortcuts,
+    setPageBounds,
+    showPage,
+} from "./bridge.js";
 import { Commands, shortcutTable } from "./commands.js";
+import { FindBar } from "./find.js";
+import type { FloatEvent } from "./float.js";
 import { NavigationError, ShortcutCommand } from "../generated/crest_contracts.js";
 import { Palette } from "./palette.js";
 import { TabIcons } from "./icons.js";
@@ -121,7 +134,14 @@ const commands = new Commands({
     send: (intent) => void dispatch(intent).catch(report),
     report,
     openPalette: (mode) => palette.open(mode, mode === "current" ? (address.dataset.url ?? "") : ""),
+    find: (action) => (action === "open" ? findBar.open() : findBar.step(action === "previous")),
 });
+
+const findBar = new FindBar(shownPage, report);
+listenToFloat(
+    (event) => findBar.handle(event as FloatEvent),
+    () => findBar.place(false, null),
+);
 
 const palette = new Palette({
     icons,
@@ -374,8 +394,16 @@ async function start(): Promise<void> {
             icons.apply(changes);
             render();
             followShownPage();
+            findBar.follow();
         },
-        () => {},
+        (bytes) => {
+            try {
+                const presentation = decodePresentation(bytes);
+                if (presentation.kind === "FindFinished") findBar.finished(presentation.value);
+            } catch (error) {
+                console.error(error);
+            }
+        },
     );
     const workspaceId = await openSession();
     // The launch reopens the window the person left, with the Space and tabs

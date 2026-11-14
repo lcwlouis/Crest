@@ -35,7 +35,9 @@ class Contents final : public views::View {
  public:
   raw_ptr<views::WebView> ui = nullptr;
   raw_ptr<views::WebView> page = nullptr;
+  raw_ptr<views::WebView> floating = nullptr;
   gfx::Rect page_bounds;
+  gfx::Rect float_bounds;
 
   void Layout(PassKey) override {
     if (ui) ui->SetBoundsRect(GetLocalBounds());
@@ -43,6 +45,12 @@ class Contents final : public views::View {
       gfx::Rect bounds = page_bounds;
       bounds.Intersect(GetLocalBounds());
       page->SetBoundsRect(bounds);
+    }
+    if (floating) {
+      gfx::Rect bounds = float_bounds;
+      bounds.Intersect(GetLocalBounds());
+      floating->SetBoundsRect(bounds);
+      floating->SetVisible(!bounds.IsEmpty());
     }
   }
 };
@@ -71,8 +79,13 @@ LinuxWindow::LinuxWindow(Profile* profile) {
   contents->ui = contents->AddChildView(std::make_unique<views::WebView>(profile));
   // Added after the WebUI, so it draws over it.
   contents->page = contents->AddChildView(std::make_unique<views::WebView>(profile));
+  // Over the page: the small surfaces that float on it while the page stays
+  // in use (the find bar, notices), which the WebUI places and fills.
+  contents->floating = contents->AddChildView(std::make_unique<views::WebView>(profile));
+  contents->floating->SetVisible(false);
   ui_ = contents->ui;
   page_ = contents->page;
+  float_ = contents->floating;
   delegate_.SetContentsView(std::move(contents));
 
   widget_ = std::make_unique<views::Widget>();
@@ -85,6 +98,7 @@ LinuxWindow::LinuxWindow(Profile* profile) {
   params.name = "CrestWindow";
   widget_->Init(std::move(params));
   ui_->LoadInitialURL(GURL(kCrestUIURL));
+  float_->LoadInitialURL(GURL(kCrestFloatURL));
   widget_->Show();
 }
 
@@ -134,6 +148,26 @@ void LinuxWindow::SetPageBounds(const gfx::Rect& bounds) {
   if (contents->page_bounds == bounds) return;
   contents->page_bounds = bounds;
   contents->InvalidateLayout();
+}
+
+void LinuxWindow::SetFloat(const gfx::Rect& bounds, bool focus) {
+  auto* contents = static_cast<Contents*>(delegate_.GetContentsView());
+  content::WebContents* float_contents = float_->web_contents();
+  if (content::RenderWidgetHostView* view = float_contents ? float_contents->GetRenderWidgetHostView() : nullptr) {
+    view->SetBackgroundColor(SK_ColorTRANSPARENT);
+  }
+  if (contents->float_bounds != bounds) {
+    contents->float_bounds = bounds;
+    contents->InvalidateLayout();
+  }
+  if (bounds.IsEmpty()) {
+    // The keyboard goes back to the page the surface took it from.
+    if (float_focused_ && page_->web_contents()) page_->RequestFocus();
+    float_focused_ = false;
+  } else if (focus) {
+    float_->RequestFocus();
+    float_focused_ = true;
+  }
 }
 
 void LinuxWindow::SetOverlay(bool raised) {

@@ -106,17 +106,20 @@ std::vector<Shortcut>& Shortcuts() {
 }
 
 class CrestUIHandler;
+// The window's main WebUI, which takes the window's keys and owns its state,
+// and the floating surfaces' page, which only draws what the main one sends.
 CrestUIHandler* g_handler = nullptr;
+CrestUIHandler* g_float = nullptr;
 
 // Relays the core to the page and the page's messages to the core.
 class CrestUIHandler final : public content::WebUIMessageHandler, public CoreHost::Observer {
  public:
-  // The window has one chrome://crest, which takes the window's keys.
-  CrestUIHandler() { g_handler = this; }
+  CrestUIHandler() = default;
   CrestUIHandler(const CrestUIHandler&) = delete;
   CrestUIHandler& operator=(const CrestUIHandler&) = delete;
   ~CrestUIHandler() override {
     if (g_handler == this) g_handler = nullptr;
+    if (g_float == this) g_float = nullptr;
   }
 
   // content::WebUIMessageHandler:
@@ -133,6 +136,12 @@ class CrestUIHandler final : public content::WebUIMessageHandler, public CoreHos
         "showPage", base::BindRepeating(&CrestUIHandler::HandleShowPage, base::Unretained(this)));
     web_ui()->RegisterMessageCallback(
         "setPageBounds", base::BindRepeating(&CrestUIHandler::HandleSetPageBounds, base::Unretained(this)));
+    web_ui()->RegisterMessageCallback(
+        "floatReady", base::BindRepeating(&CrestUIHandler::HandleFloatReady, base::Unretained(this)));
+    web_ui()->RegisterMessageCallback(
+        "setFloat", base::BindRepeating(&CrestUIHandler::HandleSetFloat, base::Unretained(this)));
+    web_ui()->RegisterMessageCallback(
+        "floatEvent", base::BindRepeating(&CrestUIHandler::HandleFloatEvent, base::Unretained(this)));
     web_ui()->RegisterMessageCallback(
         "setShortcuts", base::BindRepeating(&CrestUIHandler::HandleSetShortcuts, base::Unretained(this)));
     web_ui()->RegisterMessageCallback(
@@ -156,6 +165,8 @@ class CrestUIHandler final : public content::WebUIMessageHandler, public CoreHos
   // order, then each new one as it comes.
   void HandleReady(const base::ListValue& args) {
     AllowJavascript();
+    // The page that starts the core's line is the window's main WebUI.
+    g_handler = this;
     CoreHost* host = CoreHost::Get();
     base::ListValue history;
     if (host) {
@@ -228,6 +239,42 @@ class CrestUIHandler final : public content::WebUIMessageHandler, public CoreHos
     }
   }
 
+  // The floating surfaces' page started; it hears what the main WebUI sends.
+  void HandleFloatReady(const base::ListValue& args) {
+    AllowJavascript();
+    g_float = this;
+    if (g_handler) g_handler->Fire("crest-float-ready", base::Value());
+  }
+
+  // From the main WebUI. args: x, y, width, height (empty hides), whether the
+  // surface takes the keyboard, and the state it draws, as JSON text.
+  void HandleSetFloat(const base::ListValue& args) {
+    if (args.size() != 6 || !args[5].is_string()) return;
+    int values[4];
+    for (size_t index = 0; index < 4; ++index) {
+      if (!args[index].is_int() && !args[index].is_double()) return;
+      values[index] = static_cast<int>(args[index].GetDouble());
+    }
+    if (values[2] < 0 || values[3] < 0) return;
+    if (g_float) g_float->Fire("crest-float-state", base::Value(args[5].GetString()));
+    if (LinuxWindow* window = LinuxWindow::Current()) {
+      window->SetFloat(gfx::Rect(values[0], values[1], values[2], values[3]), args[4].GetIfBool().value_or(false));
+    }
+  }
+
+  // From the floating surfaces' page: what the person did there, as JSON
+  // text, for the main WebUI to act on.
+  void HandleFloatEvent(const base::ListValue& args) {
+    if (args.size() != 1 || !args[0].is_string()) return;
+    if (g_handler) g_handler->Fire("crest-float-event", base::Value(args[0].GetString()));
+  }
+
+ public:
+  void Fire(const std::string& event, const base::Value& value) {
+    if (IsJavascriptAllowed()) FireWebUIListener(event, value);
+  }
+
+ private:
   // args: one list per key, [key, ctrl, alt, meta, shift (-1 when it does
   // not matter), reserved].
   void HandleSetShortcuts(const base::ListValue& args) {
