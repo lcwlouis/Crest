@@ -51,24 +51,40 @@ def installed(patches, source, scratch):
                for patch in reversed(patches))
 
 
+def derive(directory, split):
+    """The host patches for Linux, in the order they apply."""
+    directory.mkdir(parents=True, exist_ok=True)
+    for name in linux_host_patches.SOURCES:
+        text = linux_host_patches.derive((ENGINE / "Patches" / name).read_text(),
+                                         follows_host=name != linux_host_patches.SOURCES[0], split=split)
+        (directory / name.replace(".patch", "-linux.patch")).write_text(text)
+    # On a source the privacy patches already changed, these give the same
+    # result as the Mac order, where the host's patch comes first.
+    return [directory / "native-host-linux.patch", directory / "content-filter-linux.patch",
+            ENGINE / "Linux/Patches/crest-host-linux-deps.patch"]
+
+
+def run(patches, source, *flags):
+    for patch in patches:
+        print(f"{'Reversing' if '--reverse' in flags else 'Applying'} {patch.name}", flush=True)
+        subprocess.run(["patch", "--batch", "--fuzz=0", "-p1", "-s", *flags, "--input", patch],
+                       cwd=source, check=True)
+
+
 def install(source):
     with tempfile.TemporaryDirectory(prefix="crest-linux-host-") as temporary:
         derived = Path(temporary)
-        for name in linux_host_patches.SOURCES:
-            text = linux_host_patches.derive((ENGINE / "Patches" / name).read_text(),
-                                             follows_host=name != linux_host_patches.SOURCES[0])
-            (derived / name.replace(".patch", "-linux.patch")).write_text(text)
-        # On a source the privacy patches already changed, these give the same
-        # result as the Mac order, where the host's patch comes first.
-        patches = [derived / "native-host-linux.patch", derived / "content-filter-linux.patch",
-                   ENGINE / "Linux/Patches/crest-host-linux-deps.patch"]
-        if all(dry_run(patch, source, "--forward") for patch in patches[:1]):
-            for patch in patches:
-                print(f"Applying {patch.name}", flush=True)
-                subprocess.run(["patch", "--batch", "--fuzz=0", "--forward", "-p1", "-s", "--input", patch],
-                               cwd=source, check=True)
+        patches = derive(derived / "current", split=True)
+        # The first derivation left Crest's includes inside Chromium's own Mac
+        # include blocks; a source that has it is moved to the current one.
+        legacy = derive(derived / "legacy", split=False)
+        if dry_run(patches[0], source, "--forward"):
+            run(patches, source, "--forward")
         elif installed(patches, source, derived / "check"):
             print("The host patches are already applied.")
+        elif installed(legacy, source, derived / "check-legacy"):
+            run(reversed(legacy), source, "--reverse")
+            run(patches, source, "--forward")
         else:
             sys.exit("The host patches neither apply nor are applied; review the Chromium source")
     for path in (ENGINE / "Overlay").rglob("*"):

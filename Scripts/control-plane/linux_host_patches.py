@@ -85,7 +85,34 @@ def recount(section, context=3):
     return "".join(out)
 
 
-def transform_section(name, section, follows_host):
+def split_mac_includes(section):
+    """Moves each Crest header the host includes inside one of Chromium's own
+    Mac blocks out to a gate of its own, which takes Linux too: the calls the
+    host adds are widened to Linux, so their declarations must be."""
+    hunks = re.split(r"(?m)^(?=@@ )", section)
+    changed = False
+    for index, hunk in enumerate(hunks[1:], start=1):
+        lines = hunk.splitlines(keepends=True)
+        opened = []  # Each open #if in the hunk: whether it is Chromium's own Mac gate.
+        out = []
+        for line in lines:
+            prefix, text = line[:1], line[1:]
+            if prefix in (" ", "+", "-") and text.startswith("#if"):
+                opened.append(prefix == " " and text.startswith("#if BUILDFLAG(IS_MAC)") and "||" not in text)
+            elif prefix in (" ", "+", "-") and text.startswith("#endif") and opened:
+                opened.pop()
+            elif (prefix == "+" and text.startswith("#include") and '/crest' in text and opened and opened[-1]):
+                out += ["+#endif  // BUILDFLAG(IS_MAC)\n", "+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)\n", line,
+                        "+#endif  // BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)\n", "+#if BUILDFLAG(IS_MAC)\n"]
+                changed = True
+                continue
+            out.append(line)
+        hunks[index] = "".join(out)
+    section = "".join(hunks)
+    return recount(section) if changed else section
+
+
+def transform_section(name, section, follows_host, split=True):
     if name == "chrome/browser/BUILD.gn":
         # The host's source set builds for Linux from the Linux sources; the
         # Mac hunk that adds it to the browser's Mac dependencies is dropped
@@ -117,12 +144,17 @@ def transform_section(name, section, follows_host):
             line = line.replace("#if BUILDFLAG(IS_MAC)", "#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)")
             line = line.replace("#endif  // BUILDFLAG(IS_MAC)", "#endif  // BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)")
         lines.append(line)
-    return "".join(lines)
+    # After widening: a gate the host's earlier patch already widened is no
+    # longer Chromium's own Mac block.
+    return split_mac_includes("".join(lines)) if split else "".join(lines)
 
 
-def derive(source, follows_host):
+def derive(source, follows_host, split=True):
+    """`split=False` gives the first derivation, which left Crest's includes in
+    Chromium's own Mac blocks, so a source it was applied to can be updated."""
     header, parts = sections(source)
-    kept = [transform_section(name, section, follows_host) for name, section in parts if not MAC_ONLY.search(name)]
+    kept = [transform_section(name, section, follows_host, split) for name, section in parts
+            if not MAC_ONLY.search(name)]
     return header + "".join(kept)
 
 
