@@ -4,25 +4,31 @@
 // highlights.
 
 import type { FindFinished, Guid, PageState } from "../generated/crest_contracts.js";
-import { pageRequest, setFloat } from "./bridge.js";
+import { pageRequest } from "./bridge.js";
 import type { FloatEvent, FloatState } from "./float.js";
+import { FloatRank } from "./surfaces.js";
+import type { FloatSurface, FloatSurfaces } from "./surfaces.js";
 
 /** The bar and the margin its shadow draws in, BrowserFindBarMetrics. */
 const width = 360;
 const height = 52;
 const inset = 6;
 
-export class FindBar {
+export class FindBar implements FloatSurface {
+    readonly rank = FloatRank.find;
     private readonly page: () => PageState | undefined;
     private readonly report: (error: unknown) => void;
+    private readonly surfaces: FloatSurfaces;
     private pageId: Guid | null = null;
     private query = "";
     private matches: number | null = null;
     private activeMatch = 0;
 
-    constructor(page: () => PageState | undefined, report: (error: unknown) => void) {
+    constructor(page: () => PageState | undefined, report: (error: unknown) => void, surfaces: FloatSurfaces) {
         this.page = page;
         this.report = report;
+        this.surfaces = surfaces;
+        surfaces.add(this);
         new ResizeObserver(() => this.place(false, null)).observe(document.getElementById("page")!);
     }
 
@@ -46,7 +52,7 @@ export class FindBar {
         this.pageId = null;
         this.query = "";
         this.matches = null;
-        setFloat({ x: 0, y: 0, width: 0, height: 0 }, false, { kind: "none" } satisfies FloatState);
+        this.surfaces.post(this, null);
     }
 
     step(backwards: boolean): void {
@@ -93,7 +99,11 @@ export class FindBar {
         if (!this.pageId) return;
         const card = document.getElementById("page")!.getBoundingClientRect();
         const state: FloatState = { kind: "find", query, matches: this.matches, activeMatch: this.activeMatch };
-        setFloat({ x: card.right - width - inset, y: card.top + inset, width, height }, focus, state);
+        this.surfaces.post(this, { bounds: { x: card.right - width - inset, y: card.top + inset, width, height }, focus, state });
+    }
+
+    restore(): void {
+        this.place(false, null);
     }
 
     private find(pageId: Guid, query: string, backwards: boolean): void {
