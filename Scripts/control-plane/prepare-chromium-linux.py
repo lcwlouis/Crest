@@ -89,6 +89,8 @@ def main():
         shutil.copyfile(ENGINE / "Overlay" / relative, target)
     for name in linux["patches"]:
         shared.run(["patch", "-p1", "--forward", "--fuzz=0", "--input", ENGINE / "Patches" / name], staging)
+    for name in linux["linuxPatches"]:
+        shared.run(["patch", "-p1", "--forward", "--fuzz=0", "--input", LINUX / "Patches" / name], staging)
 
     staging.rename(source)
     output = source / "out/CrestBaseline"
@@ -100,9 +102,7 @@ def main():
         shared.run([sys.executable, source / "tools/gn/bootstrap/bootstrap.py", "-o", "out/CrestBaseline/gn",
                     "--skip-generate-buildfiles"], source)
         gn = output / "gn"
-    # The build loads only what Chrome needs: the whole tree also holds Linux-only tools, such as the
-    # service discovery sniffer, that assert on features Crest turns off.
-    shared.run([gn, "gen", "out/CrestBaseline", "--fail-on-unused-args", "--root-target=//chrome"], source)
+    shared.run([gn, "gen", "out/CrestBaseline", "--fail-on-unused-args"], source)
     print("Source prepared. Run build-chromium-baseline.py against it.")
 
 

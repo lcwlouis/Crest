@@ -1,0 +1,23 @@
+# Crest builds without service discovery. On Linux the root build adds the
+# service discovery sniffer to release builds, and that tool asserts the
+# feature is on, so it joins the build only when the feature does.
+--- a/BUILD.gn	2026-11-14 04:55:44.704351897 +0000
++++ b/BUILD.gn	2026-11-14 04:55:44.705554381 +0000
+@@ -23,6 +23,7 @@
+ import("//build/toolchain/rbe.gni")
+ import("//build/util/generate_wrapper.gni")
+ import("//chrome/browser/buildflags.gni")
++import("//chrome/common/features.gni")
+ import("//chrome/enterprise_companion/config.gni")
+ import("//components/enterprise/buildflags/buildflags.gni")
+ import("//device/vr/buildflags/buildflags.gni")
+@@ -613,7 +614,8 @@
+         deps += [ "//chrome/test:chrome_app_unittests" ]
+       }
+ 
+-      if (!is_debug && !is_component_build && !is_castos) {
++      if (!is_debug && !is_component_build && !is_castos &&
++          enable_service_discovery) {
+         deps += [ "//chrome/tools/service_discovery_sniffer" ]
+       }
+     }
