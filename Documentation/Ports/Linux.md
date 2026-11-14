@@ -32,3 +32,8 @@ dotnet publish src/CrestCore.Native -c Release -r linux-x64 -o artifacts/linux-x
 Linux and Windows have no published content filter, so publishing compiles
 `CrestCore/native/ContentFilter` with Cargo for the machine it runs on and
 links it into the library. Build on the operating system you are targeting.
+
+## Build Chromium
+
+`CrestEngines/Chromium/Linux/README.md` prepares and builds the pinned Chromium
+for Linux with Crest's privacy patches.

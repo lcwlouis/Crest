@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "host": "linux-x64",
+  "dependencies": [
+    "src/third_party/llvm-build/Release+Asserts",
+    "src/third_party/rust-toolchain",
+    "src/third_party/llvm-libclang",
+    "src/third_party/node/linux",
+    "src/build/linux/debian_bullseye_amd64-sysroot"
+  ],
+  "patches": [
+    "google-request-allowlist.patch",
+    "component-updater-services.patch",
+    "update-pings-off.patch",
+    "autofill-crowdsourcing-off.patch",
+    "gaia-list-accounts-off.patch",
+    "network-time-off.patch",
+    "intranet-redirect-detector-off.patch",
+    "web-push-off.patch",
+    "privacy-defaults.patch",
+    "safe-browsing-reports-off.patch",
+    "certificate-transparency-enforced.patch",
+    "manifest-v2-extensions.patch"
+  ],
+  "overlay": [
+    "services/network/crest_request_policy.cc",
+    "services/network/crest_request_policy.h"
+  ],
+  "buildArguments": {
+    "target_cpu": "x64",
+    "is_official_build": false,
+    "is_debug": false,
+    "dcheck_always_on": false,
+    "enable_expensive_dchecks": false,
+    "is_component_build": false,
+    "use_thin_lto": false,
+    "chrome_pgo_phase": 0,
+    "symbol_level": 1,
+    "use_lld": true,
+    "enable_precompiled_headers": false,
+    "use_sysroot": true
+  }
+}
