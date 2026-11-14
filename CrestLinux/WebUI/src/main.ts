@@ -2,13 +2,16 @@
 // it, as the Mac app does at launch, then draws the shown Space's tabs and
 // shows the selected tab's page beside the sidebar.
 
-import { connect, dispatch, pageRequest, query, Refused, showPage } from "./bridge.js";
-import type { Guid, TabState } from "../generated/crest_contracts.js";
+import { connect, dispatch, query, Refused, showPage } from "./bridge.js";
+import { TabIcons } from "./icons.js";
+import type { Guid, LaunchEnvironment, TabState } from "../generated/crest_contracts.js";
 import { Model } from "./model.js";
 import type { Space, Workspace } from "./model.js";
 
 const model = new Model();
-const windowId: Guid = crypto.randomUUID();
+const icons = new TabIcons(() => render());
+/** The window this sidebar draws: the saved window the launch reopens, once known. */
+let windowId: Guid = crypto.randomUUID();
 let shownPageId: Guid | null = null;
 
 const root = document.getElementById("sidebar")!;
@@ -63,43 +66,10 @@ function shownTabId(): Guid | null {
     return window?.shownTabs.find((shown) => shown.spaceId === window.shownSpaceId)?.tabId ?? null;
 }
 
-/** Page icons the engine handed over, as data URLs, by tab, with the address each stands for. */
-const icons = new Map<Guid, { readonly favicon: string; readonly image: string | null }>();
-
-/**
- * The icon a tab shows, from its page's engine. The sidebar never loads a
- * favicon's address itself: a chrome:// page has no network access, and
- * Chromium ends a WebUI renderer that asks for one. The Mac takes the
- * image from the engine the same way.
- */
-function iconFor(tab: TabState): string | null {
-    const held = icons.get(tab.id);
-    if (!tab.faviconUrl) return null;
-    if (held?.favicon === tab.faviconUrl) return held.image;
-    const page = model.pageFor(tab.id);
-    if (!page || page.phase !== "Live") return held?.image ?? null;
-    icons.set(tab.id, { favicon: tab.faviconUrl, image: held?.image ?? null });
-    const favicon = tab.faviconUrl;
-    void pageRequest("PageIcon", { pageId: page.id })
-        .then(({ image }) => {
-            if (!image || icons.get(tab.id)?.favicon !== favicon) return;
-            icons.set(tab.id, { favicon, image: `data:image/png;base64,${base64(image)}` });
-            render();
-        })
-        .catch((error: unknown) => console.error(error));
-    return held?.image ?? null;
-}
-
-function base64(bytes: Uint8Array): string {
-    let text = "";
-    for (const byte of bytes) text += String.fromCharCode(byte);
-    return btoa(text);
-}
-
 function tabRow(space: Space, tab: TabState, selected: boolean): HTMLElement {
     const row = element("button", selected ? "tab selected" : "tab");
     const icon = element("span", "tab-icon");
-    const image = iconFor(tab);
+    const image = icons.imageOf(tab.id);
     if (image) {
         const img = element("img", "");
         img.src = image;
@@ -236,22 +206,45 @@ function report(error: unknown): void {
     say(error instanceof Refused ? `Crest refused: ${error.rejection.kind}` : String(error));
 }
 
+const launchEnvironment: LaunchEnvironment = {
+    isTestRuntime: false,
+    isPreviewRuntime: false,
+    requestsIsolatedSession: false,
+    hasNamedProfile: false,
+    requestsIsolatedCloudSync: false,
+    resetsSession: false,
+    presentsShowcase: false,
+    presentsSubSpaces: false,
+    usesInMemoryCredentials: false,
+    forcesOnboardingWelcome: false,
+    forcesDesktopSetup: false,
+    forcesMobileSetup: false,
+    usesUpdateTestFeed: false,
+};
+
 async function start(): Promise<void> {
     await connect(
         (changes) => {
             model.apply(changes);
+            icons.apply(changes);
             render();
             followShownPage();
         },
         () => {},
     );
     const workspaceId = await openSession();
+    // The launch reopens the window the person left, with the Space and tabs
+    // it showed, as the Mac's launch does.
+    // TODO(linux): reopen every saved window, and run the setup the plan
+    // names, once the Linux shell draws more than one window and onboarding.
+    const plan = await query("LaunchWindows", { environment: launchEnvironment });
+    windowId = plan.startupWindowId;
     await dispatch({
         kind: "OpenWindow",
         value: {
             windowId,
             workspaceId,
-            saved: false,
+            saved: true,
             copyingWindowId: null,
             showingSpaceId: null,
             showingTabs: [],
