@@ -40,6 +40,17 @@ internal static class Naming {
 
     #endregion
 
+    #region Actions - TypeScript
+
+    /// A property name: lowerCamel, with every later word as C# spells it
+    /// (`ProfileId` becomes `profileId`, `URLText` becomes `urlText`).
+    public static string TypeScriptMember(string name) {
+        var words = Words(name);
+        return string.Concat(words.Skip(1).Prepend(words[0].ToLowerInvariant()));
+    }
+
+    #endregion
+
     #region Actions - C
 
     /// `AcknowledgeDownloads` becomes `ACKNOWLEDGE_DOWNLOADS`.

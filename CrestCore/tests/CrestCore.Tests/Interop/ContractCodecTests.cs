@@ -15,7 +15,7 @@ namespace CrestCore.Tests;
 /// The generated codec and the schema fingerprint. Samples are built by
 /// reflection from every contract type, so a new record is covered without a
 /// new test.
-public sealed unsafe class ContractCodecTests {
+public sealed unsafe partial class ContractCodecTests {
     /// The contract types the core exports, beside its domain and application.
     private static readonly IReadOnlyList<Type> Contracts = ContractSchema.ContractTypes(typeof(Intent).Assembly);
     private static readonly Type[] Roots = [typeof(Intent), typeof(Change), typeof(Rejection), typeof(EngineCommand), typeof(EngineEvent)];
