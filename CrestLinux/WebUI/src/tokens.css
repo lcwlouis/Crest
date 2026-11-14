@@ -1,0 +1,529 @@
+/* Crest's design tokens for the Linux WebUI, copied from the Mac's Swift
+   token files (each value names its source). Values the Mac takes from macOS
+   itself are approximations, marked "macOS value". */
+
+:root {
+  /* --- Brand palette: Shared/DesignSystem/Tokens/CrestColor/CrestBrandPalette.swift --- */
+  --crest-ink: rgb(23 34 56);
+  --crest-ink-soft: rgb(39 54 83);
+  --crest-paper: rgb(255 250 240);
+  --crest-parchment: rgb(243 234 214);
+  --crest-butter: rgb(231 189 88);
+  --crest-coral: rgb(237 90 67);
+  --crest-sage: rgb(129 155 121);
+  --crest-sky: rgb(98 169 216);
+  --crest-match: var(--crest-sage);
+  --crest-brand-line: rgb(23 34 56 / 0.18);            /* ink at CrestOpacity.brandHairline */
+
+  /* --- Brand theme, light: Shared/DesignSystem/Tokens/CrestBrandTheme.swift --- */
+  --crest-accent: rgb(237 90 67);
+  --crest-accent-text: rgb(178 64 47);
+  --crest-canvas: rgb(255 250 240);
+  --crest-surface: rgb(243 234 214);
+  --crest-text-display: rgb(23 34 56);
+  --crest-text-secondary: rgb(23 34 56 / 0.7);
+  --crest-line: rgb(23 34 56 / 0.18);
+  --crest-quiet-fill: rgb(23 34 56 / 0.05);
+
+  /* --- Status, light: CrestColor/CrestColor.swift --- */
+  --crest-danger: rgb(178 50 37);
+  --crest-warning: rgb(138 90 8);
+  --crest-success: rgb(47 112 66);
+  --crest-danger-fill: rgb(178 50 37 / 0.18);          /* CrestOpacity.statusFill */
+  --crest-warning-fill: rgb(138 90 8 / 0.18);
+
+  /* --- System colours the Swift code takes from macOS (macOS value, light) --- */
+  --crest-primary: rgb(0 0 0 / 0.85);                  /* Color.primary */
+  --crest-secondary: rgb(0 0 0 / 0.5);                 /* Color.secondary */
+  --crest-window-background: rgb(236 236 236);         /* NSColor.windowBackgroundColor */
+  --crest-primary-rgb: 0 0 0;                          /* base for the opacity roles below */
+
+  /* --- Roles built from Color.primary: CrestColor.swift + CrestOpacity.swift --- */
+  --crest-hover: rgb(var(--crest-primary-rgb) / 0.08);            /* CrestOpacity.hover */
+  --crest-selection: rgb(var(--crest-primary-rgb) / 0.13);        /* interactionSelection */
+  --crest-chrome-surface: rgb(var(--crest-primary-rgb) / 0.055);  /* chromeSurface */
+  --crest-subtle-border: rgb(var(--crest-primary-rgb) / 0.12);    /* border */
+  --crest-selected-border: rgb(var(--crest-primary-rgb) / 0.10);  /* interactionSelectionBorder */
+  --crest-drop-indicator: rgb(255 250 240 / 0.72);                /* paper at dropIndicator */
+
+  /* --- Opacity: Shared/DesignSystem/Tokens/CrestOpacity.swift --- */
+  --crest-opacity-brand-hairline: 0.18;
+  --crest-opacity-drop-indicator: 0.72;
+  --crest-opacity-hover: 0.08;
+  --crest-opacity-selection: 0.13;
+  --crest-opacity-selection-border: 0.10;
+  --crest-opacity-selection-shadow: 0.08;
+  --crest-opacity-chrome-surface: 0.055;
+  --crest-opacity-border: 0.12;
+  --crest-opacity-dark-selection-lift: 0.10;
+  --crest-opacity-dark-selection-border: 0.18;
+  --crest-opacity-disabled: 0.5;
+  --crest-opacity-control-disabled-foreground: 0.48;
+  --crest-opacity-control-shadow: 0.16;
+  --crest-opacity-status-surface: 0.35;
+  --crest-opacity-prominent-status-surface: 0.6;
+  --crest-opacity-status-fill: 0.18;
+
+  /* --- Spacing: Shared/DesignSystem/Tokens/CrestSpacing.swift --- */
+  --crest-space-2xs: 2px;
+  --crest-space-xs: 4px;
+  --crest-space-s: 8px;
+  --crest-space-m: 12px;
+  --crest-space-l: 16px;
+  --crest-space-xl: 20px;
+  --crest-space-2xl: 24px;
+  --crest-space-section: 32px;
+  --crest-space-screen: 40px;
+
+  /* --- Radius: Shared/DesignSystem/Tokens/CrestRadius.swift --- */
+  --crest-radius-compact: 8px;
+  --crest-radius-control: 12px;
+  --crest-radius-card: 16px;
+  --crest-radius-panel: 24px;
+
+  /* --- Layout: CrestLayout.swift, CrestMac/DesignSystem/Metrics/CrestPlatformLayout.swift --- */
+  --crest-hairline: 1px;
+  --crest-focus-ring: 3px;
+  --crest-glass-icon-button: 44px;
+  --crest-pinned-accent-border: 2px;
+  --crest-min-hit-target: 28px;                        /* CrestPlatformLayout.minimumHitTarget (Mac) */
+  --crest-sidebar-row-height: 40px;                    /* CrestPlatformLayout.sidebarRowHeight (Mac) */
+  --crest-sidebar-control-radius: var(--crest-radius-compact);
+
+  /* --- Typography: Shared/DesignSystem/Tokens/CrestTypography.swift --- */
+  --crest-font-display: "Iowan Old Style", "Source Serif 4", Georgia, serif;   /* see decision D4 */
+  --crest-font-sans: "Avenir Next", system-ui, sans-serif;
+  --crest-font-ui: system-ui, sans-serif;
+  --crest-display-page-size: 24px;                     /* displayPageSize, relative to title2 */
+  --crest-display-section-size: 17px;                  /* displaySectionSize, relative to title3 */
+  /* macOS text style sizes (macOS value; SwiftUI Font.body etc. on macOS) */
+  --crest-text-body: 13px;
+  --crest-text-callout: 12px;
+  --crest-text-subheadline: 11px;
+  --crest-text-footnote: 10px;
+  --crest-text-caption: 10px;
+  --crest-text-caption2: 10px;
+  --crest-text-headline: 13px;                         /* bold */
+  --crest-text-title3: 15px;
+  --crest-text-title2: 17px;
+  --crest-text-title: 22px;
+  --crest-text-large-title: 26px;
+  /* roles */
+  --crest-control-title-weight: 500;                   /* controlTitle = body medium */
+  --crest-badge-weight: 600;                           /* badge = caption2 monospaced semibold */
+
+  /* --- Buttons: Components/CrestButtonStyle/Metrics/CrestButtonMetrics.swift --- */
+  --crest-button-pressed-scale: 0.975;
+  --crest-button-disabled-opacity: 0.42;
+  --crest-button-prominent-height: 40px;
+  --crest-button-standard-height: 38px;
+  --crest-button-prominent-padding-x: 20px;
+  --crest-button-standard-padding-x: 16px;
+  --crest-button-quiet-padding-x: 8px;
+  --crest-button-icon-diameter: 34px;
+  --crest-button-stroke: 1px;
+  --crest-button-quiet-stroke: 0.75px;
+  --crest-button-prominent-stroke: 1.25px;
+  --crest-button-pressed-fill-opacity: 0.8;
+  --crest-button-tint-rest-fill: 0.10;
+  --crest-button-tint-emphasized-fill: 0.16;
+  --crest-button-tint-pressed-fill: 0.22;
+  --crest-button-tint-rest-stroke: 0.28;
+  --crest-button-tint-emphasized-stroke: 0.55;
+  --crest-button-prominent-label: 14px;
+  --crest-button-standard-label: 13px;
+
+  /* --- Text field: Components/CrestTextField/Metrics/CrestFieldMetrics.swift --- */
+  --crest-field-radius: 12px;
+  --crest-field-height: 40px;
+  --crest-field-padding-x: 12px;
+  --crest-field-border: 1px;
+  --crest-field-focus-ring: 3px;
+  --crest-field-focus-ring-opacity: 0.32;
+
+  /* --- Interactive surface: Components/CrestInteractiveSurface/CrestInteractiveSurfaceModifier.swift --- */
+  --crest-surface-selected-border: 0.5px;
+  --crest-surface-contrast-border: 1.5px;              /* prefers-contrast: more */
+  --crest-surface-selected-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
+
+  /* --- Settings rows: CrestSettingRowMetrics, CrestSettingsPresentationMetrics, CrestSelectableCardMetrics --- */
+  --crest-setting-inline-slider-width: 160px;
+  --crest-setting-slider-readout-width: 76px;
+  --crest-settings-icon-regular: 32px;
+  --crest-settings-icon-regular-radius: 9px;
+  --crest-settings-symbol-regular: 15px;
+  --crest-settings-symbol-compact: 12px;
+  --crest-settings-icon-compact-radius: 6px;
+  --crest-card-selected-border: 2px;
+  --crest-card-checkmark: 20px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* CrestBrandTheme.swift, dark components */
+    --crest-accent: rgb(241 117 98);
+    --crest-accent-text: rgb(250 120 101);
+    --crest-canvas: rgb(23 34 56);
+    --crest-surface: rgb(39 54 83);
+    --crest-text-display: rgb(255 250 240);
+    --crest-text-secondary: rgb(255 250 240 / 0.6);
+    --crest-line: rgb(255 250 240 / 0.22);
+    --crest-quiet-fill: rgb(255 250 240 / 0.08);
+    /* CrestColor.swift, dark status */
+    --crest-danger: rgb(238 106 92);
+    --crest-warning: rgb(236 190 92);
+    --crest-success: rgb(134 196 142);
+    --crest-danger-fill: rgb(238 106 92 / 0.18);
+    --crest-warning-fill: rgb(236 190 92 / 0.18);
+    /* macOS value, dark */
+    --crest-primary: rgb(255 255 255 / 0.85);
+    --crest-secondary: rgb(255 255 255 / 0.55);
+    --crest-window-background: rgb(50 50 50);
+    --crest-primary-rgb: 255 255 255;
+    /* Shared/Features/Tabs/Components/BrowserTabAppearanceSurface.swift: dark selected tab */
+    --crest-tab-selected-lift: rgb(255 255 255 / 0.10);      /* darkSelectionLift */
+    --crest-tab-selected-border: rgb(255 255 255 / 0.18);    /* darkSelectionBorder */
+  }
+}
+
+:root {
+  /* Shared/DesignSystem/Tokens/CrestSurfaceMaterial.swift: five SwiftUI materials, default "regular".
+     macOS value: blur and tint amounts below are approximations to tune by eye. */
+  --crest-material-ultra-thin: blur(20px) saturate(1.6);
+  --crest-material-thin: blur(24px) saturate(1.7);
+  --crest-material-regular: blur(30px) saturate(1.8);
+  --crest-material-thick: blur(40px) saturate(1.8);
+  --crest-material-ultra-thick: blur(50px) saturate(1.8);
+  --crest-material-tint-light: rgb(255 255 255 / 0.55);
+  --crest-material-tint-dark: rgb(40 40 40 / 0.55);
+
+  /* Shared/Features/Spaces/Components/BrowserSpaceBranding/BrowserSpaceBannerBackground.swift */
+  --space-field-opacity: var(--space-banner-strength);         /* SpaceBranding.bannerStrength; min 0.85 with reduced transparency */
+  --space-readability: min(calc(var(--space-readability-fade) * 0.55), 0.7);  /* black overlay; +0.1 with increased contrast */
+  --space-texture-opacity: calc(var(--space-texture-strength) * 0.38);        /* soft-light blend; 0.24 with reduced transparency */
+
+  /* Shared/Features/Browser/Support/BrowserRootMetrics.swift */
+  --crest-floating-sidebar-border: 0.75px;
+  --crest-floating-sidebar-border-opacity: 0.2;
+  --crest-floating-sidebar-shadow: 0 8px 28px rgb(0 0 0 / 0.3);
+  --crest-floating-sidebar-shade-opacity: 0.09;
+  --crest-notice-height: 40px;
+  --crest-notice-padding-x: 14px;
+  --crest-notice-top: 18px;
+  --crest-notice-max-width: 520px;
+  --crest-notice-shadow: 0 8px 16px;
+  --crest-notice-duration: 1400ms;
+  --crest-notice-longest: 6000ms;
+}
+
+:root {
+  /* Durations: Shared/DesignSystem/Tokens/CrestMotion.swift */
+  --crest-dur-press: 140ms;                 /* pressFeedback */
+  --crest-dur-compact-press: 120ms;
+  --crest-dur-developer-press: 160ms;
+  --crest-dur-surface: 120ms;               /* surfaceTransition */
+  --crest-dur-hover: 140ms;
+  --crest-dur-dismissal: 180ms;
+  --crest-dur-drag-preview: 180ms;
+  --crest-dur-palette: 180ms;
+  --crest-dur-recovery: 180ms;
+  --crest-dur-disclosure: 200ms;
+  --crest-dur-selection: 200ms;
+  --crest-dur-drag-source: 200ms;
+  --crest-dur-reduced-motion-fade: 200ms;
+  --crest-dur-collection: 220ms;
+  --crest-dur-loading-progress: 220ms;
+  --crest-dur-content-state: 220ms;
+  --crest-dur-feedback: 220ms;
+  --crest-dur-peek-dismissal: 220ms;
+  --crest-dur-sidebar-dock-approach: 220ms;
+  --crest-dur-sidebar-dock-attachment: 160ms;
+  --crest-dur-floating-pane: 240ms;         /* also the default sidebar slide duration */
+  --crest-dur-toolbar: 240ms;
+  --crest-dur-scroll-alignment: 240ms;
+  --crest-dur-control-state: 250ms;
+  --crest-dur-navigation: 280ms;
+  --crest-dur-chrome: 280ms;
+  --crest-dur-sidebar-morph: 280ms;
+  --crest-dur-peek-entrance: 280ms;         /* spring, bounce 0.2 */
+  --crest-dur-step: 300ms;
+  --crest-dur-sidebar-retreat: 300ms;
+  --crest-dur-space-swipe: 320ms;
+  --crest-dur-quick-peek-entrance: 340ms;
+  --crest-dur-style-change: 350ms;
+  --crest-dur-onboarding-step: 350ms;
+  --crest-dur-onboarding-backdrop-change: 350ms;
+  --crest-dur-address-swap-out: 140ms;      /* easeIn */
+  --crest-dur-address-swap-in: 360ms;       /* spring, bounce 0.25, delayed by 98ms (0.7 x swap-out) */
+  --crest-dur-boundary-shake: 360ms;
+  --crest-dur-peek-link-menu: 360ms;
+  --crest-dur-content-navigation: 420ms;    /* snappy, extra bounce 0.04 */
+  --crest-dur-utility-fan-reveal: 420ms;    /* smooth, extra bounce 0.05 */
+  --crest-dur-content-reveal: 120ms;
+  --crest-dur-reload-phase: 120ms;          /* reload turn out (easeOut) then in (easeIn); 90deg quarter turn */
+  --crest-dur-onboarding-backdrop: 1600ms;
+  --crest-delay-long-press: 550ms;
+  --crest-delay-stop-symbol: 200ms;
+  --crest-hold-onboarding-welcome: 7000ms;
+
+  /* Curves. SwiftUI springs have no exact cubic-bezier; these are approximations.
+     For an exact match generate a CSS linear() easing from the spring formula. */
+  --crest-ease-out: cubic-bezier(0, 0, 0.58, 1);            /* .easeOut */
+  --crest-ease-in: cubic-bezier(0.42, 0, 1, 1);             /* .easeIn */
+  --crest-ease-in-out: cubic-bezier(0.42, 0, 0.58, 1);      /* .easeInOut */
+  --crest-ease-smooth: cubic-bezier(0.25, 0.1, 0.25, 1);    /* .smooth = spring, bounce 0 (approx.) */
+  --crest-ease-snappy: cubic-bezier(0.2, 0.9, 0.3, 1.05);   /* .snappy = spring, bounce 0.15 (approx.) */
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Shared/DesignSystem/Accessibility/Animation+ReducedMotion.swift: animations are dropped
+     (`unlessReducingMotion`) or replaced by a 200ms ease-in-out fade. */
+}
+
+:root {
+  /* --- Window and page: Shared/Features/Chrome/Support/BrowserChromeLayout.swift --- */
+  --sidebar-min-width: 164px;
+  --sidebar-ideal-width: 289px;
+  --sidebar-max-width: 380px;
+  --sidebar-titlebar-height: 48px;          /* navigation band */
+  --page-frame-inset: 8px;                  /* gap between window edge / sidebar and the page card */
+  --page-corner-radius: 13px;
+  --page-brand-seam: 1.5px;
+
+  /* --- Resize handle: Chrome/Components/BrowserSidebarResizeHandle/Support/BrowserSidebarResizeHandleMetrics.swift,
+         Shared/Features/Browser/Support/BrowserRootMetrics.swift --- */
+  --sidebar-resize-hit-width: 16px;
+  --sidebar-resize-offset: 8px;
+  --sidebar-resize-indicator: 2px 46px;     /* width height */
+  --sidebar-resize-indicator-opacity: 0.28;
+  /* Collapsed reveal zone: Shared/Features/Browser/Support/BrowserCollapsedSidebarRevealMetrics.swift */
+  --sidebar-reveal-zone-width: 14px;
+  --sidebar-reveal-delay: 200ms;            /* BrowserLookAndFeelDefaults.sidebarRevealDelay */
+
+  /* --- Sidebar container: Shared/Features/Sidebar/Support/BrowserSidebarMetrics.swift --- */
+  --sidebar-layer-inset: 8px;               /* horizontal inset of address field, pinned grid, rows */
+  --sidebar-container-padding: 4px;
+  --sidebar-container-spacing: 2px;
+  --sidebar-top-section-spacing: 8px;       /* above the pinned grid when there are pins */
+  --sidebar-pinned-bottom-inset: 6px;       /* below the pinned grid when there are pins */
+  --sidebar-address-bottom-inset: 1px;
+  --sidebar-locked-blur: 12px;
+  /* Layer corner radius, BrowserSidebarMetrics.layerCornerRadius(depth:):
+       capsule = row height / 2 (20 at scale 1)
+       outer   = min(user + min(user, 4), capsule)
+       radius  = max(min(user, capsule), outer - 4 * depth)
+     With the default user radius 10 (BrowserLookAndFeelDefaults.cornerRadius): depth 0 = 14px, depth 1+ = 10px.
+     (sidebarCornerRadius is cornerRadius clamped to its maximum: BrowserDeviceAppearanceStore.swift line 178.) */
+  --sidebar-row-radius: 14px;
+  --sidebar-row-radius-nested: 10px;
+
+  /* --- Density: Shared/Features/Sidebar/Support/BrowserSidebarDensity.swift (tab scale 0.7-1.4, default 1) --- */
+  --tab-scale: 1;
+  --sidebar-body-size: calc(13px * var(--tab-scale));
+  --tab-row-height: max(24px, calc(40px * var(--tab-scale)));
+  --tab-row-separation: 2px;                /* 2px when scale <= 1 or borders = all, else 0; applied as 1px above and below */
+
+  /* --- Navigation controls: Sidebar/Support/BrowserSidebarNavigationControlMetrics.swift (.pointer) --- */
+  --nav-control-size: 30px;
+  --nav-control-spacing: 1px;
+  --nav-symbol-size: 15px;
+  --nav-reload-menu-width: 18px;
+  --nav-leading-spacer-min: 8px;
+  --nav-trailing-inset: 12px;
+  --nav-forward-fold-width: 196px;          /* forward button folds away below this band width */
+
+  /* --- Address field: Sidebar/Support/BrowserSidebarAddressFieldMetrics.swift (.pointer) --- */
+  --address-height: 36px;
+  --address-radius: 8px;
+  --address-padding-x: 9px;
+  --address-content-spacing: 7px;
+  --address-accessory-spacing: 2px;
+  --address-editing-ring: 0.5px;            /* colour: --crest-selected-border */
+  --address-leading-glyph-slot: 28px;
+  --address-loading-fill-opacity: 0.55;
+  --address-copy-button-min-width: 200px;   /* copy URL button shows on hover or when the field is at least this wide */
+
+  /* --- Pinned grid: Tabs/Components/PinnedTabGrid/Models/BrowserPinnedTabReorderLayout.swift,
+         PinnedTabGridLayout.swift, BrowserSidebarDensity.swift --- */
+  --pin-tile-height: max(32px, calc(47px * var(--tab-scale)));
+  --pin-tile-min-width: max(24px, calc(36px * var(--tab-scale)));
+  --pin-spacing: max(2px, calc(8px * var(--tab-scale)));
+  --pin-max-columns: 4;                     /* automatic: round(4 / scale), clamped 1-6; user setting 1-6 overrides */
+  --pin-selected-border: 2px;
+  /* Columns (automatic): capacity = min(requested, floor((width + spacing) / (minWidth + spacing)));
+     rows = ceil(count / capacity); columns = ceil(count / rows). So 5 pins make 3 + 2, not 4 + 1.
+     Tile width = (grid width - (columns - 1) * spacing) / columns. Option "fill last row" stretches the last row. */
+  --pin-glow-outset: 12px;                  /* BrowserTabSelectionGlow.outset */
+  --pin-glow-blur: 5px;
+
+  /* --- Space header: Sidebar/Components/BrowserSpaceHeader/BrowserSpaceHeader.swift,
+         Sidebar/Support/BrowserSpaceHeaderMetrics.swift (.pointer) --- */
+  --space-header-height: 40px;
+  --space-header-margin-x: 8px;
+  --space-header-padding-left: 8px;
+  --space-header-padding-right: 4px;
+  --space-header-icon-size: 20px;
+  --space-header-gap: 8px;
+  --space-header-disclosure-glyph: 9px;
+  --space-header-actions-size: 24px;
+  --space-header-radius: 8px;               /* hover surface */
+  /* title: callout (12px) semibold; lock glyph: caption2 bold */
+
+  /* --- Tab row: Sidebar/Support/BrowserSidebarTabRowMetrics.swift, BrowserTabTrailingControlMetrics.swift (.pointer) --- */
+  --tab-row-padding-left: 9px;
+  --tab-row-padding-right: 6px;             /* (40 - 28) / 2 */
+  --tab-favicon-size: 18px;                 /* Tabs/TabFaviconView/Models/TabFaviconMetrics.swift */
+  --tab-favicon-radius: max(2px, 3.6px);    /* 20% of size */
+  --tab-favicon-emoji-ratio: 0.82;
+  --tab-trailing-control-size: 28px;        /* close button; shown on hover or when selected */
+  --tab-trailing-glyph-size: 12px;
+  --tab-icon-cluster-gap: 3px;              /* favicon to saved-location indicator */
+
+  /* --- Tab list: Sidebar/Support/BrowserSidebarTabListMetrics.swift (.pointer) --- */
+  --tab-divider-inset-x: 12px;
+  --tab-divider-inset-y: 3px;
+  --tab-clear-action-gap: 8px;
+  --tab-section-end-band: 12px;
+  /* New tab row: BrowserSidebarNewTabRowMetrics.swift: label inset 9px, fixed row height, hover surface */
+  --new-tab-label-inset: 9px;
+
+  /* --- Folders: Sidebar/Support/BrowserFolderLayout.swift, BrowserFolderHeaderMetrics.swift (.pointer) --- */
+  --folder-nesting-indent: 4px;
+  --folder-content-indent: 16px;            /* per depth */
+  --folder-header-spacing: 7px;
+  --folder-icon-width: 18px;
+  --folder-header-padding-right: 9px;
+  /* surface left inset = 8 + 4 * depth; row left inset = 4 * (depth + 1);
+     header left inset = 9 + 16 * depth; row content indent (depth > 0) = 16 * depth - 4 * (depth - 1) */
+
+  /* --- Space switcher: Sidebar/Support/BrowserSpaceSwitcherLayout.swift, BrowserSpacePickerMetrics.swift,
+         Spaces/Components/CrestSpaceSelector/Components/CrestSpaceIconPicker/Support/CrestSpaceIconPickerMetrics.swift --- */
+  --switcher-height: 50px;
+  --switcher-padding-x: 12px;
+  --switcher-spacing: 2px;
+  --switcher-utility-button: 32px;          /* sidebar toggle (left) and utilities (right) */
+  --switcher-segment-width: 40px;
+  --switcher-segment-height: 30px;
+  --switcher-track-padding: 3px;            /* track height = 36px */
+  --switcher-track-radius: 8px;
+  --switcher-track-fill-opacity: 0.08;
+  --switcher-track-border-opacity: 0.12;
+  --switcher-selection-fill-opacity: 0.20;  /* tinted with the Space colour */
+  --switcher-selection-stroke: 1.5px;
+  --switcher-overflow-button-width: 28px;   /* arrows appear when the segments do not fit */
+  --switcher-icon-size: 24px;
+  --switcher-lock-size: 6px;
+  --switcher-dot-segment-width: 16px;       /* "dots" display style */
+  /* Picker viewport = width - 2 * 12 - 2 * max(leading utility + 2, trailing utility + 2); content = 6 + 40 * count */
+
+  /* --- Space chips (settings, onboarding): Spaces/Components/CrestSpaceSelector/Support/CrestSpaceChipMetrics.swift --- */
+  --space-chip-height: 42px;
+  --space-chip-radius: 12px;
+  --space-chip-padding-x: 12px;
+  --space-chip-gap: 8px;
+  --space-chip-icon: 24px;
+  --space-chip-selected-stroke: 1.25px;
+  --space-chip-resting-stroke: 0.75px;
+  --space-chip-selected-stroke-opacity: 0.72;
+  --space-chip-dash: 6px 5px;               /* add chip */
+}
+
+:root {
+  /* Command bar: Chrome/Components/BrowserCommandPalette/Support/BrowserCommandPaletteMetrics.swift */
+  --palette-max-width: 720px;
+  --palette-card-radius: 26px;
+  --palette-card-padding: 24px;
+  --palette-field-min-height: 68px;
+  --palette-field-padding-x: 20px;
+  --palette-field-spacing: 12px;
+  --palette-results-max-height: 390px;
+  --palette-results-outer-padding: 28px;
+  --palette-result-content-padding: 14px;
+  --palette-row-height: 54px;
+  --palette-row-spacing: 6px;
+  --palette-row-radius: 12px;
+  --palette-row-padding-x: 12px;
+  --palette-row-gap: 12px;
+  --palette-row-text-gap: 2px;
+  --palette-row-selected-opacity: 0.16;
+  --palette-row-resting-opacity: 0.045;
+  --palette-row-icon-box: 34px;
+  --palette-row-icon-radius: 8px;
+  --palette-row-icon-bg-opacity: 0.08;
+  --palette-row-favicon: 20px;
+  --palette-row-symbol: 16px;
+  --palette-intent-symbol: 18px;
+  --palette-header-height: 17px;
+  --palette-section-spacing: 16px;
+  --palette-chip-row-height: 44px;
+  --palette-chip-icon: 14px;
+  --palette-chip-plate: 20px;
+  --palette-shortcut-min-height: 20px;
+  --palette-shortcut-radius: 5px;
+  --palette-shortcut-padding-x: 6px;
+  --palette-shortcut-bg-opacity: 0.07;
+  --palette-scrim-opacity: 0.18;
+  --palette-morph-scale: 0.97;
+
+  /* Find bar: Shared/Features/Browser/Components/BrowserFindBar/Support/BrowserFindBarMetrics.swift (.pointer) */
+  --find-bar-height: 36px;
+  --find-query-width: 190px;
+  --find-item-spacing: 6px;
+  --find-padding-x: 10px;
+  --find-status-width: 62px;
+  --find-shadow: 0 0 12px rgb(0 0 0 / 0.14);
+
+  /* Split View: Shared/Features/SplitView/Support/BrowserSplitLayoutMetrics.swift,
+     SplitView/Components/BrowserSplitCardResizeHandle/Support/BrowserSplitCardResizeHandleMetrics.swift */
+  --split-gap: 8px;
+  --split-min-card-width: 240px;
+  --split-resize-hit-width: 16px;           /* gap + 4px overhang each side */
+  --split-resize-indicator: 2px 46px;
+  --split-resize-indicator-opacity: 0.28;
+
+  /* Peek: Shared/Features/TransientBrowsing/Models/BrowserTransientCardArrangement.swift */
+  --peek-content-fraction: 0.8;             /* card is 80%-100% of the page area (user setting peekSize) */
+  --peek-pointer-margin: 24px;
+
+  /* Page overlays: Mac/Features/Browser/Components/BrowserWebPageSurface/Support/BrowserWebPageSurfaceMetrics.swift */
+  --infobar-max-width: 640px;
+  --infobar-radius: 16px;
+  --infobar-padding: 10px 14px;
+  --infobar-spacing: 8px;
+  --page-feedback-height: 38px;
+  --page-feedback-shadow: 0 6px 14px rgb(0 0 0 / 0.18);
+  --share-picker-width: 360px;
+
+  /* Site control popover: Mac/Features/Sidebar/BrowserSiteControlButton/Support/BrowserSiteControlMetrics.swift */
+  --site-control-width: 292px;
+  --site-control-expanded-height: 520px;
+  --site-control-max-height: 560px;
+  --site-control-action-height: 34px;
+  --site-control-extension-columns: 4;
+  --site-control-extension-gap: 6px;
+
+  /* Start page: Shared/Features/StartPage/Components/BrowserStartPage/Models/BrowserStartPageLayout.swift (.macOSPage) */
+  --start-page-spacing: 28px;
+  --start-page-padding: 40px;
+  --start-page-max-width: 820px;
+  --start-page-mark-size: 60px;
+
+  /* Quick Window: Mac/Features/QuickWindow/Support/BrowserQuickWindowLayout.swift */
+  --quick-window-default: 720px 460px;
+  --quick-window-min: 600px 400px;
+  --quick-window-control-height: 36px;
+  --quick-window-padding-x: 10px;
+  --quick-window-toolbar-spacing: 8px;
+  --quick-window-address-min-width: 220px;
+  --quick-window-space-picker-width: 240px;
+  --quick-window-space-picker-row: 38px;
+
+  /* Layer order: Shared/Features/Browser/Support/BrowserRootMetrics.swift */
+  --z-sidebar-resize: 3;
+  --z-floating-sidebar: 4;
+  --z-floating-sidebar-resize: 5;
+  --z-utility-fan: 8;
+  --z-command-palette: 10;
+  --z-peek: 20;
+  --z-feedback: 30;
+}

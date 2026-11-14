@@ -4,14 +4,24 @@
 
 import {
     decodeChange,
+    decodePageRequestAnswer,
     decodeQueryAnswer,
     decodeRejection,
     encodeIntent,
+    encodePageRequest,
     encodeQuery,
     WireReader,
     WireWriter,
 } from "../generated/crest_contracts.js";
-import type { Change, Intent, Query, QueryAnswers, Rejection } from "../generated/crest_contracts.js";
+import type {
+    Change,
+    Intent,
+    PageRequest,
+    PageRequestAnswers,
+    Query,
+    QueryAnswers,
+    Rejection,
+} from "../generated/crest_contracts.js";
 
 declare const chrome: { send(message: string, args?: unknown[]): void };
 
@@ -137,7 +147,27 @@ export async function query<K extends Query["kind"] & keyof QueryAnswers>(
     return result;
 }
 
-/** Shows the engine's page `pageId` beside the sidebar. */
+/** Places the page's view over the window's page card, in CSS pixels. */
+export function setPageBounds(x: number, y: number, width: number, height: number): void {
+    chrome.send("setPageBounds", [x, y, width, height]);
+}
+
+/** Shows the engine's page `pageId` in the window's page card. */
 export function showPage(pageId: string): void {
     chrome.send("showPage", [pageId]);
+}
+
+/** Asks the engine about one of its pages directly, as the Mac's views do. */
+export async function pageRequest<K extends PageRequest["kind"] & keyof PageRequestAnswers>(
+    kind: K,
+    value: Extract<PageRequest, { kind: K }>["value"],
+): Promise<PageRequestAnswers[K]> {
+    const writer = new WireWriter();
+    encodePageRequest(writer, { kind, value } as PageRequest);
+    const answer = await send<CallAnswer>("pageRequest", toBase64(writer.bytes()));
+    if (answer.status !== CREST_OK) throw new Error(`The engine could not answer ${kind} (status ${answer.status}).`);
+    const reader = new WireReader(fromBase64(answer.bytes));
+    const result = decodePageRequestAnswer(kind, reader);
+    reader.finish();
+    return result;
 }

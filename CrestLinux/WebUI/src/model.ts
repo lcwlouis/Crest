@@ -2,11 +2,41 @@
 // publishes. The core owns every rule; this only follows what it says, as the
 // Swift UI's CoreState does on the Mac.
 
-import type { Change, Guid, PageState, SpaceState, TabState, WindowState } from "../generated/crest_contracts.js";
+import type {
+    Change,
+    FolderState,
+    Guid,
+    PageState,
+    SidebarList,
+    SpaceState,
+    SplitGroupState,
+    TabPlacement,
+    TabState,
+    WindowState,
+} from "../generated/crest_contracts.js";
 
 export interface Space {
     state: SpaceState;
     tabs: TabState[];
+    folders: Map<Guid, FolderState>;
+    splitGroups: Map<Guid, SplitGroupState>;
+    /** The core's sidebar outline: each list by `listKey`. */
+    lists: Map<string, SidebarList>;
+}
+
+/** The key of the list holding `section`'s top level, or the inside of `folderId`. */
+export function listKey(section: TabPlacement, folderId: Guid | null): string {
+    return folderId ? `folder:${folderId}` : `section:${section}`;
+}
+
+function spaceFrom(state: SpaceState): Space {
+    return {
+        state,
+        tabs: [...state.tabs],
+        folders: new Map(state.folders.map((folder) => [folder.id, folder])),
+        splitGroups: new Map(state.splitGroups.map((group) => [group.id, group])),
+        lists: new Map(state.sidebar.lists.map((list) => [listKey(list.section, list.folderId), list])),
+    };
 }
 
 export interface Workspace {
@@ -40,7 +70,7 @@ export class Model {
             case "WorkspaceOpened": {
                 const { workspaceId, session } = change.value;
                 const spaces = new Map<Guid, Space>();
-                for (const space of session.spaces) spaces.set(space.id, { state: space, tabs: [...space.tabs] });
+                for (const space of session.spaces) spaces.set(space.id, spaceFrom(space));
                 this.workspaces.set(workspaceId, {
                     id: workspaceId,
                     spaces,
@@ -56,7 +86,7 @@ export class Model {
                 if (!workspace) break;
                 for (const id of change.value.removed) workspace.spaces.delete(id);
                 for (const space of change.value.added) {
-                    workspace.spaces.set(space.id, { state: space, tabs: [...space.tabs] });
+                    workspace.spaces.set(space.id, spaceFrom(space));
                 }
                 workspace.order = change.value.order
                     ? [...change.value.order]
@@ -82,6 +112,25 @@ export class Model {
                     ...change.value.updated.map((tab) => tab.id).filter((id) => !space.tabs.some((tab) => tab.id === id)),
                 ];
                 space.tabs = order.map((id) => byId.get(id)).filter((tab): tab is TabState => tab !== undefined);
+                break;
+            }
+            case "SidebarChanged": {
+                const space = this.workspaces.get(change.value.workspaceId)?.spaces.get(change.value.spaceId);
+                if (!space) break;
+                for (const folderId of change.value.removedFolderIds) space.lists.delete(listKey("Current", folderId));
+                for (const list of change.value.lists) space.lists.set(listKey(list.section, list.folderId), list);
+                break;
+            }
+            case "FoldersChanged": {
+                const space = this.workspaces.get(change.value.workspaceId)?.spaces.get(change.value.spaceId);
+                if (!space) break;
+                for (const id of change.value.removed) space.folders.delete(id);
+                for (const folder of change.value.updated) space.folders.set(folder.id, folder);
+                break;
+            }
+            case "SplitGroupsChanged": {
+                const space = this.workspaces.get(change.value.workspaceId)?.spaces.get(change.value.spaceId);
+                if (space) space.splitGroups = new Map(change.value.groups.map((group) => [group.id, group]));
                 break;
             }
             case "WindowChanged":

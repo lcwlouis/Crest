@@ -11,8 +11,9 @@
 #include "chrome/browser/ui/crest/crest_linux_ui.h"
 #include "chrome/browser/ui/crest/crest_webui_linux.h"
 #include "content/public/browser/web_contents.h"
+#include "ui/gfx/geometry/rounded_corners_f.h"
+#include "ui/views/controls/native/native_view_host.h"
 #include "ui/views/controls/webview/webview.h"
-#include "ui/views/layout/box_layout.h"
 #include "ui/views/view.h"
 #include "ui/views/widget/widget.h"
 #include "url/gurl.h"
@@ -21,10 +22,28 @@ namespace crest {
 
 namespace {
 
-// The sidebar's width until Crest's own sidebar sizing reaches Linux.
-constexpr int kSidebarWidth = 280;
-
 LinuxWindow* g_window = nullptr;
+
+// The page's corners, BrowserChromeLayout.pageCornerRadius on the Mac.
+constexpr float kPageCornerRadius = 13;
+
+// The window's contents: the WebUI fills them, and the page sits over it in
+// the bounds the WebUI last named, which the WebUI lays out again on resize.
+class Contents final : public views::View {
+ public:
+  raw_ptr<views::WebView> ui = nullptr;
+  raw_ptr<views::WebView> page = nullptr;
+  gfx::Rect page_bounds;
+
+  void Layout(PassKey) override {
+    if (ui) ui->SetBoundsRect(GetLocalBounds());
+    if (page) {
+      gfx::Rect bounds = page_bounds;
+      bounds.Intersect(GetLocalBounds());
+      page->SetBoundsRect(bounds);
+    }
+  }
+};
 
 }  // namespace
 
@@ -45,14 +64,12 @@ LinuxWindow::LinuxWindow(Profile* profile) {
   delegate_.SetHasWindowSizeControls(true);
   delegate_.RegisterWindowClosingCallback(base::BindOnce(&LinuxWindow::Closing, base::Unretained(this)));
 
-  auto contents = std::make_unique<views::View>();
-  auto* layout = contents->SetLayoutManager(
-      std::make_unique<views::BoxLayout>(views::BoxLayout::Orientation::kHorizontal));
-  auto sidebar = std::make_unique<views::WebView>(profile);
-  sidebar->SetPreferredSize(gfx::Size(kSidebarWidth, 0));
-  sidebar_ = contents->AddChildView(std::move(sidebar));
-  page_ = contents->AddChildView(std::make_unique<views::WebView>(profile));
-  layout->SetFlexForView(page_, 1);
+  auto contents = std::make_unique<Contents>();
+  contents->ui = contents->AddChildView(std::make_unique<views::WebView>(profile));
+  // Added after the WebUI, so it draws over it.
+  contents->page = contents->AddChildView(std::make_unique<views::WebView>(profile));
+  ui_ = contents->ui;
+  page_ = contents->page;
   delegate_.SetContentsView(std::move(contents));
 
   widget_ = std::make_unique<views::Widget>();
@@ -64,7 +81,7 @@ LinuxWindow::LinuxWindow(Profile* profile) {
   params.wm_class_class = "Crest";
   params.name = "CrestWindow";
   widget_->Init(std::move(params));
-  sidebar_->LoadInitialURL(GURL(kCrestUIURL));
+  ui_->LoadInitialURL(GURL(kCrestUIURL));
   widget_->Show();
 }
 
@@ -88,6 +105,8 @@ bool LinuxWindow::ShowPage(const std::string& page) {
   }
   shown_page_ = page;
   page_->SetWebContents(contents);
+  // The mask goes with the native view, so each page attached takes it.
+  page_->holder()->SetNativeViewCornerRadii(gfx::RoundedCornersF(kPageCornerRadius));
   return engine_page->Answer(engine::ShowPage{.page_id = engine_page->id()});
 }
 
@@ -95,6 +114,13 @@ void LinuxWindow::ReleasePage(const std::string& page) {
   if (page != shown_page_) return;
   shown_page_.clear();
   page_->SetWebContents(nullptr);
+}
+
+void LinuxWindow::SetPageBounds(const gfx::Rect& bounds) {
+  auto* contents = static_cast<Contents*>(delegate_.GetContentsView());
+  if (contents->page_bounds == bounds) return;
+  contents->page_bounds = bounds;
+  contents->InvalidateLayout();
 }
 
 void LinuxWindow::Closing() {
