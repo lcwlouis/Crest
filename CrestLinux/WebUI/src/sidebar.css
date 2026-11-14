@@ -664,3 +664,61 @@ body.has-page #page {
   animation: none;
   box-shadow: 0 8px 28px rgb(0 0 0 / 0.12), inset 0 0 0 1px var(--crest-subtle-border);
 }
+
+/* --- Navigation failure: BrowserNavigationFailureView --- */
+
+.failure {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  max-width: 520px;
+  padding: var(--start-page-padding);
+  text-align: center;
+}
+
+.failure[hidden] {
+  display: none;
+}
+
+.failure-title {
+  margin: 0 0 8px;
+  font-size: var(--crest-text-title);
+  font-weight: 600;
+}
+
+.failure-message {
+  margin: 0;
+  font-size: var(--crest-text-title3);
+}
+
+.failure-suggestion,
+.failure-code {
+  margin: 0;
+  color: var(--muted);
+}
+
+.failure-code {
+  font: var(--crest-text-caption) ui-monospace, monospace;
+}
+
+.failure-actions {
+  display: flex;
+  gap: 10px;
+  margin: 16px 0 8px;
+}
+
+.failure-button {
+  height: var(--crest-button-standard-height);
+  padding: 0 var(--crest-button-standard-padding-x);
+  border: var(--crest-button-stroke) solid var(--crest-subtle-border);
+  border-radius: var(--crest-radius-control);
+  background: var(--crest-chrome-surface);
+  font-weight: var(--crest-control-title-weight);
+}
+
+.failure-button.prominent {
+  border-color: transparent;
+  background: var(--space-tint);
+  color: white;
+}
