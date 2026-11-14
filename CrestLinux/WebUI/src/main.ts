@@ -144,14 +144,45 @@ function render(): void {
     root.append(switcher);
 }
 
-/** Shows the selected tab's page once the engine has one. */
+/** Tabs this window asked the core to open a page for, until the page appears. */
+const opening = new Set<Guid>();
+
+/**
+ * Gives the selected tab a page and shows it once the engine made it live.
+ * The window asks the core for the page, as the Mac's window does when it
+ * shows a tab that has none; the core asks the engine to create it.
+ */
 function followShownPage(): void {
+    const workspace = model.workspace;
+    const space = shownSpace();
     const tabId = shownTabId();
-    const page = tabId ? model.pageFor(tabId) : undefined;
-    const pageId = page?.id ?? null;
-    if (pageId === shownPageId) return;
-    shownPageId = pageId;
-    if (pageId) showPage(pageId);
+    const tab = tabId ? space?.tabs.find((held) => held.id === tabId) : undefined;
+    if (!workspace || !space || !tab) return;
+    const page = model.pageFor(tab.id);
+    if (!page) {
+        // TODO(linux): a tab with native content (the start page) shows a
+        // view Crest draws itself, which the Linux window does not draw yet.
+        if (tab.nativeContent || opening.has(tab.id)) return;
+        opening.add(tab.id);
+        void dispatch({
+            kind: "OpenPage",
+            value: {
+                pageId: crypto.randomUUID(),
+                workspaceId: workspace.id,
+                spaceId: space.state.id,
+                tabId: tab.id,
+                windowId,
+                transient: null,
+                openerPageId: null,
+            },
+        })
+            .catch(report)
+            .finally(() => opening.delete(tab.id));
+        return;
+    }
+    if (page.phase !== "Live" || page.id === shownPageId) return;
+    shownPageId = page.id;
+    showPage(page.id);
 }
 
 function report(error: unknown): void {
