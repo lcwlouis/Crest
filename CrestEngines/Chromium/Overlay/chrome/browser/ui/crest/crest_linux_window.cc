@@ -46,12 +46,17 @@ class Contents final : public views::View {
       bounds.Intersect(GetLocalBounds());
       page->SetBoundsRect(bounds);
     }
-    if (floating) {
-      gfx::Rect bounds = float_bounds;
-      bounds.Intersect(GetLocalBounds());
-      floating->SetBoundsRect(bounds);
-      floating->SetVisible(!bounds.IsEmpty());
-    }
+    PlaceFloating();
+  }
+
+  // Placed at once rather than at the next layout: a hidden view cannot take
+  // the keyboard, so the surface must show before it is focused.
+  void PlaceFloating() {
+    if (!floating) return;
+    gfx::Rect bounds = float_bounds;
+    bounds.Intersect(GetLocalBounds());
+    floating->SetBoundsRect(bounds);
+    floating->SetVisible(!bounds.IsEmpty());
   }
 };
 
@@ -158,7 +163,7 @@ void LinuxWindow::SetFloat(const gfx::Rect& bounds, bool focus) {
   }
   if (contents->float_bounds != bounds) {
     contents->float_bounds = bounds;
-    contents->InvalidateLayout();
+    contents->PlaceFloating();
   }
   if (bounds.IsEmpty()) {
     // The keyboard goes back to the page the surface took it from.
