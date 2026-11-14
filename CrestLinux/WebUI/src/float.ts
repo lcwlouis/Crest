@@ -1,7 +1,10 @@
-// The page of the small surfaces that float over a web page while it stays
-// in use: the find bar now, notices next. It keeps no state of its own: the
-// window's main WebUI sends what to draw (setFloat) and hears what the person
-// did here (floatEvent), and talks to the core itself.
+// The page of the small surfaces that float over a web page: the find bar,
+// and the questions sites ask (prompt-float.ts). It keeps no state of its
+// own: the window's main WebUI sends what to draw (setFloat) and hears what
+// the person did here (floatEvent), and talks to the core itself.
+
+import { isPromptState, PromptView } from "./prompt-float.js";
+import type { PromptFloatEvent, PromptFloatState } from "./prompt-float.js";
 
 declare const chrome: { send(message: string, args?: unknown[]): void };
 
@@ -14,14 +17,16 @@ export type FloatState =
           readonly query: string | null;
           readonly matches: number | null;
           readonly activeMatch: number;
-      };
+      }
+    | PromptFloatState;
 
 /** What the person did here. */
 export type FloatEvent =
     | { readonly kind: "findQuery"; readonly text: string }
     | { readonly kind: "findNext" }
     | { readonly kind: "findPrevious" }
-    | { readonly kind: "findClose" };
+    | { readonly kind: "findClose" }
+    | PromptFloatEvent;
 
 const surface = document.getElementById("surface")!;
 
@@ -89,7 +94,14 @@ field.addEventListener("keydown", (event) => {
     }
 });
 
+const prompts = new PromptView(surface, send);
+
 function draw(state: FloatState): void {
+    if (isPromptState(state)) {
+        prompts.draw(state);
+        return;
+    }
+    prompts.clear();
     if (state.kind !== "find") {
         surface.replaceChildren();
         return;
