@@ -12,10 +12,11 @@ leaves the Mac engine's inputs and published key unchanged.
   archive's own DEPS.
 - `cipd`: host tools DEPS names only by CIPD version tag, pinned by package
   digest: the Go toolchain Dawn uses to generate Tint's sources.
-- `patches`: the Crest patches from `../Patches` that apply to Linux today, in
-  `series` order. `native-host.patch` and `content-filter.patch` hold the Mac
-  native host and come to Linux with the Linux host. The two `*-apple-unwind`
-  build adjustments are Apple-only.
+- `patches`: the Crest privacy patches from `../Patches`, in `series` order.
+  The host's own patches, `native-host.patch` and `content-filter.patch`, are
+  not listed: `Scripts/control-plane/linux_host_patches.py` derives their
+  Linux versions from them, so Linux follows every change to the Mac host. The
+  two `*-apple-unwind` build adjustments are Apple-only.
 - `linuxPatches`: Linux-only patches in `Patches/` here, applied after
   them. `service-discovery-sniffer.patch` keeps a Linux-only debugging tool
   that requires service discovery out of a build that turns it off.
@@ -36,5 +37,33 @@ python3 Scripts/control-plane/build-chromium-baseline.py \
 ~/Chromium/crest-src/out/CrestBaseline/chrome --ozone-platform=wayland
 ```
 
-This build is stock Chromium with Crest's privacy changes. Crest's own
-interface on Linux comes with the Linux native host.
+Without switches this is stock Chromium with Crest's privacy changes.
+
+## Crest's host and window
+
+`prepare-chromium-linux.py` installs Crest's native host with
+`apply-chromium-host-linux.py`, which also brings a source prepared earlier up
+to date (it skips a host already installed):
+
+```sh
+python3 Scripts/control-plane/apply-chromium-host-linux.py --source ~/Chromium/crest-src
+cd ~/Chromium/crest-src && buildtools/linux64/gn gen out/CrestBaseline
+```
+
+The host is the Mac's, with Linux sources for what the Mac does in AppKit:
+`crest_chrome_host_linux.cc` (the hooks), `crest_browser_window_linux.cc`,
+`crest_core_host_linux.cc` (the browser process loads and creates the core,
+which Crest's Swift UI does on the Mac), `crest_linux_window.cc` (a window with
+Crest's sidebar beside the page) and `crest_webui_linux.cc` (`chrome://crest`,
+the sidebar, which reaches the core through the browser process in the core's
+wire format). The sidebar is `CrestLinux/WebUI`, built with Node 22.13 or later:
+
+```sh
+node CrestLinux/WebUI/build.mjs ~/Chromium/crest-ui
+~/Chromium/crest-src/out/CrestBaseline/chrome --ozone-platform=wayland \
+  --crest-control-plane --user-data-dir=$HOME/.config/crest-dev \
+  --crest-core-library=$PWD/CrestCore/src/CrestCore.Native/bin/Release/net10.0/linux-x64/native/CrestCore.Native.so \
+  --crest-ui-dir=$HOME/Chromium/crest-ui
+```
+
+Crest keeps its session in `Crest/` inside the user data directory.

@@ -13,6 +13,7 @@
 #include "base/observer_list.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
+#include "build/build_config.h"
 #include <string>
 #include <vector>
 
@@ -171,9 +172,11 @@ class CrestExclusiveAccessContext : public ExclusiveAccessContext {
   base::WeakPtr<content::WebContents> content_fullscreen_;
   // When a page last stopped showing alone in a window that stays fullscreen.
   base::TimeTicks page_left_fullscreen_window_;
+#if BUILDFLAG(IS_MAC)
   // The observers of the window's fullscreen transitions.
   void* window_fullscreen_observers_ = nullptr;
   void* fullscreen_disclosure_ = nullptr;
+#endif
   ExclusiveAccessBubbleHideCallback fullscreen_disclosure_hide_callback_;
   // Hides the disclosure after the time Chromium's own bubble shows for.
   base::OneShotTimer fullscreen_disclosure_timer_;

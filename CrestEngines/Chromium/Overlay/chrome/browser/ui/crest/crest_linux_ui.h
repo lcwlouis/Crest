@@ -1,0 +1,83 @@
+#ifndef CHROME_BROWSER_UI_CREST_CREST_LINUX_UI_H_
+#define CHROME_BROWSER_UI_CREST_CREST_LINUX_UI_H_
+
+// Crest's own UI on Linux, which the Linux shell asks on the UI thread for
+// what only Crest's windows can answer. It mirrors the Mac shell's
+// `CrestMacUI` protocol (CrestEngines/Chromium/Apple/CrestChromiumHost.h) one
+// call for one call, so the browser window and the hooks keep the same shape
+// on both platforms. Crest's Chromium-drawn shell attaches it when it starts;
+// before that every call has a quiet default.
+
+#include <string>
+
+#include "ui/gfx/geometry/rect.h"
+
+class Browser;
+namespace input { struct NativeWebKeyboardEvent; }
+namespace views { class Widget; }
+
+namespace crest {
+
+// A Chromium feature whose own UI this build never shows. Crest says so in a
+// notice instead, in its own words. Same order as CrestUnavailableFeature.
+enum class UnavailableFeature {
+  kAutofill,
+  kAddressAutofill,
+  kAddressAutofillSignIn,
+  kAutofillAI,
+  kAutofillOffers,
+  kAutofillReauthentication,
+  kPaymentAutofill,
+  kVirtualCardEnrollment,
+  kProfiles,
+  kEyeDropper,
+  kCaretBrowsing,
+  kPrivateBrowsing,
+  kChromeLabs,
+};
+
+// What one of Chromium's own toasts is about. Same order as
+// CrestEngineNoticeKind.
+enum class EngineNoticeKind {
+  kLinkCopied,
+  kConfirmation,
+};
+
+class LinuxUI {
+ public:
+  virtual ~LinuxUI() = default;
+  // The shell keeps the bounds a maximized or fullscreen window returns to.
+  virtual gfx::Rect RestoredBounds(views::Widget* window) = 0;
+  virtual bool WasMaximizedBeforeFullscreen(views::Widget* window) = 0;
+  // A quit the application asked for; true while Crest finishes it itself.
+  virtual bool DeferQuit() = 0;
+  // A launch or activation with no Crest window.
+  virtual bool Reopen() = 0;
+  // What the engine's browser window asks of Crest's: a shortcut web content
+  // did not take, the location field, a bookmark for the active page,
+  // translation and tab search.
+  virtual bool HandleShortcut(const input::NativeWebKeyboardEvent& event) = 0;
+  virtual void FocusLocation() = 0;
+  virtual void BookmarkActivePage() = 0;
+  virtual void TranslatePage() = 0;
+  virtual void TranslateText(const std::u16string& text) = 0;
+  virtual void ShowTabSearch() = 0;
+  virtual void ShowUnavailable(UnavailableFeature feature) = 0;
+  virtual void ShowEngineNotice(const std::u16string& message,
+                                EngineNoticeKind kind) = 0;
+};
+
+// Crest's UI once it has started; null before.
+LinuxUI* GetLinuxUI();
+void SetLinuxUI(LinuxUI* ui);
+
+// The Crest window `browser` shows in; null before Crest's UI places it.
+views::Widget* WindowForBrowser(const Browser* browser);
+
+// The person closed Crest's window: Crest lets its pages go, closes its core
+// and quits, as a quit from the Mac's application menu does.
+void CrestWindowClosed();
+
+}  // namespace crest
+
+#endif  // CHROME_BROWSER_UI_CREST_CREST_LINUX_UI_H_

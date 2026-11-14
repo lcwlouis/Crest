@@ -1,0 +1,18 @@
+{
+  "compilerOptions": {
+    "target": "es2022",
+    "module": "es2022",
+    "lib": ["es2022", "dom", "dom.iterable"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "rootDir": ".",
+    "outDir": "out",
+    "rewriteRelativeImportExtensions": false,
+    "skipLibCheck": true
+  },
+  "include": ["src/*.ts", "generated/*.ts"]
+}

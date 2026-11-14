@@ -1,0 +1,16 @@
+# Crest's Linux host joins the browser target, as the Mac host joins its Mac
+# dependencies in native-host.patch.
+
+--- a/chrome/browser/BUILD.gn
++++ b/chrome/browser/BUILD.gn
+@@ -4533,6 +4533,10 @@
+     ]
+   }
+ 
++  if (is_linux) {
++    deps += [ ":crest_host" ]
++  }
++
+   if (is_mac) {
+     deps += [
+       ":app_controller_mac",
