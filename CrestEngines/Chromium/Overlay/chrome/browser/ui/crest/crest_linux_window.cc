@@ -74,14 +74,21 @@ LinuxWindow::~LinuxWindow() {
   if (g_window == this) g_window = nullptr;
 }
 
+// The page is shown as the Mac shows one: the engine's ShowPage makes its
+// WebContents visible and the active tab of the Browser that keeps it, and the
+// page it replaces is hidden.
 bool LinuxWindow::ShowPage(const std::string& page) {
-  EnginePage* engine_page = EngineBinding::Get().Find(page);
+  EngineBinding& binding = EngineBinding::Get();
+  EnginePage* engine_page = binding.Find(page);
   content::WebContents* contents = engine_page ? engine_page->web_contents() : nullptr;
   if (!contents) return false;
+  if (page == shown_page_ && page_->web_contents() == contents) return true;
+  if (EnginePage* hidden = shown_page_.empty() ? nullptr : binding.Find(shown_page_)) {
+    hidden->Answer(engine::HidePage{.page_id = hidden->id()});
+  }
   shown_page_ = page;
   page_->SetWebContents(contents);
-  contents->Focus();
-  return true;
+  return engine_page->Answer(engine::ShowPage{.page_id = engine_page->id()});
 }
 
 void LinuxWindow::ReleasePage(const std::string& page) {

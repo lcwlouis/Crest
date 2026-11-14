@@ -18,6 +18,7 @@
 #include "base/task/thread_pool.h"
 #include "base/values.h"
 #include "chrome/browser/ui/crest/crest_core_host_linux.h"
+#include "chrome/browser/ui/crest/crest_engine_binding.h"
 #include "chrome/browser/ui/crest/crest_linux_window.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
@@ -140,7 +141,11 @@ class CrestUIHandler final : public content::WebUIMessageHandler, public CoreHos
   // args: the core's page id. Shows that page beside the sidebar.
   void HandleShowPage(const base::ListValue& args) {
     if (args.empty() || !args[0].is_string()) return;
-    if (LinuxWindow* window = LinuxWindow::Current()) window->ShowPage(args[0].GetString());
+    // The sidebar spells ids in lower case; the binding keys pages by
+    // GuidText, which spells them in upper case.
+    const std::optional<engine::Guid> page = ParseGuid(args[0].GetString());
+    if (!page) return;
+    if (LinuxWindow* window = LinuxWindow::Current()) window->ShowPage(GuidText(*page));
   }
 
   base::ScopedObservation<CoreHost, CoreHost::Observer> observation_{this};
