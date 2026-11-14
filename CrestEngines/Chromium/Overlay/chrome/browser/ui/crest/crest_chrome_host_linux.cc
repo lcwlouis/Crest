@@ -147,7 +147,7 @@ views::Widget* WindowForBrowser(const Browser* browser) {
   if (!State().started) return nullptr;
   // Crest on Linux has one window so far; every Browser shows in it.
   LinuxWindow* window = LinuxWindow::Current();
-  return window ? window->GetWidget() : nullptr;
+  return window ? window->widget() : nullptr;
 }
 
 // TODO(linux): Crest's quit preparation (downloads, unsaved pages) asks
