@@ -164,10 +164,11 @@ function followShownPage(): void {
         // view Crest draws itself, which the Linux window does not draw yet.
         if (tab.nativeContent || opening.has(tab.id)) return;
         opening.add(tab.id);
+        const pageId = crypto.randomUUID();
         void dispatch({
             kind: "OpenPage",
             value: {
-                pageId: crypto.randomUUID(),
+                pageId,
                 workspaceId: workspace.id,
                 spaceId: space.state.id,
                 tabId: tab.id,
@@ -176,6 +177,11 @@ function followShownPage(): void {
                 openerPageId: null,
             },
         })
+            // A new page starts at its tab's address, which the window asks
+            // the core to load, as the Mac's page pool does.
+            // TODO(linux): restore the tab's archived history first, as the
+            // Mac does, when the tab has one.
+            .then(() => (tab.url ? dispatch({ kind: "LoadAddress", value: { pageId, url: tab.url } }) : undefined))
             .catch(report)
             .finally(() => opening.delete(tab.id));
         return;
