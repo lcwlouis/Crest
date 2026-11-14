@@ -33,6 +33,22 @@ Linux and Windows have no published content filter, so publishing compiles
 `CrestCore/native/ContentFilter` with Cargo for the machine it runs on and
 links it into the library. Build on the operating system you are targeting.
 
+## The interface's contracts
+
+The Linux interface is a web page that talks to the core in the same binary
+contract the Mac app uses. The contract generator writes its TypeScript types
+and codec to `CrestLinux/WebUI/generated/crest_contracts.ts`, and
+`Scripts/control-plane/generate-contracts.sh --check` fails when the file is
+stale.
+
+The core's tests write what its own codec makes of every contract value to
+`contract-fixtures.json` beside the test binaries. After they run, check that
+the TypeScript codec reads each value and writes the same bytes back:
+
+```sh
+node CrestLinux/WebUI/tests/contract_parity.mjs
+```
+
 ## Build Chromium
 
 `CrestEngines/Chromium/Linux/README.md` prepares and builds the pinned Chromium
