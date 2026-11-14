@@ -10,7 +10,9 @@ else
     installer="$(mktemp "${TMPDIR:-/tmp}/crest-dotnet-install.XXXXXX")"
     trap 'rm -f "$installer"' EXIT INT TERM HUP
     curl --fail --location --retry 3 https://dot.net/v1/dotnet-install.sh --output "$installer"
-    bash "$installer" --version "$sdk_version" --architecture arm64 --install-dir "$sdk_directory" --no-path
+    # Mac builds are Apple silicon even from a Rosetta shell; elsewhere the machine's own architecture.
+    architecture="$([[ "$(uname -s)" == Darwin ]] && echo arm64 || echo "<auto>")"
+    bash "$installer" --version "$sdk_version" --architecture "$architecture" --install-dir "$sdk_directory" --no-path
 fi
 # Runner images ship their own dotnet on PATH, which may lack the pinned SDK.
 # Later steps of a GitHub Actions job resolve this one first.

@@ -37,4 +37,35 @@
       <LinkerArg Include="-Wl,-exported_symbol,_crest_content_filter_buffer_free" />
     </ItemGroup>
   </Target>
+  <!-- Linux and Windows have no published content filter, so the core compiles the crate for the
+       machine it builds on, which needs Rust. Cross-compiling to another OS is not supported. -->
+  <Target Name="CrestContentFilterSourceLibrary" BeforeTargets="SetupOSSpecificProps"
+      Condition="$(RuntimeIdentifier.StartsWith('linux-')) or $(RuntimeIdentifier.StartsWith('win-'))">
+    <PropertyGroup>
+      <CrestContentFilterCrate>$(MSBuildThisFileDirectory)../../native/ContentFilter</CrestContentFilterCrate>
+      <CrestContentFilterLibraryName Condition="$(RuntimeIdentifier.StartsWith('win-'))">crest_content_filter.lib</CrestContentFilterLibraryName>
+      <CrestContentFilterLibraryName Condition="!$(RuntimeIdentifier.StartsWith('win-'))">libcrest_content_filter.a</CrestContentFilterLibraryName>
+    </PropertyGroup>
+    <Exec Command="cargo build --release --locked --manifest-path &quot;$(CrestContentFilterCrate)/Cargo.toml&quot;"
+        IgnoreStandardErrorWarningFormat="true" />
+    <ItemGroup>
+      <NativeLibrary Include="$(CrestContentFilterCrate)/target/release/$(CrestContentFilterLibraryName)" />
+    </ItemGroup>
+  </Target>
+  <!-- An engine that checks each request itself calls the slot check directly. On Linux and Windows
+       the core's exports are the list Native AOT writes, so the slot check joins that list. -->
+  <ItemGroup>
+    <CrestContentFilterExport Include="crest_content_filter_slot_check;crest_content_filter_slot_check_redirect;crest_content_filter_buffer_free" />
+  </ItemGroup>
+  <Target Name="CrestContentFilterExports" AfterTargets="IlcCompile" BeforeTargets="LinkNative"
+      Condition="$(RuntimeIdentifier.StartsWith('linux-')) or $(RuntimeIdentifier.StartsWith('win-'))">
+    <PropertyGroup>
+      <CrestExports>$([System.IO.File]::ReadAllText('$(ExportsFile)'))</CrestExports>
+      <CrestVersionScriptExports>@(CrestContentFilterExport->'%(Identity)%3B', ' ')</CrestVersionScriptExports>
+      <CrestDefinitionExports>@(CrestContentFilterExport->'%0A    %(Identity)', '')</CrestDefinitionExports>
+      <CrestExports Condition="$(RuntimeIdentifier.StartsWith('linux-'))">$(CrestExports.Replace('global:', 'global: $(CrestVersionScriptExports)'))</CrestExports>
+      <CrestExports Condition="$(RuntimeIdentifier.StartsWith('win-'))">$(CrestExports.TrimEnd())$(CrestDefinitionExports)</CrestExports>
+    </PropertyGroup>
+    <WriteLinesToFile File="$(ExportsFile)" Lines="$([MSBuild]::Escape($(CrestExports)))" Overwrite="true" />
+  </Target>
 </Project>
