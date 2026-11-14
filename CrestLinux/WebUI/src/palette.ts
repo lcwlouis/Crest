@@ -21,9 +21,10 @@ import type {
     SearchProvider,
     TabState,
 } from "../generated/crest_contracts.js";
-import { query, setOverlay } from "./bridge.js";
+import { query } from "./bridge.js";
 import type { Commands } from "./commands.js";
 import type { TabIcons } from "./icons.js";
+import { holdOverlay } from "./overlay.js";
 import type { Space, Workspace } from "./model.js";
 import { element, symbol } from "./sidebar.js";
 
@@ -93,6 +94,7 @@ export class Palette {
     private mayComplete = false;
     private completion: AddressCompletion | null = null;
     private waitingKey: (() => void) | null = null;
+    private releaseOverlay: (() => void) | null = null;
 
     constructor(host: PaletteHost, embedIn: HTMLElement | null = null) {
         this.host = host;
@@ -145,9 +147,8 @@ export class Palette {
         this.selected = 0;
         this.field.value = text;
         this.drawChip();
-        document.body.classList.add("overlay");
         this.layer.hidden = false;
-        setOverlay(true);
+        this.releaseOverlay ??= holdOverlay();
         this.field.focus();
         this.field.select();
         this.ask();
@@ -175,8 +176,8 @@ export class Palette {
         this.layer.hidden = true;
         this.waitingKey = null;
         this.asked++;
-        setOverlay(false);
-        document.body.classList.remove("overlay");
+        this.releaseOverlay?.();
+        this.releaseOverlay = null;
         this.field.blur();
     }
 
