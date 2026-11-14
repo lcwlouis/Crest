@@ -51,16 +51,61 @@ body {
   background: var(--page-empty, rgb(255 255 255 / 0.5));
 }
 
+/* BrowserChromeLayout: a 48pt band for the navigation controls, 30pt hit
+   targets, the address field 36pt high with compact corners. */
+.nav {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 2px;
+  height: 48px;
+  margin: -12px 0 0;
+  padding-right: 4px;
+}
+
+.nav-control {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: var(--text);
+  opacity: 0.75;
+  transition: opacity 120ms ease;
+}
+
+.nav-control:hover:not(:disabled) {
+  background: var(--row-hover);
+  opacity: 1;
+}
+
+.nav-control:disabled {
+  opacity: 0.25;
+}
+
+.tabs {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+  overflow-y: auto;
+}
+
 .space-name {
   font-weight: 600;
   padding: 4px 8px 8px;
 }
 
 .address {
+  height: 36px;
+  box-sizing: border-box;
   margin: 0 0 8px;
-  padding: 8px 10px;
+  padding: 0 10px;
   border: none;
-  border-radius: 10px;
+  border-radius: 8px;
   background: var(--row-hover);
   color: inherit;
   font: inherit;

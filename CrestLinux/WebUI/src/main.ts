@@ -2,9 +2,9 @@
 // it, as the Mac app does at launch, then draws the shown Space's tabs and
 // shows the selected tab's page beside the sidebar.
 
-import { connect, dispatch, query, Refused, setPageBounds, showPage } from "./bridge.js";
+import { connect, dispatch, pageRequest, query, Refused, setPageBounds, showPage } from "./bridge.js";
 import { TabIcons } from "./icons.js";
-import type { Guid, LaunchEnvironment, TabState } from "../generated/crest_contracts.js";
+import type { Guid, LaunchEnvironment, PageState, TabState } from "../generated/crest_contracts.js";
 import { Model } from "./model.js";
 import type { Space, Workspace } from "./model.js";
 
@@ -107,39 +107,107 @@ async function openAddress(workspaceId: Guid, spaceId: Guid, input: string): Pro
     });
 }
 
+/** The page the window shows, if the engine has one for the shown tab. */
+function shownPage(): PageState | undefined {
+    const tabId = shownTabId();
+    return tabId ? model.pageFor(tabId) : undefined;
+}
+
+const icon = {
+    back: '<path d="M15 18l-6-6 6-6"/>',
+    forward: '<path d="M9 18l6-6-6-6"/>',
+    reload: '<path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/>',
+    stop: '<path d="M18 6L6 18"/><path d="M6 6l12 12"/>',
+};
+
+function symbol(paths: string): string {
+    return `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
+}
+
+function control(label: string, act: () => void): HTMLButtonElement {
+    const button = element("button", "nav-control");
+    button.title = label;
+    button.setAttribute("aria-label", label);
+    button.addEventListener("click", act);
+    return button;
+}
+
+// The sidebar's top: the navigation controls and the address field, which
+// stay in place while the tabs below draw again, so typing is never lost.
+const navigation = element("div", "nav");
+const back = control("Back", () => step(-1));
+const forward = control("Forward", () => step(1));
+const reload = control("Reload", () => reloadOrStop());
+back.innerHTML = symbol(icon.back);
+forward.innerHTML = symbol(icon.forward);
+navigation.append(back, forward, reload);
+const spaceName = element("div", "space-name");
+const address = element("input", "address");
+address.placeholder = "Search or enter address";
+address.spellcheck = false;
+address.addEventListener("keydown", (event) => {
+    const space = shownSpace();
+    const workspace = model.workspace;
+    if (event.key !== "Enter" || !space || !workspace || address.value.trim().length === 0) return;
+    const text = address.value.trim();
+    address.value = "";
+    address.blur();
+    void openAddress(workspace.id, space.state.id, text).catch(report);
+});
+const list = element("div", "tabs");
+const switcher = element("div", "spaces");
+root.append(navigation, address, list, switcher);
+
+/** Steps the shown page through its history, as the Mac's back and forward controls do. */
+function step(offset: number): void {
+    const page = shownPage();
+    if (page) void dispatch({ kind: "StepHistory", value: { pageId: page.id, offset } }).catch(report);
+}
+
+function reloadOrStop(): void {
+    const page = shownPage();
+    if (!page) return;
+    const request = page.live.isLoading
+        ? pageRequest("StopLoading", { pageId: page.id })
+        : pageRequest("ReloadPage", { pageId: page.id, bypassesCache: false });
+    void request.catch(report);
+}
+
 function render(): void {
-    root.replaceChildren();
     const workspace = model.workspace;
     const space = shownSpace();
+    root.hidden = !workspace || !space;
     if (!workspace || !space) return;
     const selected = shownTabId();
+    const page = shownPage();
 
-    root.append(element("div", "space-name", space.state.settings.name));
+    back.disabled = !page?.live.canGoBack;
+    forward.disabled = !page?.live.canGoForward;
+    reload.disabled = !page;
+    const loading = page?.live.isLoading ?? false;
+    if (reload.dataset.loading !== String(loading)) {
+        reload.dataset.loading = String(loading);
+        reload.innerHTML = symbol(loading ? icon.stop : icon.reload);
+        reload.title = loading ? "Stop" : "Reload";
+    }
+    spaceName.textContent = space.state.settings.name;
 
-    const address = element("input", "address");
-    address.placeholder = "Search or enter address";
-    address.addEventListener("keydown", (event) => {
-        if (event.key !== "Enter" || address.value.trim().length === 0) return;
-        const text = address.value.trim();
-        address.value = "";
-        void openAddress(workspace.id, space.state.id, text).catch(report);
-    });
-    root.append(address);
-
+    list.replaceChildren();
     const pinned = space.tabs.filter((tab) => tab.placement === "Pinned");
     if (pinned.length > 0) {
         const grid = element("div", "pinned");
         for (const tab of pinned) grid.append(tabRow(space, tab, tab.id === selected));
-        root.append(grid);
+        list.append(grid);
     }
+    list.append(spaceName);
     const saved = space.tabs.filter((tab) => tab.placement === "Saved");
-    for (const tab of saved) root.append(tabRow(space, tab, tab.id === selected));
-    root.append(element("div", "divider"));
+    for (const tab of saved) list.append(tabRow(space, tab, tab.id === selected));
+    list.append(element("div", "divider"));
     for (const tab of space.tabs.filter((tab) => tab.placement === "Current")) {
-        root.append(tabRow(space, tab, tab.id === selected));
+        list.append(tabRow(space, tab, tab.id === selected));
     }
 
-    const switcher = element("div", "spaces");
+    switcher.replaceChildren();
     for (const id of workspace.order) {
         const other = workspace.spaces.get(id);
         if (!other) continue;
@@ -151,7 +219,6 @@ function render(): void {
         });
         switcher.append(dot);
     }
-    root.append(switcher);
 }
 
 /** Tabs this window asked the core to open a page for, until the page appears. */
