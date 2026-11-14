@@ -8,6 +8,7 @@
     "src/third_party/node/linux",
     "src/build/linux/debian_bullseye_amd64-sysroot"
   ],
+  "cipd": {},
   "patches": [
     "google-request-allowlist.patch",
     "component-updater-services.patch",
