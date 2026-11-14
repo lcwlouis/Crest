@@ -1,0 +1,156 @@
+:root {
+  color-scheme: light dark;
+  --sidebar: #e9e4f0;
+  --row-hover: rgb(0 0 0 / 0.06);
+  --row-selected: rgb(255 255 255 / 0.85);
+  --text: #1d1b20;
+  --muted: rgb(0 0 0 / 0.45);
+  font: 13px/1.3 system-ui, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --sidebar: #2a2730;
+    --row-hover: rgb(255 255 255 / 0.06);
+    --row-selected: rgb(255 255 255 / 0.14);
+    --text: #f2eff6;
+    --muted: rgb(255 255 255 / 0.5);
+  }
+}
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--sidebar);
+  color: var(--text);
+  user-select: none;
+}
+
+#sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  height: 100%;
+  box-sizing: border-box;
+  padding: 12px 8px;
+}
+
+.space-name {
+  font-weight: 600;
+  padding: 4px 8px 8px;
+}
+
+.address {
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 10px;
+  background: var(--row-hover);
+  color: inherit;
+  font: inherit;
+  outline: none;
+}
+
+.address:focus {
+  background: var(--row-selected);
+}
+
+.pinned {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(56px, 1fr));
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.pinned .tab {
+  justify-content: center;
+  height: 44px;
+  background: var(--row-hover);
+}
+
+.pinned .tab-title {
+  display: none;
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: default;
+}
+
+.tab:hover {
+  background: var(--row-hover);
+}
+
+.tab.selected {
+  background: var(--row-selected);
+}
+
+.tab-icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.tab-icon img {
+  width: 16px;
+  height: 16px;
+}
+
+.tab-title {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.divider {
+  height: 1px;
+  margin: 6px 8px;
+  background: var(--row-hover);
+}
+
+.spaces {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+  margin-top: auto;
+  padding-top: 8px;
+}
+
+.space {
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 50%;
+  background: var(--row-hover);
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+}
+
+.space.shown {
+  background: var(--row-selected);
+  color: var(--text);
+}
+
+#status {
+  position: fixed;
+  inset: auto 8px 44px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}

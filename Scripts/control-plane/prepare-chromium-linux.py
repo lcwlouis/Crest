@@ -22,6 +22,10 @@ spec.loader.exec_module(shared)
 shared.DEPS_VARIABLES = {"host_os": "linux", "host_cpu": "x64", "checkout_linux": True, "checkout_x64": True,
                          "non_git_source": True}
 
+host_spec = importlib.util.spec_from_file_location("apply_chromium_host_linux", HERE / "apply-chromium-host-linux.py")
+host = importlib.util.module_from_spec(host_spec)
+host_spec.loader.exec_module(host)
+
 ENGINE = shared.ENGINE
 LINUX = ENGINE / "Linux"
 
@@ -91,6 +95,8 @@ def main():
         shared.run(["patch", "-p1", "--forward", "--fuzz=0", "--input", ENGINE / "Patches" / name], staging)
     for name in linux["linuxPatches"]:
         shared.run(["patch", "-p1", "--forward", "--fuzz=0", "--input", LINUX / "Patches" / name], staging)
+    # Crest's native host, its overlay and the headers it compiles against.
+    host.install(staging)
 
     staging.rename(source)
     output = source / "out/CrestBaseline"
