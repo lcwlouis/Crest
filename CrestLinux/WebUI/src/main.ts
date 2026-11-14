@@ -278,7 +278,6 @@ function showAddress(page: PageState | undefined): void {
     address.textContent = host.replace(/^www\./, "") || "Search or enter address";
     address.classList.toggle("empty", host.length === 0);
     address.title = url ?? "";
-    document.body.classList.toggle("has-page", page !== undefined && page.phase === "Live");
 }
 
 /** Tabs this window asked the core to open a page for, until the page appears. */
@@ -290,6 +289,12 @@ const opening = new Set<Guid>();
  * shows a tab that has none; the core asks the engine to create it.
  */
 function followShownPage(): void {
+    followShownPageView();
+    // The card is see-through only while the window shows a page under it.
+    document.body.classList.toggle("has-page", shownPageId !== null);
+}
+
+function followShownPageView(): void {
     const workspace = model.workspace;
     const space = shownSpace();
     const tabId = shownTabId();
