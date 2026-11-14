@@ -23,7 +23,9 @@ import { TabIcons } from "./icons.js";
 import type { Guid, LaunchEnvironment, PageState, TabState } from "../generated/crest_contracts.js";
 import { Model } from "./model.js";
 import type { Space, Workspace } from "./model.js";
+import { InlineRename } from "./rename.js";
 import { element, Sidebar, symbol } from "./sidebar.js";
+import { SidebarMenus } from "./sidebar-menus.js";
 
 const model = new Model();
 const icons = new TabIcons(() => render());
@@ -112,6 +114,7 @@ navigation.append(back, forward, reload);
 const address = element("button", "address");
 address.addEventListener("click", () => palette.open("current", address.dataset.url ?? ""));
 root.append(navigation, address);
+const rename = new InlineRename(() => render());
 const sidebar = new Sidebar(
     {
         model,
@@ -120,6 +123,21 @@ const sidebar = new Sidebar(
         shownTabId,
         send: (intent) => void dispatch(intent).catch(report),
         openNewTab: () => palette.open("newTab"),
+        menus: new SidebarMenus({
+            model,
+            icons,
+            rename,
+            windowId: () => windowId,
+            shownTabId,
+            send: (intent) =>
+                dispatch(intent).then(
+                    () => true,
+                    (error: unknown) => (report(error), false),
+                ),
+            report,
+            perform: (command) => void commands.perform(command),
+        }),
+        rename,
     },
     root,
 );

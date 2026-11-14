@@ -188,6 +188,46 @@ body.has-page #page {
   background: var(--crest-hover);
 }
 
+/* The header and its "…" share one hover surface, as on the Mac. */
+.space-header-bar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  margin: 0 var(--space-header-margin-x);
+  padding-right: var(--space-header-padding-right);
+  border-radius: var(--space-header-radius);
+}
+
+.space-header-bar:hover {
+  background: var(--crest-hover);
+}
+
+.space-header-bar .space-header {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  padding-right: 0;
+  background: none;
+}
+
+.space-actions {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--space-header-actions-size);
+  height: var(--space-header-actions-size);
+  padding: 0;
+  border: none;
+  border-radius: var(--crest-radius-compact);
+  background: none;
+  color: var(--muted);
+}
+
+.space-actions:hover {
+  color: var(--text);
+}
+
 .space-mark {
   display: inline-flex;
   flex: none;
