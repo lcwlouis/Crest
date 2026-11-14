@@ -157,6 +157,39 @@ export function showPage(pageId: string): void {
     chrome.send("showPage", [pageId]);
 }
 
+/**
+ * Raises the WebUI over the page while it draws a floating surface, such as
+ * the command bar, and lowers it again after. Raised, the page shows through
+ * wherever the WebUI paints nothing.
+ */
+export function setOverlay(raised: boolean): void {
+    chrome.send("setOverlay", [raised]);
+}
+
+/** A key the window took from a page for one of Crest's shortcuts. */
+export interface HostKey {
+    readonly key: string;
+    readonly ctrlKey: boolean;
+    readonly altKey: boolean;
+    readonly metaKey: boolean;
+    readonly shiftKey: boolean;
+}
+
+/**
+ * Tells the window which keys are Crest's, each as [key, ctrl, alt, meta,
+ * shift (-1 when it does not matter), reserved from pages], and hears the
+ * ones it takes from a page, and the commands Chromium asks for.
+ */
+export function registerShortcuts(
+    shortcuts: readonly (readonly [string, boolean, boolean, boolean, number, boolean])[],
+    onKey: (key: HostKey) => void,
+    onCommand: (command: string) => void,
+): void {
+    listen("crest-shortcut", (key) => onKey(key as HostKey));
+    listen("crest-command", (command) => onCommand(command as string));
+    chrome.send("setShortcuts", shortcuts.map((shortcut) => [...shortcut]));
+}
+
 /** Asks the engine about one of its pages directly, as the Mac's views do. */
 export async function pageRequest<K extends PageRequest["kind"] & keyof PageRequestAnswers>(
     kind: K,

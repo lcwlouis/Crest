@@ -53,10 +53,10 @@ class LinuxUI {
   virtual bool DeferQuit() = 0;
   // A launch or activation with no Crest window.
   virtual bool Reopen() = 0;
-  // What the engine's browser window asks of Crest's: a shortcut web content
-  // did not take, the location field, a bookmark for the active page,
-  // translation and tab search.
-  virtual bool HandleShortcut(const input::NativeWebKeyboardEvent& event) = 0;
+  // What the engine's browser window asks of Crest's: a shortcut, before the
+  // page sees it or once the page declined it, the location field, a bookmark
+  // for the active page, translation and tab search.
+  virtual bool HandleShortcut(const input::NativeWebKeyboardEvent& event, bool page_declined) = 0;
   virtual void FocusLocation() = 0;
   virtual void BookmarkActivePage() = 0;
   virtual void TranslatePage() = 0;

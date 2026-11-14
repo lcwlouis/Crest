@@ -2,9 +2,12 @@
 // it, as the Mac app does at launch, then draws the shown Space's tabs and
 // shows the selected tab's page beside the sidebar.
 
-import { connect, dispatch, pageRequest, query, Refused, setPageBounds, showPage } from "./bridge.js";
+import { connect, dispatch, pageRequest, query, Refused, registerShortcuts, setPageBounds, showPage } from "./bridge.js";
+import { Commands, shortcutTable } from "./commands.js";
+import { ShortcutCommand } from "../generated/crest_contracts.js";
+import { Palette } from "./palette.js";
 import { TabIcons } from "./icons.js";
-import type { Guid, LaunchEnvironment, PageState } from "../generated/crest_contracts.js";
+import type { Guid, LaunchEnvironment, PageState, TabState } from "../generated/crest_contracts.js";
 import { Model } from "./model.js";
 import type { Space, Workspace } from "./model.js";
 import { element, Sidebar, symbol } from "./sidebar.js";
@@ -51,30 +54,14 @@ function shownSpace(): Space | undefined {
     return window ? model.workspace?.spaces.get(window.shownSpaceId) : undefined;
 }
 
+function shownTab(): TabState | undefined {
+    const tabId = shownTabId();
+    return tabId ? shownSpace()?.tabs.find((tab) => tab.id === tabId) : undefined;
+}
+
 function shownTabId(): Guid | null {
     const window = model.windows.get(windowId);
     return window?.shownTabs.find((shown) => shown.spaceId === window.shownSpaceId)?.tabId ?? null;
-}
-
-/** Opens what the person typed in a new tab, as the core reads it. */
-async function openAddress(workspaceId: Guid, spaceId: Guid, input: string): Promise<void> {
-    const resolved = await query("ResolveAddress", { workspaceId, spaceId, input });
-    // TODO(linux): searches go through the Space's search provider, as the
-    // Mac's command bar sends them.
-    const url = resolved.url ?? `https://duckduckgo.com/?q=${encodeURIComponent(resolved.searchQuery ?? input)}`;
-    await dispatch({
-        kind: "OpenTab",
-        value: {
-            workspaceId,
-            windowId,
-            spaceId,
-            tabId: crypto.randomUUID(),
-            content: { address: url, view: null, title: null },
-            placement: "Current",
-            afterTabId: null,
-            shows: true,
-        },
-    });
 }
 
 /** The page the window shows, if the engine has one for the shown tab. */
@@ -107,32 +94,10 @@ const reload = control("Reload", () => reloadOrStop());
 back.innerHTML = symbol(icon.back);
 forward.innerHTML = symbol(icon.forward);
 navigation.append(back, forward, reload);
-const address = element("input", "address");
-address.placeholder = "Search or enter address";
-address.spellcheck = false;
-address.addEventListener("focus", () => {
-    if (address.value.length === 0 && address.dataset.url) {
-        address.value = address.dataset.url;
-        address.select();
-    }
-});
-address.addEventListener("blur", () => {
-    if (address.value === address.dataset.url) address.value = "";
-});
-address.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") {
-        address.value = "";
-        address.blur();
-        return;
-    }
-    const space = shownSpace();
-    const workspace = model.workspace;
-    if (event.key !== "Enter" || !space || !workspace || address.value.trim().length === 0) return;
-    const text = address.value.trim();
-    address.value = "";
-    address.blur();
-    void openAddress(workspace.id, space.state.id, text).catch(report);
-});
+// The address field shows where the page is; clicking it opens the command
+// bar over the shown tab, as the Mac's address field grows into it.
+const address = element("button", "address");
+address.addEventListener("click", () => palette.open("current", address.dataset.url ?? ""));
 root.append(navigation, address);
 const sidebar = new Sidebar(
     {
@@ -141,9 +106,50 @@ const sidebar = new Sidebar(
         windowId: () => windowId,
         shownTabId,
         send: (intent) => void dispatch(intent).catch(report),
-        openNewTab: () => address.focus(),
+        openNewTab: () => palette.open("newTab"),
     },
     root,
+);
+
+const commands = new Commands({
+    model,
+    windowId: () => windowId,
+    workspace: () => model.workspace,
+    space: shownSpace,
+    tab: shownTab,
+    page: shownPage,
+    send: (intent) => void dispatch(intent).catch(report),
+    report,
+    openPalette: (mode) => palette.open(mode, mode === "current" ? (address.dataset.url ?? "") : ""),
+});
+
+const palette = new Palette({
+    icons,
+    commands,
+    windowId: () => windowId,
+    workspace: () => model.workspace,
+    space: shownSpace,
+    tab: shownTab,
+    page: shownPage,
+    send: (intent) => void dispatch(intent).catch(report),
+    report,
+});
+
+// Crest's keys, while the window's own UI has the focus. The page's view
+// hands Crest the keys it reserves from pages through the host.
+document.addEventListener("keydown", (event) => {
+    if (palette.isOpen || event.defaultPrevented) return;
+    if (commands.handleKey(event)) event.preventDefault();
+});
+registerShortcuts(
+    shortcutTable(commands),
+    (key) => {
+        if (palette.isOpen) palette.close();
+        commands.handleKey(key);
+    },
+    (command) => {
+        if (ShortcutCommand.all.includes(command as ShortcutCommand)) commands.perform(command as ShortcutCommand);
+    },
 );
 
 /** Steps the shown page through its history, as the Mac's back and forward controls do. */
@@ -195,7 +201,10 @@ function showAddress(page: PageState | undefined): void {
     } catch {
         host = url ?? "";
     }
-    address.placeholder = host.replace(/^www\./, "") || "Search or enter address";
+    address.textContent = host.replace(/^www\./, "") || "Search or enter address";
+    address.classList.toggle("empty", host.length === 0);
+    address.title = url ?? "";
+    document.body.classList.toggle("has-page", page !== undefined && page.phase === "Live");
 }
 
 /** Tabs this window asked the core to open a page for, until the page appears. */
