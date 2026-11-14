@@ -29,6 +29,9 @@
     "certificate-transparency-enforced.patch",
     "manifest-v2-extensions.patch"
   ],
+  "linuxPatches": [
+    "service-discovery-sniffer.patch"
+  ],
   "overlay": [
     "services/network/crest_request_policy.cc",
     "services/network/crest_request_policy.h"

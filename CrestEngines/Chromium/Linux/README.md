@@ -16,6 +16,9 @@ leaves the Mac engine's inputs and published key unchanged.
   `series` order. `native-host.patch` and `content-filter.patch` hold the Mac
   native host and come to Linux with the Linux host. The two `*-apple-unwind`
   build adjustments are Apple-only.
+- `linuxPatches`: Linux-only patches in `Patches/` here, applied after
+  them. `service-discovery-sniffer.patch` keeps a Linux-only debugging tool
+  that requires service discovery out of a build that turns it off.
 - `overlay`: the overlay sources those patches compile.
 - `buildArguments`: Linux GN arguments, added to the shared ones in
   `../source.lock.json`.
