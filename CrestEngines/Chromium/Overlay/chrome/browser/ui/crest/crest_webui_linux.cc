@@ -198,11 +198,19 @@ class CrestUIHandler final : public content::WebUIMessageHandler, public CoreHos
   // args: the core's page id. Shows that page beside the sidebar.
   void HandleShowPage(const base::ListValue& args) {
     if (args.empty() || !args[0].is_string()) return;
+    LinuxWindow* window = LinuxWindow::Current();
+    if (!window) return;
+    // No id: the shown tab has no page (the Start Page), which the WebUI
+    // draws in the page's card itself.
+    if (args[0].GetString().empty()) {
+      window->ShowNoPage();
+      return;
+    }
     // The sidebar spells ids in lower case; the binding keys pages by
     // GuidText, which spells them in upper case.
     const std::optional<engine::Guid> page = ParseGuid(args[0].GetString());
     if (!page) return;
-    if (LinuxWindow* window = LinuxWindow::Current()) window->ShowPage(GuidText(*page));
+    window->ShowPage(GuidText(*page));
   }
 
   // args: x, y, width, height of the page's place in the WebUI, in CSS

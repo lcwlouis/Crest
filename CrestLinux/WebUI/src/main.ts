@@ -135,6 +135,39 @@ const palette = new Palette({
     report,
 });
 
+// The Start Page, which Crest draws in the page's card for a tab that shows
+// it (and when the window shows no tab), as the Mac's BrowserStartPage: the
+// mark, its title and a command bar embedded in the page.
+const startPage = element("div", "start-page");
+const startMark = element("div", "start-mark");
+startMark.innerHTML =
+    '<svg viewBox="0 0 64 64" aria-hidden="true"><path d="M32 4l24 9v17c0 15-10 26-24 30C18 56 8 45 8 30V13z" fill="var(--space-tint)"/><path d="M32 16l4 9 9 1-7 6 2 9-8-5-8 5 2-9-7-6 9-1z" fill="white" opacity="0.9"/></svg>';
+startPage.append(startMark, element("h1", "start-title", "Start Page"));
+const startBar = element("div", "start-bar");
+startPage.append(startBar);
+startPage.hidden = true;
+document.getElementById("page")!.append(startPage);
+const startPalette = new Palette(
+    {
+        icons,
+        commands,
+        windowId: () => windowId,
+        workspace: () => model.workspace,
+        space: shownSpace,
+        tab: shownTab,
+        page: shownPage,
+        send: (intent) => void dispatch(intent).catch(report),
+        report,
+    },
+    startBar,
+);
+
+function showStartPage(shown: boolean): void {
+    if (startPage.hidden !== shown) return;
+    startPage.hidden = !shown;
+    if (shown) startPalette.open("current");
+}
+
 // Crest's keys, while the window's own UI has the focus. The page's view
 // hands Crest the keys it reserves from pages through the host.
 document.addEventListener("keydown", (event) => {
@@ -220,11 +253,22 @@ function followShownPage(): void {
     const space = shownSpace();
     const tabId = shownTabId();
     const tab = tabId ? space?.tabs.find((held) => held.id === tabId) : undefined;
-    if (!workspace || !space || !tab) return;
-    const page = model.pageFor(tab.id);
+    if (!workspace || !space) return;
+    const page = tab ? model.pageFor(tab.id) : undefined;
+    // A tab with no page of its own, or no tab: the card shows Crest's own
+    // view, and the window shows no page over it.
+    const showsNoPage = !tab || (!page && tab.surface === "StartPage");
+    showStartPage(showsNoPage && (!tab || tab.surface === "StartPage"));
+    if (!page || page.phase !== "Live") {
+        if (shownPageId !== null && (showsNoPage || model.pages.get(shownPageId)?.tabId !== tab?.id)) {
+            shownPageId = null;
+            showPage("");
+        }
+    }
+    if (!tab) return;
     if (!page) {
-        // TODO(linux): a tab with native content (the start page) shows a
-        // view Crest draws itself, which the Linux window does not draw yet.
+        // TODO(linux): other native views (settings, history) are drawn
+        // with the surfaces they belong to.
         if (tab.nativeContent || opening.has(tab.id)) return;
         opening.add(tab.id);
         const pageId = crypto.randomUUID();

@@ -619,3 +619,48 @@ body.has-page #page {
 .palette-row.selected .palette-trailing {
   visibility: visible;
 }
+
+/* --- Start Page: BrowserStartPageLayout.macOSPage --- */
+
+#page {
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
+.start-page {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--start-page-spacing);
+  width: 100%;
+  max-width: var(--start-page-max-width);
+  box-sizing: border-box;
+  padding: var(--start-page-padding);
+}
+
+.start-page[hidden] {
+  display: none;
+}
+
+.start-mark svg {
+  width: var(--start-page-mark-size);
+  height: var(--start-page-mark-size);
+}
+
+.start-title {
+  margin: calc(var(--start-page-spacing) / -2) 0 0;
+  font-size: var(--crest-text-large-title);
+  font-weight: 600;
+}
+
+.start-bar {
+  width: 100%;
+}
+
+.palette-card.embedded {
+  width: 100%;
+  margin: 0;
+  animation: none;
+  box-shadow: 0 8px 28px rgb(0 0 0 / 0.12), inset 0 0 0 1px var(--crest-subtle-border);
+}
