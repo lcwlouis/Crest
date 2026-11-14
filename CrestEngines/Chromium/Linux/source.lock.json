@@ -8,7 +8,13 @@
     "src/third_party/node/linux",
     "src/build/linux/debian_bullseye_amd64-sysroot"
   ],
-  "cipd": {},
+  "cipd": {
+    "src/third_party/dawn/tools/golang/linux-amd64": {
+      "package": "infra/3pp/tools/go/linux-amd64",
+      "version": "version:3@1.26.6",
+      "sha256": "31fd0d71f24489775a444b7d0c1c94f483fdb297c4948539a923e39bc400ffe7"
+    }
+  },
   "patches": [
     "google-request-allowlist.patch",
     "component-updater-services.patch",
