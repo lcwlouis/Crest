@@ -71,6 +71,18 @@ def main():
             else:
                 shutil.copyfile(cached, destination / name)
 
+    # DEPS names these host tools only by CIPD version tag, so the lock pins each package's
+    # instance digest, as the Mac lock does.
+    for path, package in linux["cipd"].items():
+        instance = shared.base64.urlsafe_b64encode(bytes.fromhex(package["sha256"])).decode().rstrip("=") + "C"
+        url = f"https://chrome-infra-packages.appspot.com/dl/{package['package']}/+/{instance}"
+        print(f"Fetching {path}: {package['package']}", flush=True)
+        download = shared.fetch(url, downloads / "cipd" / package["sha256"] / "package.zip", package["sha256"])
+        destination = staging / path.removeprefix("src/")
+        if destination.exists():
+            shutil.rmtree(destination)
+        shared.unzip(download, destination)
+
     for relative in linux["overlay"]:
         target = staging / relative
         target.parent.mkdir(parents=True, exist_ok=True)

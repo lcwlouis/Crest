@@ -10,6 +10,8 @@ leaves the Mac engine's inputs and published key unchanged.
   source archive does not carry (Chromium's clang and Rust, libclang, Node and
   the Debian sysroot). Each object is verified against the digest in the
   archive's own DEPS.
+- `cipd`: host tools DEPS names only by CIPD version tag, pinned by package
+  digest: the Go toolchain Dawn uses to generate Tint's sources.
 - `patches`: the Crest patches from `../Patches` that apply to Linux today, in
   `series` order. `native-host.patch` and `content-filter.patch` hold the Mac
   native host and come to Linux with the Linux host. The two `*-apple-unwind`
