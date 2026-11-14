@@ -4,9 +4,10 @@
 
 import { connect, dispatch, pageRequest, query, Refused, setPageBounds, showPage } from "./bridge.js";
 import { TabIcons } from "./icons.js";
-import type { Guid, LaunchEnvironment, PageState, TabState } from "../generated/crest_contracts.js";
+import type { Guid, LaunchEnvironment, PageState } from "../generated/crest_contracts.js";
 import { Model } from "./model.js";
 import type { Space, Workspace } from "./model.js";
+import { element, Sidebar, symbol } from "./sidebar.js";
 
 const model = new Model();
 const icons = new TabIcons(() => render());
@@ -20,17 +21,6 @@ const status = document.getElementById("status")!;
 function say(text: string): void {
     status.textContent = text;
     status.hidden = text.length === 0;
-}
-
-function element<K extends keyof HTMLElementTagNameMap>(
-    tag: K,
-    className: string,
-    text?: string,
-): HTMLElementTagNameMap[K] {
-    const node = document.createElement(tag);
-    node.className = className;
-    if (text !== undefined) node.textContent = text;
-    return node;
 }
 
 /** Opens the session the core keeps, or on a first launch the core's own first session. */
@@ -64,26 +54,6 @@ function shownSpace(): Space | undefined {
 function shownTabId(): Guid | null {
     const window = model.windows.get(windowId);
     return window?.shownTabs.find((shown) => shown.spaceId === window.shownSpaceId)?.tabId ?? null;
-}
-
-function tabRow(space: Space, tab: TabState, selected: boolean): HTMLElement {
-    const row = element("button", selected ? "tab selected" : "tab");
-    const icon = element("span", "tab-icon");
-    const image = icons.imageOf(tab.id);
-    if (image) {
-        const img = element("img", "");
-        img.src = image;
-        img.alt = "";
-        icon.append(img);
-    } else {
-        icon.textContent = (tab.displayTitle || "?").slice(0, 1).toUpperCase();
-    }
-    row.append(icon, element("span", "tab-title", tab.displayTitle || tab.url || "New Tab"));
-    row.title = tab.url ?? tab.displayTitle;
-    row.addEventListener("click", () => {
-        void dispatch({ kind: "ShowTab", value: { windowId, spaceId: space.state.id, tabId: tab.id } }).catch(report);
-    });
-    return row;
 }
 
 /** Opens what the person typed in a new tab, as the core reads it. */
@@ -120,10 +90,6 @@ const icon = {
     stop: '<path d="M18 6L6 18"/><path d="M6 6l12 12"/>',
 };
 
-function symbol(paths: string): string {
-    return `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
-}
-
 function control(label: string, act: () => void): HTMLButtonElement {
     const button = element("button", "nav-control");
     button.title = label;
@@ -141,11 +107,24 @@ const reload = control("Reload", () => reloadOrStop());
 back.innerHTML = symbol(icon.back);
 forward.innerHTML = symbol(icon.forward);
 navigation.append(back, forward, reload);
-const spaceName = element("div", "space-name");
 const address = element("input", "address");
 address.placeholder = "Search or enter address";
 address.spellcheck = false;
+address.addEventListener("focus", () => {
+    if (address.value.length === 0 && address.dataset.url) {
+        address.value = address.dataset.url;
+        address.select();
+    }
+});
+address.addEventListener("blur", () => {
+    if (address.value === address.dataset.url) address.value = "";
+});
 address.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+        address.value = "";
+        address.blur();
+        return;
+    }
     const space = shownSpace();
     const workspace = model.workspace;
     if (event.key !== "Enter" || !space || !workspace || address.value.trim().length === 0) return;
@@ -154,9 +133,18 @@ address.addEventListener("keydown", (event) => {
     address.blur();
     void openAddress(workspace.id, space.state.id, text).catch(report);
 });
-const list = element("div", "tabs");
-const switcher = element("div", "spaces");
-root.append(navigation, address, list, switcher);
+root.append(navigation, address);
+const sidebar = new Sidebar(
+    {
+        model,
+        icons,
+        windowId: () => windowId,
+        shownTabId,
+        send: (intent) => void dispatch(intent).catch(report),
+        openNewTab: () => address.focus(),
+    },
+    root,
+);
 
 /** Steps the shown page through its history, as the Mac's back and forward controls do. */
 function step(offset: number): void {
@@ -178,7 +166,6 @@ function render(): void {
     const space = shownSpace();
     root.hidden = !workspace || !space;
     if (!workspace || !space) return;
-    const selected = shownTabId();
     const page = shownPage();
 
     back.disabled = !page?.live.canGoBack;
@@ -190,35 +177,25 @@ function render(): void {
         reload.innerHTML = symbol(loading ? icon.stop : icon.reload);
         reload.title = loading ? "Stop" : "Reload";
     }
-    spaceName.textContent = space.state.settings.name;
+    showAddress(page);
+    sidebar.render();
+}
 
-    list.replaceChildren();
-    const pinned = space.tabs.filter((tab) => tab.placement === "Pinned");
-    if (pinned.length > 0) {
-        const grid = element("div", "pinned");
-        for (const tab of pinned) grid.append(tabRow(space, tab, tab.id === selected));
-        list.append(grid);
+/**
+ * The address field shows the page's host at rest, as the Mac's address
+ * display does, and the whole address once the person starts editing.
+ */
+function showAddress(page: PageState | undefined): void {
+    const url = page?.live.address ?? page?.live.url ?? null;
+    address.dataset.url = url ?? "";
+    address.classList.toggle("loading", page?.live.isLoading ?? false);
+    let host = "";
+    try {
+        host = url ? new URL(url).host || url : "";
+    } catch {
+        host = url ?? "";
     }
-    list.append(spaceName);
-    const saved = space.tabs.filter((tab) => tab.placement === "Saved");
-    for (const tab of saved) list.append(tabRow(space, tab, tab.id === selected));
-    list.append(element("div", "divider"));
-    for (const tab of space.tabs.filter((tab) => tab.placement === "Current")) {
-        list.append(tabRow(space, tab, tab.id === selected));
-    }
-
-    switcher.replaceChildren();
-    for (const id of workspace.order) {
-        const other = workspace.spaces.get(id);
-        if (!other) continue;
-        const dot = element("button", id === space.state.id ? "space shown" : "space");
-        dot.textContent = other.state.settings.name.slice(0, 1).toUpperCase();
-        dot.title = other.state.settings.name;
-        dot.addEventListener("click", () => {
-            void dispatch({ kind: "ShowSpace", value: { windowId, spaceId: id } }).catch(report);
-        });
-        switcher.append(dot);
-    }
+    address.placeholder = host.replace(/^www\./, "") || "Search or enter address";
 }
 
 /** Tabs this window asked the core to open a page for, until the page appears. */
