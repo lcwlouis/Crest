@@ -38,8 +38,14 @@ async function openSession(): Promise<Guid> {
         await dispatch({ kind: "OpenWorkspace", value: { kind: "Persistent", seed: null } });
     } catch (error) {
         if (!(error instanceof Refused) || error.rejection.kind !== "NoStoredSession") throw error;
-        const first = await query("FirstInstallSession", {});
-        await dispatch({ kind: "OpenWorkspace", value: { kind: "Persistent", seed: first } });
+        // The file holds no session yet: the core gives it the one a first
+        // launch starts with, as the Mac's first launch does with nothing to
+        // carry over, and the workspace opens from the file, which keeps it.
+        await dispatch({
+            kind: "AdoptLegacySession",
+            value: { installed: { core: null, wholeGraph: null, history: [], journal: null }, seed: null },
+        });
+        await dispatch({ kind: "OpenWorkspace", value: { kind: "Persistent", seed: null } });
     }
     // Read again: the dispatches above changed the model.
     const opened: Workspace | undefined = model.workspaces.values().next().value;
