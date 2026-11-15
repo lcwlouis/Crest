@@ -12,16 +12,18 @@
 #include <string>
 
 #include "base/memory/raw_ptr.h"
+#include "base/scoped_observation.h"
 #include "chrome/browser/ui/crest/crest_linux_ui.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/views/widget/widget_delegate.h"
+#include "ui/views/widget/widget_observer.h"
 
 class Profile;
 namespace views { class WebView; class Widget; }
 
 namespace crest {
 
-class LinuxWindow final {
+class LinuxWindow final : public views::WidgetObserver {
  public:
   // Opens a window whose sidebar runs in `profile`, Crest's bootstrap
   // profile. The window lives until the person closes it.
@@ -31,7 +33,7 @@ class LinuxWindow final {
 
   LinuxWindow(const LinuxWindow&) = delete;
   LinuxWindow& operator=(const LinuxWindow&) = delete;
-  ~LinuxWindow();
+  ~LinuxWindow() override;
 
   // `bounds`, in screen coordinates, moved onto the work area of the display
   // it is most on, and shrunk to fit it, as the Mac keeps a window it
@@ -65,6 +67,11 @@ class LinuxWindow final {
   // The person closed the window.
   void Closing();
 
+  // views::WidgetObserver: a window the window manager placed off every
+  // display (Mutter under XWayland can put a new one below the screen) comes
+  // back onto one.
+  void OnWidgetBoundsChanged(views::Widget* widget, const gfx::Rect& new_bounds) override;
+
   // What the engine's browser window asks of Crest's UI, which the WebUI
   // answers where it can.
   class UI final : public LinuxUI {
@@ -87,6 +94,7 @@ class LinuxWindow final {
   // The window owns its widget and the widget's delegate.
   views::WidgetDelegate delegate_;
   std::unique_ptr<views::Widget> widget_;
+  base::ScopedObservation<views::Widget, views::WidgetObserver> placement_{this};
   raw_ptr<views::WebView> ui_ = nullptr;
   raw_ptr<views::WebView> page_ = nullptr;
   raw_ptr<views::WebView> float_ = nullptr;

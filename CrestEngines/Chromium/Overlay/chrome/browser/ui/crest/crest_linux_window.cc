@@ -84,6 +84,18 @@ gfx::Rect LinuxWindow::OnScreen(const gfx::Rect& bounds) {
   return placed;
 }
 
+void LinuxWindow::OnWidgetBoundsChanged(views::Widget* widget, const gfx::Rect& new_bounds) {
+  display::Screen* screen = display::Screen::Get();
+  if (!screen || widget->IsFullscreen() || widget->IsMaximized() || widget->IsMinimized()) return;
+  const gfx::Rect window = widget->GetWindowBoundsInScreen();
+  for (const display::Display& display : screen->GetAllDisplays()) {
+    if (display.work_area().Intersects(window)) return;
+  }
+  // Placed where no display shows it: onto the one nearest, which it then
+  // intersects, so this does not run again for the move.
+  widget->SetBounds(OnScreen(window));
+}
+
 LinuxWindow::LinuxWindow(Profile* profile) {
   g_window = this;
   SetLinuxUI(&ui_shell_);
@@ -113,6 +125,7 @@ LinuxWindow::LinuxWindow(Profile* profile) {
   params.wm_class_class = "Crest";
   params.name = "CrestWindow";
   widget_->Init(std::move(params));
+  placement_.Observe(widget_.get());
   ui_->LoadInitialURL(GURL(kCrestUIURL));
   float_->LoadInitialURL(GURL(kCrestFloatURL));
   widget_->Show();
@@ -120,6 +133,7 @@ LinuxWindow::LinuxWindow(Profile* profile) {
 
 LinuxWindow::~LinuxWindow() {
   if (GetLinuxUI() == &ui_shell_) SetLinuxUI(nullptr);
+  placement_.Reset();
   // The widget goes before the delegate it holds.
   widget_.reset();
   if (g_window == this) g_window = nullptr;
