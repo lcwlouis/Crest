@@ -8,6 +8,7 @@
 #include "base/functional/bind.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/uuid.h"
+#include "build/build_config.h"
 #include "chrome/browser/permissions/system/system_permission_settings.h"
 #include "chrome/browser/ui/crest/crest_engine_binding.h"
 #include "chrome/browser/ui/crest/crest_engine_page.h"
@@ -48,6 +49,14 @@ std::optional<engine::SitePermission> PermissionFor(permissions::PermissionPromp
         several = several || single.has_value();
         single = engine::SitePermission::kNotifications;
         break;
+#if !BUILDFLAG(IS_MAC)
+      // The Mac host asks this one in a sheet of its own; Linux has no such
+      // sheet, and an unanswered request holds every later download.
+      case permissions::RequestType::kMultipleDownloads:
+        several = several || single.has_value();
+        single = engine::SitePermission::kAutomaticDownloads;
+        break;
+#endif
       default:
         return std::nullopt;
     }
