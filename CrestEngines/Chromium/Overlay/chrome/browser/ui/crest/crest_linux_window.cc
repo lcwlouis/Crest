@@ -1,6 +1,7 @@
 #include "chrome/browser/ui/crest/crest_linux_window.h"
 
 #include <algorithm>
+#include <functional>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -8,9 +9,11 @@
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
 #include "base/location.h"
+#include "base/no_destructor.h"
 #include "base/task/sequenced_task_runner.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/crest/crest_engine_binding.h"
+#include "chrome/browser/ui/crest/crest_engine_browsers.h"
 #include "chrome/browser/ui/crest/crest_engine_page.h"
 #include "chrome/browser/ui/crest/crest_linux_ui.h"
 #include "chrome/browser/ui/crest/crest_webui_linux.h"
@@ -19,6 +22,7 @@
 #include "content/public/browser/web_contents_observer.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/gfx/geometry/rounded_corners_f.h"
+#include "ui/gfx/geometry/vector2d.h"
 #include "ui/views/controls/native/native_view_host.h"
 #include "ui/views/controls/webview/webview.h"
 #include "ui/views/view.h"
@@ -29,15 +33,31 @@ namespace crest {
 
 namespace {
 
-LinuxWindow* g_window = nullptr;
+// The windows open now, in the order they opened.
+std::vector<LinuxWindow*>& Windows() {
+  static base::NoDestructor<std::vector<LinuxWindow*>> windows;
+  return *windows;
+}
+
+// Counts the windows' uses, which orders them by when each was used last.
+uint64_t g_uses = 0;
 
 // The page's corners, BrowserChromeLayout.pageCornerRadius on the Mac.
 constexpr float kPageCornerRadius = 13;
+
+// How far a new window opens down and to the right of the one in use, as the
+// Mac's windows cascade. Wayland places windows itself and ignores it.
+constexpr int kCascadeStep = 22;
 
 // The window's contents: the WebUI fills them, and each page sits over it in
 // the bounds the WebUI last named, which the WebUI lays out again on resize.
 class Contents final : public views::View {
  public:
+  explicit Contents(const gfx::Size& minimum) : minimum_(minimum) {}
+
+  // views::View:
+  gfx::Size GetMinimumSize() const override { return minimum_; }
+
   raw_ptr<views::WebView> ui = nullptr;
   raw_ptr<views::WebView> floating = nullptr;
   // Each page view and where it goes; a view showing no page is hidden.
@@ -63,9 +83,29 @@ class Contents final : public views::View {
     floating->SetBoundsRect(bounds);
     floating->SetVisible(!bounds.IsEmpty());
   }
+
+ private:
+  const gfx::Size minimum_;
 };
 
 }  // namespace
+
+// The Mac opens a browser window at 1440 by 900 with a 500 by 350 minimum,
+// small enough for two windows side by side on a laptop; Fedora's laptops
+// have less room, so it opens smaller with the same minimum.
+const LinuxWindow::Kind LinuxWindow::Kind::kBrowser = {
+    .name = "browser", .page = "", .size = gfx::Size(1280, 820), .minimum = gfx::Size(500, 350), .browses = true};
+const LinuxWindow::Kind LinuxWindow::Kind::kQuick = {
+    .name = "quick", .page = "quick.html", .size = gfx::Size(720, 460), .minimum = gfx::Size(600, 400),
+    .browses = false};
+
+// static
+const LinuxWindow::Kind* LinuxWindow::Kind::Named(std::string_view name) {
+  for (const Kind* kind : {&kBrowser, &kQuick}) {
+    if (name == kind->name) return kind;
+  }
+  return nullptr;
+}
 
 // Tells the window when the person clicks into a page it shows, as the Mac's
 // split surface hears a mouse-down in one of its cards.
@@ -82,24 +122,105 @@ class LinuxWindow::FocusObserver final : public content::WebContentsObserver {
 };
 
 // static
-LinuxWindow* LinuxWindow::Open(Profile* profile) {
-  CHECK(!g_window);
-  return new LinuxWindow(profile);
+LinuxWindow* LinuxWindow::Open(Profile* profile, const Kind& kind, const std::string& id, const std::string& query,
+                               bool activates) {
+  // A window opening over one in use cascades from it.
+  LinuxWindow* in_use = Active();
+  auto* window = new LinuxWindow(profile, kind, id);
+  gfx::Rect bounds(gfx::Point(80, 80), kind.size);
+  if (in_use) bounds.set_origin(in_use->widget()->GetWindowBoundsInScreen().origin() +
+                                gfx::Vector2d(kCascadeStep, kCascadeStep));
+  views::Widget::InitParams params(views::Widget::InitParams::CLIENT_OWNS_WIDGET,
+                                   views::Widget::InitParams::TYPE_WINDOW);
+  params.delegate = &window->delegate_;
+  params.bounds = bounds;
+  params.wm_class_name = "crest";
+  params.wm_class_class = "Crest";
+  params.name = kind.browses ? "CrestWindow" : "CrestQuickWindow";
+  window->widget_->Init(std::move(params));
+  window->activation_.Observe(window->widget_.get());
+  GURL::Replacements address;
+  address.SetPathStr(kind.page);
+  if (!query.empty()) address.SetQueryStr(query);
+  window->ui_->LoadInitialURL(GURL(kCrestUIURL).ReplaceComponents(address));
+  window->float_->LoadInitialURL(GURL(kCrestFloatURL));
+  // A window opened behind the one in use stays behind it in the order of
+  // use too, until the person comes to it.
+  if (activates || !GetLinuxUI()) {
+    window->used_ = ++g_uses;
+    SetLinuxUI(&window->ui_shell_);
+  }
+  if (activates) {
+    window->widget_->Show();
+  } else {
+    window->widget_->ShowInactive();
+  }
+  return window;
 }
 
 // static
-LinuxWindow* LinuxWindow::Current() {
-  return g_window;
+LinuxWindow* LinuxWindow::Find(const std::string& id) {
+  if (id.empty()) return nullptr;
+  auto found = std::ranges::find(Windows(), id, &LinuxWindow::id_);
+  return found == Windows().end() ? nullptr : *found;
 }
 
-LinuxWindow::LinuxWindow(Profile* profile) : profile_(profile) {
-  g_window = this;
-  SetLinuxUI(&ui_shell_);
-  delegate_.SetTitle(u"Crest");
+// static
+LinuxWindow* LinuxWindow::Active() {
+  LinuxWindow* latest = nullptr;
+  for (LinuxWindow* window : Windows()) {
+    if (window->widget_->IsActive()) return window;
+    if (!latest || window->used_ > latest->used_) latest = window;
+  }
+  return latest;
+}
+
+// static
+LinuxWindow* LinuxWindow::Drawing(const content::WebContents* contents) {
+  if (!contents) return nullptr;
+  for (LinuxWindow* window : Windows()) {
+    if (window->ui_contents() == contents || window->float_contents() == contents) return window;
+  }
+  return nullptr;
+}
+
+// static
+std::vector<std::string> LinuxWindow::Stacked() {
+  std::vector<LinuxWindow*> browsing;
+  for (LinuxWindow* window : Windows()) {
+    if (window->kind_.browses && !window->id_.empty()) browsing.push_back(window);
+  }
+  std::ranges::sort(browsing, std::ranges::greater(), &LinuxWindow::used_);
+  std::vector<std::string> ids;
+  for (LinuxWindow* window : browsing) ids.push_back(window->id_);
+  return ids;
+}
+
+// static
+bool LinuxWindow::AnyBrowsing() {
+  return std::ranges::any_of(Windows(), [](const LinuxWindow* window) { return window->kind_.browses; });
+}
+
+// static
+void LinuxWindow::CloseAll() {
+  // Each closes later, once its widget unwinds; the list stays as it is
+  // until then.
+  for (LinuxWindow* window : std::vector<LinuxWindow*>(Windows())) window->Close();
+}
+
+// static
+void LinuxWindow::ReleaseEverywhere(const std::string& page) {
+  for (LinuxWindow* window : Windows()) window->ReleasePage(page);
+}
+
+LinuxWindow::LinuxWindow(Profile* profile, const Kind& kind, std::string id)
+    : kind_(kind), id_(std::move(id)), widget_(std::make_unique<views::Widget>()), profile_(profile) {
+  Windows().push_back(this);
+  delegate_.SetTitle(kind.browses ? u"Crest" : u"Quick Window");
   delegate_.SetHasWindowSizeControls(true);
   delegate_.RegisterWindowClosingCallback(base::BindOnce(&LinuxWindow::Closing, base::Unretained(this)));
 
-  auto contents = std::make_unique<Contents>();
+  auto contents = std::make_unique<Contents>(kind.minimum);
   contents->ui = contents->AddChildView(std::make_unique<views::WebView>(profile));
   // Over the pages, which come between the two as the layout asks for them:
   // the small surfaces that float on a page while it stays in use (the find
@@ -109,29 +230,68 @@ LinuxWindow::LinuxWindow(Profile* profile) : profile_(profile) {
   ui_ = contents->ui;
   float_ = contents->floating;
   delegate_.SetContentsView(std::move(contents));
-
-  widget_ = std::make_unique<views::Widget>();
-  views::Widget::InitParams params(views::Widget::InitParams::CLIENT_OWNS_WIDGET,
-                                   views::Widget::InitParams::TYPE_WINDOW);
-  params.delegate = &delegate_;
-  params.bounds = gfx::Rect(80, 80, 1280, 820);
-  params.wm_class_name = "crest";
-  params.wm_class_class = "Crest";
-  params.name = "CrestWindow";
-  widget_->Init(std::move(params));
-  ui_->LoadInitialURL(GURL(kCrestUIURL));
-  float_->LoadInitialURL(GURL(kCrestFloatURL));
-  widget_->Show();
 }
 
 LinuxWindow::~LinuxWindow() {
-  if (GetLinuxUI() == &ui_shell_) SetLinuxUI(nullptr);
+  std::erase(Windows(), this);
+  if (GetLinuxUI() == &ui_shell_) {
+    LinuxWindow* next = Active();
+    SetLinuxUI(next ? &next->ui_shell_ : nullptr);
+  }
+  activation_.Reset();
   // The pages' observers and views are let go before the widget that owns
   // the views.
   slots_.clear();
   // The widget goes before the delegate it holds.
   widget_.reset();
-  if (g_window == this) g_window = nullptr;
+}
+
+content::WebContents* LinuxWindow::ui_contents() const {
+  return ui_ ? ui_->web_contents() : nullptr;
+}
+
+content::WebContents* LinuxWindow::float_contents() const {
+  return float_ ? float_->web_contents() : nullptr;
+}
+
+void LinuxWindow::Present() {
+  if (widget_->IsMinimized()) widget_->Restore();
+  widget_->Show();
+  widget_->Activate();
+}
+
+void LinuxWindow::Close() {
+  closes_ = true;
+  widget_->Close();
+}
+
+void LinuxWindow::SetTitle(const std::u16string& title) {
+  delegate_.SetTitle(title);
+}
+
+// The WebUI decides, as the Mac's close gate asks the core: it forgets the
+// window for the next launch, or with no other browser window open, keeps
+// the windows for it as a quit does, and then closes it. A window whose
+// WebUI cannot answer closes at once.
+bool LinuxWindow::Delegate::OnCloseRequested(views::Widget::ClosedReason reason) {
+  if (window_.closes_) return true;
+  const bool last = window_.kind_.browses &&
+                    std::ranges::none_of(Windows(), [this](const LinuxWindow* other) {
+                      return other != &window_ && other->kind_.browses;
+                    });
+  return !AskToClose(window_, last);
+}
+
+void LinuxWindow::OnWidgetActivationChanged(views::Widget* widget, bool active) {
+  if (active) {
+    used_ = ++g_uses;
+    SetLinuxUI(&ui_shell_);
+    // The window coming into use brings the page in use there with it, as
+    // the Mac's key window does.
+    EngineBinding::Get().Browsers().WindowInUse(
+        [this](content::WebContents* contents) { return Shows(contents); });
+  }
+  ReportWindowActive(*this, active);
 }
 
 // The pages are shown as the Mac shows them: the engine's ShowPage makes a
@@ -245,7 +405,31 @@ void LinuxWindow::SetPageBounds(const gfx::Rect& bounds) {
   contents->InvalidateLayout();
 }
 
+// A view shows in one window at a time: the window that showed the page
+// lets it go first, and hears that it left.
+void LinuxWindow::Surrender(const std::string& page) {
+  if (!SlotShowing(page)) return;
+  ReleasePage(page);
+  ReportPageLeft(*this, page);
+}
+
+bool LinuxWindow::Shows(const content::WebContents* contents) const {
+  return std::ranges::any_of(slots_, [contents](const Slot& slot) {
+    return !slot.page.empty() && slot.view && slot.view->web_contents() == contents;
+  });
+}
+
 void LinuxWindow::Attach(Slot& slot, const std::string& page, content::WebContents* contents) {
+  for (LinuxWindow* other : Windows()) {
+    if (other != this) other->Surrender(page);
+  }
+  // A tab's page another window's Browser keeps comes to this window's
+  // Browser, which the WebUI asks the core and the engine for, as the Mac's
+  // window moves a shared page it shows.
+  if (kind_.browses && !id_.empty()) {
+    EnginePage* engine_page = EngineBinding::Get().Find(page);
+    if (engine_page && engine_page->window() != id_) ReportPageArrived(*this, page);
+  }
   slot.page = page;
   slot.view->SetWebContents(contents);
   slot.view->SetVisible(true);
@@ -301,7 +485,7 @@ void LinuxWindow::FocusInUse() {
 // split surface does: a split's other card does, a page under a Peek cannot
 // be reached.
 void LinuxWindow::PageFocused(const std::string& page) {
-  if (page != focused_page_) ReportPageFocused(page);
+  if (page != focused_page_) ReportPageFocused(*this, page);
 }
 
 void LinuxWindow::SetFloat(const gfx::Rect& bounds, bool focus) {
@@ -341,8 +525,12 @@ void LinuxWindow::Closing() {
   // The window does not own the pages it shows; it lets go before they go.
   for (Slot& slot : slots_) Detach(slot);
   focused_page_.clear();
-  g_window = nullptr;
-  if (GetLinuxUI() == &ui_shell_) SetLinuxUI(nullptr);
+  activation_.Reset();
+  std::erase(Windows(), this);
+  if (GetLinuxUI() == &ui_shell_) {
+    LinuxWindow* next = Active();
+    SetLinuxUI(next ? &next->ui_shell_ : nullptr);
+  }
   // The widget is still closing on this stack; it goes once that returns.
   base::SequencedTaskRunner::GetCurrentDefault()->DeleteSoon(FROM_HERE, this);
   CrestWindowClosed();
@@ -369,11 +557,11 @@ bool LinuxWindow::UI::Reopen() {
 }
 
 bool LinuxWindow::UI::HandleShortcut(const input::NativeWebKeyboardEvent& event, bool page_declined) {
-  return ClaimShortcut(event, page_declined);
+  return ClaimShortcut(window_, event, page_declined);
 }
 
 void LinuxWindow::UI::FocusLocation() {
-  PerformCommand("OpenLocation");
+  PerformCommand(window_, "OpenLocation");
 }
 
 // TODO(linux): the rest arrive with the WebUI surfaces that answer them.
@@ -381,7 +569,7 @@ void LinuxWindow::UI::BookmarkActivePage() {}
 void LinuxWindow::UI::TranslatePage() {}
 void LinuxWindow::UI::TranslateText(const std::u16string& text) {}
 void LinuxWindow::UI::ShowTabSearch() {
-  PerformCommand("NewTab");
+  PerformCommand(window_, "NewTab");
 }
 void LinuxWindow::UI::ShowUnavailable(UnavailableFeature feature) {}
 void LinuxWindow::UI::ShowEngineNotice(const std::u16string& message, EngineNoticeKind kind) {}

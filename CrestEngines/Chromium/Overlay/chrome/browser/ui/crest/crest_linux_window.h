@@ -8,35 +8,107 @@
 // both, so the same window serves Fedora and Windows. The Mac's SwiftUI
 // window hosts each page's view the same way, asking the shell for it by the
 // page's id.
+//
+// Crest opens as many windows as the person asks for, as the Mac's
+// BrowserMacWindows does: browser windows, each over a window the core keeps
+// under its own identity, and Quick Windows, which show one transient page of
+// a Space. Each window's WebUI decides what it shows through the core; the
+// window knows only the core's identity for it, which the engine's Browsers
+// are kept by, and the order the person last used the windows in.
 
+#include <cstdint>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "base/memory/raw_ptr.h"
+#include "base/scoped_observation.h"
 #include "chrome/browser/ui/crest/crest_linux_ui.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/geometry/size.h"
+#include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_delegate.h"
+#include "ui/views/widget/widget_observer.h"
 
 class Profile;
-namespace views { class WebView; class Widget; }
+namespace content { class WebContents; }
+namespace views { class WebView; }
 
 namespace crest {
 
-class LinuxWindow final {
+class LinuxWindow final : public views::WidgetObserver {
  public:
-  // Opens a window whose sidebar runs in `profile`, Crest's bootstrap
-  // profile. The window lives until the person closes it.
-  static LinuxWindow* Open(Profile* profile);
-  // The window, or null before one opens and once it closes.
-  static LinuxWindow* Current();
+  // A kind of window Crest opens: the WebUI page that draws it, the size it
+  // opens at and the smallest it may be, as the Mac's BrowserMacWindowKind,
+  // and whether it browses the person's Spaces as a window the core keeps.
+  struct Kind {
+    // Its name, as the WebUI asks for it.
+    const char* name;
+    // The page of chrome://crest that draws it.
+    const char* page;
+    gfx::Size size;
+    gfx::Size minimum;
+    bool browses;
+
+    // A browser window over the person's Spaces.
+    static const Kind kBrowser;
+    // A Quick Window, which shows one page of a Space
+    // (BrowserQuickWindowLayout).
+    static const Kind kQuick;
+
+    // The kind `name` names, or null.
+    static const Kind* Named(std::string_view name);
+  };
+
+  // Opens a window of `kind` whose WebUI runs in `profile`, Crest's bootstrap
+  // profile, and reads `query`, the WebUI's own parameters, in its address.
+  // `id` is the core's identity for a browser window, or empty until its
+  // WebUI adopts one, as the launch's first window does. The window comes
+  // forward when `activates`, and otherwise shows behind the window in use.
+  // It lives until it closes.
+  static LinuxWindow* Open(Profile* profile, const Kind& kind, const std::string& id, const std::string& query,
+                           bool activates);
+  // The open window the core names `id`, or null.
+  static LinuxWindow* Find(const std::string& id);
+  // The window the person is using: the active one, or else the one used
+  // last; null when none is open.
+  static LinuxWindow* Active();
+  // The window whose WebUI or floating surfaces `contents` draws, or null.
+  static LinuxWindow* Drawing(const content::WebContents* contents);
+  // The core's identities of the open browser windows, the one used last
+  // first, as the Mac's stackedWindowIDs lists them front to back. Linux
+  // cannot ask the window manager how it stacks them.
+  static std::vector<std::string> Stacked();
+  // Whether a browser window is open.
+  static bool AnyBrowsing();
+  // Closes every window without asking its WebUI, as a quit does.
+  static void CloseAll();
+  // Stops showing `page` in any window: the engine lets it go.
+  static void ReleaseEverywhere(const std::string& page);
 
   LinuxWindow(const LinuxWindow&) = delete;
   LinuxWindow& operator=(const LinuxWindow&) = delete;
-  ~LinuxWindow();
+  ~LinuxWindow() override;
 
   views::Widget* widget() const { return widget_.get(); }
+  const Kind& kind() const { return kind_; }
+  // The core's identity for the window, in GuidText's spelling; empty for a
+  // Quick Window and until the WebUI adopts one.
+  const std::string& id() const { return id_; }
+  // The WebUI opened the core's window `id` for this one.
+  void Adopt(const std::string& id) { id_ = id; }
+  content::WebContents* ui_contents() const;
+  content::WebContents* float_contents() const;
+
+  // Brings the window forward and gives it the keyboard.
+  void Present();
+  // Closes the window without asking the WebUI again: it agreed, or the
+  // window has nothing left to ask.
+  void Close();
+  // Names the window for the window manager and the desktop's window list.
+  void SetTitle(const std::u16string& title);
 
   // One page the window shows and where: a core page id, its place in the
   // WebUI's coordinates, which are the window contents' (the WebUI fills them
@@ -53,7 +125,8 @@ class LinuxWindow final {
   // Shows `slots`, the later ones over the earlier, and no other page. The
   // page `focused` names is the one in use, which takes the keyboard and
   // which extensions find as the active tab; empty when none is. Pages the
-  // engine does not have are left out.
+  // engine does not have are left out. A page another window shows moves to
+  // this one, which tells that window's WebUI it left.
   void SetPageLayout(const std::vector<PageSlot>& slots, const std::string& focused);
   // Shows the page `page` (a core page id) alone, where SetPageBounds last
   // placed it. False when the engine has no such page.
@@ -74,7 +147,19 @@ class LinuxWindow final {
   void SetFloat(const gfx::Rect& bounds, bool focus);
 
  private:
-  explicit LinuxWindow(Profile* profile);
+  LinuxWindow(Profile* profile, const Kind& kind, std::string id);
+
+  // Asks the WebUI before the window closes, as the Mac's close gate asks
+  // before a window goes.
+  class Delegate final : public views::WidgetDelegate {
+   public:
+    explicit Delegate(LinuxWindow& window) : window_(window) {}
+    // views::WidgetDelegate:
+    bool OnCloseRequested(views::Widget::ClosedReason reason) override;
+
+   private:
+    LinuxWindow& window_;
+  };
 
   // Hears the person click into a page the window shows.
   class FocusObserver;
@@ -89,14 +174,21 @@ class LinuxWindow final {
     std::unique_ptr<FocusObserver> focus;
   };
 
-  // The person closed the window.
+  // views::WidgetObserver:
+  void OnWidgetActivationChanged(views::Widget* widget, bool active) override;
+
+  // The window is closing.
   void Closing();
+  // Another window shows `page` now; this one stops showing it.
+  void Surrender(const std::string& page);
   // Shows `page` in the view of `slot`, which shows nothing.
   void Attach(Slot& slot, const std::string& page, content::WebContents* contents);
   // Lets the view of `slot` go of its page.
   void Detach(Slot& slot);
   // The slot showing `page`, or null.
   Slot* SlotShowing(const std::string& page);
+  // Whether the window shows `contents` in one of its slots.
+  bool Shows(const content::WebContents* contents) const;
   // Stacks the views: the WebUI under the pages, or raised over all but the
   // pages above it, and the floating surface over everything.
   void Restack();
@@ -106,10 +198,12 @@ class LinuxWindow final {
   // The person clicked into `page`'s view.
   void PageFocused(const std::string& page);
 
-  // What the engine's browser window asks of Crest's UI, which the WebUI
-  // answers where it can.
+  // What the engine's browser window asks of Crest's UI, which the WebUI of
+  // the window in use answers where it can.
   class UI final : public LinuxUI {
    public:
+    explicit UI(LinuxWindow& window) : window_(window) {}
+
     gfx::Rect RestoredBounds(views::Widget* window) override;
     bool WasMaximizedBeforeFullscreen(views::Widget* window) override;
     bool DeferQuit() override;
@@ -122,12 +216,18 @@ class LinuxWindow final {
     void ShowTabSearch() override;
     void ShowUnavailable(UnavailableFeature feature) override;
     void ShowEngineNotice(const std::u16string& message, EngineNoticeKind kind) override;
-  };
-  UI ui_shell_;
 
+   private:
+    LinuxWindow& window_;
+  };
+  UI ui_shell_{*this};
+
+  const Kind& kind_;
+  std::string id_;
   // The window owns its widget and the widget's delegate.
-  views::WidgetDelegate delegate_;
+  Delegate delegate_{*this};
   std::unique_ptr<views::Widget> widget_;
+  base::ScopedObservation<views::Widget, views::WidgetObserver> activation_{this};
   raw_ptr<Profile> profile_;
   raw_ptr<views::WebView> ui_ = nullptr;
   raw_ptr<views::WebView> float_ = nullptr;
@@ -142,6 +242,10 @@ class LinuxWindow final {
   bool single_ = false;
   bool overlay_raised_ = false;
   bool float_focused_ = false;
+  // When the person last used the window, in the order of every window's use.
+  uint64_t used_ = 0;
+  // The WebUI agreed to the window closing, or there is nothing to ask.
+  bool closes_ = false;
 };
 
 }  // namespace crest

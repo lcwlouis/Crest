@@ -1,8 +1,8 @@
 // Crest's host on Linux: the hooks crest_chrome_host.mm implements for the
 // Mac, over a shell Chromium draws itself. The Mac host hands the engine
 // binding to Crest's Swift UI, which creates the core; here the browser
-// process creates the core (CoreHost) and opens Crest's window (LinuxWindow),
-// whose sidebar is the chrome://crest WebUI.
+// process creates the core (CoreHost) and opens Crest's first window
+// (LinuxWindow), drawn by the chrome://crest WebUI, which opens the rest.
 //
 // This is the first step of the Linux shell. Hooks whose Mac behavior needs a
 // Crest UI that Linux does not draw yet keep Chromium's own behavior or
@@ -11,6 +11,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "base/auto_reset.h"
 #include "base/check.h"
@@ -19,6 +20,7 @@
 #include "base/logging.h"
 #include "base/memory/raw_ptr.h"
 #include "base/no_destructor.h"
+#include "base/strings/string_util.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
@@ -49,6 +51,8 @@ struct HostState {
   bool disposing = false;
   bool quitting = false;
   raw_ptr<crest::LinuxUI> ui = nullptr;
+  // The profile Crest's WebUI runs in, Chromium's bootstrap profile.
+  raw_ptr<Profile> ui_profile = nullptr;
   // A permission request being answered; Chromium raises it again while it
   // takes the answer, and that request already has one.
   raw_ptr<const permissions::PermissionPrompt::Delegate> answering_permission = nullptr;
@@ -64,19 +68,38 @@ HostState& State() {
 // Browsers themselves.
 class LinuxShell final : public crest::EngineBinding::Shell {
  public:
-  // TODO(linux): a Browser the engine creates for itself (chrome.windows.create,
-  // an app window) joins the window the person is using, as on the Mac. Until
-  // the Linux window answers for its Spaces, no Space hosts one.
+  // The core places a Browser the engine creates for itself
+  // (chrome.windows.create, an app window), over the windows as the person
+  // last used them, as the Mac's shell asks it: the window in use, or a new
+  // one the core names.
   std::optional<crest::EngineBinding::WindowPlacement> ReserveWindow(const std::string& profile,
                                                                       bool own_window) override {
-    return std::nullopt;
+    crest::CoreHost* host = crest::CoreHost::Get();
+    if (!host || State().quitting) return std::nullopt;
+    const auto place = host->PlaceEngineWindow(profile, own_window, crest::LinuxWindow::Stacked());
+    if (!place) return std::nullopt;
+    return crest::EngineBinding::WindowPlacement{.window = place->window, .space = place->space};
   }
 
-  void PresentWindow(const crest::EngineBinding::WindowPlacement& placement, bool focused) override {}
-
-  void ReleasePage(const std::string& page) override {
-    if (crest::LinuxWindow* window = crest::LinuxWindow::Current()) window->ReleasePage(page);
+  // An open window shows the Space its new tabs join. A window the core
+  // named for them opens on that Space, and they wait until its WebUI has
+  // opened it in the core, which refuses tabs for a window that is not open.
+  bool PresentWindow(const crest::EngineBinding::WindowPlacement& placement, bool focused) override {
+    if (State().quitting) return true;
+    if (crest::LinuxWindow* window = crest::LinuxWindow::Find(placement.window)) {
+      crest::ShowSpace(*window, placement.space);
+      if (focused) window->Present();
+      return true;
+    }
+    if (!State().ui_profile) return true;
+    crest::LinuxWindow::Open(State().ui_profile, crest::LinuxWindow::Kind::kBrowser, placement.window,
+                             "window=" + base::ToLowerASCII(placement.window) +
+                                 "&space=" + base::ToLowerASCII(placement.space),
+                             focused);
+    return false;
   }
+
+  void ReleasePage(const std::string& page) override { crest::LinuxWindow::ReleaseEverywhere(page); }
 
   // TODO(linux): docked DevTools, extension side panels and popups live in
   // the page's card, which the Linux window does not draw yet.
@@ -119,14 +142,19 @@ void EnsureCrestUIStarted(Browser* browser) {
     LOG(ERROR) << error;
   }
   RegisterCrestUI();
-  LinuxWindow::Open(browser->GetProfile());
+  state.ui_profile = browser->GetProfile();
+  // The launch's first window, whose WebUI opens the rest the core reopens.
+  LinuxWindow::Open(browser->GetProfile(), LinuxWindow::Kind::kBrowser, std::string(), std::string(),
+                    /*activates=*/true);
 }
 
 void CrestWindowClosed() {
   auto& state = State();
-  if (state.disposing) return;
+  if (state.disposing || LinuxWindow::AnyBrowsing()) return;
   state.disposing = true;
   state.quitting = true;
+  // Quick Windows go with the last browser window, as a quit closes them.
+  LinuxWindow::CloseAll();
   // The core has stopped accepting work: the binding lets every page go,
   // closes its Browsers and releases the profiles, then the core saves and
   // closes its session file.
@@ -145,9 +173,21 @@ bool CanCreateEngineBrowser(Profile* profile) {
 
 views::Widget* WindowForBrowser(const Browser* browser) {
   if (!State().started) return nullptr;
-  // Crest on Linux has one window so far; every Browser shows in it.
-  LinuxWindow* window = LinuxWindow::Current();
+  const std::string kept_for = EngineBinding::Get().Browsers().WindowOf(browser);
+  LinuxWindow* window = kept_for.empty() ? LinuxWindow::Active() : LinuxWindow::Find(kept_for);
   return window ? window->widget() : nullptr;
+}
+
+void WindowAdopted(const std::string& window) {
+  if (!State().disposing) EngineBinding::Get().Browsers().WindowOpened(window);
+}
+
+// TODO(linux): the browser hands a second launch's links to the running
+// one through StartupBrowserCreator, which no Linux patch routes here yet.
+bool OpenExternalURLs(const std::vector<std::string>& urls) {
+  if (!IsEnabled() || !State().started || State().disposing) return false;
+  LinuxWindow* window = LinuxWindow::Active();
+  return window && OpenExternalLinks(*window, urls);
 }
 
 // TODO(linux): Crest's quit preparation (downloads, unsaved pages) asks
