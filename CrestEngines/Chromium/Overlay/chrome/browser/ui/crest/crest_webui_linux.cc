@@ -28,6 +28,7 @@
 #include "chrome/common/chrome_paths.h"
 #include "net/base/filename_util.h"
 #include "ui/shell_dialogs/select_file_dialog.h"
+#include "ui/shell_dialogs/select_file_policy.h"
 #include "ui/shell_dialogs/selected_file_info.h"
 #include "url/gurl.h"
 #include "chrome/browser/ui/crest/crest_core_host_linux.h"
