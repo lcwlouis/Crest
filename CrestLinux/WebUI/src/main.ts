@@ -24,6 +24,7 @@ import { FloatSurfaces } from "./surfaces.js";
 import { TabIcons } from "./icons.js";
 import type { Guid, LaunchEnvironment, PageState, TabState } from "../generated/crest_contracts.js";
 import { Model } from "./model.js";
+import { PageStates } from "./page-states.js";
 import type { Space, Workspace } from "./model.js";
 import { InlineRename } from "./rename.js";
 import { element, Sidebar, symbol } from "./sidebar.js";
@@ -157,10 +158,11 @@ const commands = new Commands({
     find: (action) => (action === "open" ? findBar.open() : findBar.step(action === "previous")),
 });
 
-// The surface floating over the page shows one of these at a time.
+// The surfaces floating over the page.
 const surfaces = new FloatSurfaces();
 const findBar = new FindBar(shownPage, report, surfaces);
 const prompts = new Prompts({ model, page: shownPage }, surfaces);
+const pageStates = new PageStates({ model, page: shownPage }, surfaces);
 listenToFloat(
     (event) => surfaces.handle(event as FloatEvent),
     () => surfaces.restore(),
@@ -419,11 +421,13 @@ async function start(): Promise<void> {
             followShownPage();
             findBar.follow();
             prompts.apply(changes);
+            pageStates.apply(changes);
         },
         (bytes) => {
             try {
                 const presentation = decodePresentation(bytes);
                 if (presentation.kind === "FindFinished") findBar.finished(presentation.value);
+                pageStates.present(presentation);
             } catch (error) {
                 console.error(error);
             }

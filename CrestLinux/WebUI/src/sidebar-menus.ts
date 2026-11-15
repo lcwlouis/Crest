@@ -32,6 +32,7 @@ import { Menu } from "./menu.js";
 import type { MenuEntry, MenuIcon, MenuItem, MenuPlacement } from "./menu.js";
 import { listKey } from "./model.js";
 import type { Model, Space, Workspace } from "./model.js";
+import { Notices, postNotice } from "./notices.js";
 import type { InlineRename } from "./rename.js";
 import { css, spaceMark } from "./sidebar.js";
 
@@ -410,6 +411,7 @@ export class SidebarMenus {
         if (!url) return;
         void query("LinkToCopy", { url })
             .then((clean) => navigator.clipboard.writeText(clean))
+            .then(() => postNotice(Notices.urlCopied))
             .catch(this.host.report);
     }
 
