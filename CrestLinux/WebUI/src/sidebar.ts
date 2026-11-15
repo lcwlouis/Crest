@@ -392,7 +392,10 @@ export class Sidebar {
             );
             track.append(segment);
         }
-        this.switcher.replaceChildren(track, this.host.utilities.listsButton(space));
+        // The lists button stays where it is, so a press on it is not cut short.
+        const lists = this.host.utilities.listsButton(space);
+        if (this.switcher.lastChild === lists && this.switcher.childNodes.length === 2) this.switcher.firstChild!.replaceWith(track);
+        else this.switcher.replaceChildren(track, lists);
     }
 
     private tab(space: Space, id: Guid): TabState | undefined {
