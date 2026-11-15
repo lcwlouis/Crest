@@ -51,6 +51,10 @@ bool ClaimShortcut(const input::NativeWebKeyboardEvent& event, bool page_decline
 // Chromium's own browser window asks for the location field.
 void PerformCommand(const std::string& command);
 
+// Tells the WebUI the person clicked into the view of `page`, a core page id
+// the window shows, so it can make that split card the one in use.
+void ReportPageFocused(const std::string& page);
+
 }  // namespace crest
 
 #endif  // CHROME_BROWSER_UI_CREST_CREST_WEBUI_LINUX_H_
