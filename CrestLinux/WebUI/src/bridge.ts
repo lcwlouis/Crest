@@ -17,6 +17,7 @@ import {
 import type {
     Change,
     EnginePresentation,
+    Guid,
     Intent,
     PageRequest,
     PageRequestAnswers,
@@ -358,4 +359,80 @@ export function chooseDownloadPath(
 /** Closes the save dialog asked under `key`, if it is still open; it answers as cancelled. */
 export function closeDownloadDialog(key: string): Promise<void> {
     return send("closeDownloadDialog", key);
+}
+
+// --- Windows (Linux shell) ----------------------------------------------------
+
+/** A kind of window the shell opens, as the Mac's BrowserMacWindowKind names them. */
+export type WindowKind = "browser" | "quick";
+
+/**
+ * Opens a window of `kind` whose WebUI reads `parameters`: a browser window
+ * under the core's id `windowId`, or a Quick Window with none. A browser
+ * window already open under the id comes forward instead. It comes forward
+ * when `activates`, and otherwise opens behind the window in use.
+ */
+export function openWindow(kind: WindowKind, windowId: Guid | null, parameters: Record<string, string>, activates: boolean): void {
+    chrome.send("openWindow", [kind, windowId ?? "", new URLSearchParams(parameters).toString(), activates]);
+}
+
+/** Brings the browser window `windowId` names forward, when it is open. */
+export function presentWindow(windowId: Guid): void {
+    openWindow("browser", windowId, {}, true);
+}
+
+/** Brings this page's window forward. */
+export function presentThisWindow(): void {
+    chrome.send("presentWindow");
+}
+
+/** Tells the shell the core opened the window `windowId` for this page's window. */
+export function adoptWindow(windowId: Guid): void {
+    chrome.send("adoptWindow", [windowId]);
+}
+
+/** Closes this page's window as the person's close does, which asks this page first. */
+export function requestClose(): void {
+    chrome.send("requestClose");
+}
+
+/** Closes this page's window without asking again. */
+export function closeWindow(): void {
+    chrome.send("closeWindow");
+}
+
+/** Names this page's window for the desktop. */
+export function setWindowTitle(title: string): void {
+    chrome.send("setWindowTitle", [title]);
+}
+
+/** The core ids of the open browser windows, the one used last first. */
+export function stackedWindows(): Promise<Guid[]> {
+    return send<Guid[]>("stackedWindows");
+}
+
+/** What the shell tells a window's WebUI about its window. */
+export interface WindowEvents {
+    /** The person asked to close the window; `last` when no other browser window is open, so it quits. */
+    closeRequested(last: boolean): void;
+    /** The window came into use, or left it. */
+    activeChanged(active: boolean): void;
+    /** Another window shows the page `pageId` now. */
+    pageLeft(pageId: Guid): void;
+    /** The window shows the page `pageId`, which the engine keeps for another window. */
+    pageArrived(pageId: Guid): void;
+    /** A tab the engine opened for this window joins the Space `spaceId`. */
+    showSpace(spaceId: Guid): void;
+    /** Links another app handed Crest. */
+    openExternal(urls: readonly string[]): void;
+}
+
+/** Hears what the shell tells this page about its window. */
+export function listenToWindow(events: WindowEvents): void {
+    listen("crest-close-requested", (last) => events.closeRequested(last as boolean));
+    listen("crest-window-active", (active) => events.activeChanged(active as boolean));
+    listen("crest-page-left", (pageId) => events.pageLeft((pageId as string).toLowerCase()));
+    listen("crest-page-arrived", (pageId) => events.pageArrived((pageId as string).toLowerCase()));
+    listen("crest-show-space", (spaceId) => events.showSpace((spaceId as string).toLowerCase()));
+    listen("crest-open-external", (urls) => events.openExternal(urls as string[]));
 }

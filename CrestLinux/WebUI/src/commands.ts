@@ -8,7 +8,7 @@
 
 import { ShortcutCommand, ShortcutModifiers, ShortcutPreference, ShortcutSection, ShortcutSpecialKey } from "../generated/crest_contracts.js";
 import type { Guid, Intent, KeyCombination, PageState, PaletteCommand, ShortcutBinding, TabState } from "../generated/crest_contracts.js";
-import { pageRequest, query } from "./bridge.js";
+import { dispatch, pageRequest, query, Refused } from "./bridge.js";
 import { listKey } from "./model.js";
 import type { Model, Space, Workspace } from "./model.js";
 import { Notices, postNotice } from "./notices.js";
@@ -32,6 +32,8 @@ export interface CommandContext {
     readonly cards: () => readonly Guid[];
     /** The Peek over the page, which Close Tab closes before the tab under it. */
     readonly peek: { readonly isOpen: boolean; close(): boolean };
+    /** The windows the window opens, and its own close, which asks it first. */
+    readonly windows: { openNewWindow(): void; openQuickWindow(): void; close(): void };
 }
 
 /** The commands the Linux window performs; the rest wait for their surfaces. */
@@ -41,7 +43,7 @@ const known = new Set<string>([
     "NextTab", "PreviousSpace", "NextSpace", "SelectNumbered", "ZoomIn", "ZoomOut", "ActualSize", "CopyPageLink",
     "CopyPageLinkAsMarkdown", "FindInPage", "FindNext", "FindPrevious", "ShowHistory", "ShowArchive", "ShowDownloads",
     "SplitWithNextTab", "FocusNextSplitCard", "FocusPreviousSplitCard", "RemoveTabFromSplit", "SeparateSplitTabs",
-    "MoveSplitCardLeft", "MoveSplitCardRight",
+    "MoveSplitCardLeft", "MoveSplitCardRight", "NewWindow", "NewQuickWindow", "CloseWindow",
 ]);
 
 /** Whether the Linux window performs `command` at all. */
@@ -122,7 +124,13 @@ export class Commands {
             case "CloseTabOrWindow":
                 // A Peek closes before the tab under it, as on the Mac.
                 if (this.context.peek.isOpen) return () => void this.context.peek.close();
-                return ids && tab ? () => send({ kind: "CloseTab", value: { ...ids, tabId: tab.id } }) : null;
+                return ids && tab ? () => void this.closeTabOrWindow({ ...ids, tabId: tab.id }) : () => this.context.windows.close();
+            case "NewWindow":
+                return () => this.context.windows.openNewWindow();
+            case "NewQuickWindow":
+                return space ? () => this.context.windows.openQuickWindow() : null;
+            case "CloseWindow":
+                return () => this.context.windows.close();
             case "ArchiveTab":
                 return ids && tab ? () => send({ kind: "CloseTab", value: { ...ids, tabId: tab.id } }) : null;
             case "Back":
@@ -248,6 +256,20 @@ export class Commands {
                 }
             })
             .catch(this.context.report);
+    }
+
+    /**
+     * Closes the tab the way the core closes it, or the window when the core
+     * says only the window is left to close: it keeps the Start Page that is
+     * its Space's only tab, as the Mac's closeTabOrWindow asks it.
+     */
+    private async closeTabOrWindow(value: { workspaceId: Guid; windowId: Guid; spaceId: Guid; tabId: Guid }): Promise<void> {
+        try {
+            await dispatch({ kind: "CloseTab", value });
+        } catch (error) {
+            if (error instanceof Refused && error.rejection.kind === "LastStartPage") this.context.windows.close();
+            else this.context.report(error);
+        }
     }
 
     private request(request: Promise<unknown>): void {

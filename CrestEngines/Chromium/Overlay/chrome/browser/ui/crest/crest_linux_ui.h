@@ -10,6 +10,7 @@
 
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "ui/gfx/geometry/rect.h"
 
@@ -75,11 +76,14 @@ class LinuxUI {
 LinuxUI* GetLinuxUI();
 void SetLinuxUI(LinuxUI* ui);
 
-// The Crest window `browser` shows in; null before Crest's UI places it.
+// The Crest window `browser` shows in: the one the core window it is kept
+// for draws, or for a Browser kept for none, the window in use; null before
+// Crest's UI places it and once that window closed.
 views::Widget* WindowForBrowser(const Browser* browser);
 
-// The person closed Crest's window: Crest lets its pages go, closes its core
-// and quits, as a quit from the Mac's application menu does.
+// One of Crest's windows closed. Once no browser window is left, Crest closes
+// the rest, lets its pages go, closes its core and quits, as a quit from the
+// Mac's application menu does.
 void CrestWindowClosed();
 
 // The context menu Chromium shows over `contents`, as the Mac's
@@ -91,6 +95,15 @@ void CrestWindowClosed();
 std::unique_ptr<RenderViewContextMenuObserver> AdaptPageMenu(content::WebContents& contents,
                                                              const content::ContextMenuParams& params,
                                                              ui::SimpleMenuModel& menu);
+
+// A window's WebUI opened the core's window `window` (in GuidText's
+// spelling) for it: the tabs the engine opened for that window are offered.
+void WindowAdopted(const std::string& window);
+
+// Links another app handed Crest, as a second launch passes them: the WebUI
+// of the window in use asks the core where each goes, and opens it there or
+// in a Quick Window. False before a WebUI can take them.
+bool OpenExternalURLs(const std::vector<std::string>& urls);
 
 }  // namespace crest
 

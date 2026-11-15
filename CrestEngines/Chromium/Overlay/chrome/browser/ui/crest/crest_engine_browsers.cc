@@ -1,8 +1,10 @@
 #include "chrome/browser/ui/crest/crest_engine_browsers.h"
 
 #include <algorithm>
+#include <iterator>
 #include <optional>
 #include <utility>
+#include <vector>
 
 #include "base/functional/bind.h"
 #include "base/location.h"
@@ -45,6 +47,9 @@ struct EngineBrowsers::EngineWindow {
   std::string space;
   bool presented = false;
   bool focused = true;
+  // The tabs offered while the window was still opening, which wait for it,
+  // each with whether the engine brought it to the front.
+  std::optional<std::vector<std::pair<base::WeakPtr<content::WebContents>, bool>>> waiting;
 };
 
 // One Browser the binding keeps, and the tab strip it watches for tabs the
@@ -524,13 +529,35 @@ void EngineBrowsers::Offer(base::WeakPtr<content::WebContents> contents, bool fo
   const bool opened_by_page = binding.SourceOf(contents.get()) != nullptr;
   if (host && host->engine && !host->engine->presented && !opened_by_page) {
     host->engine->presented = true;
-    if (EngineBinding::Shell* shell = binding.shell()) {
-      shell->PresentWindow(EngineBinding::WindowPlacement{.window = host->window, .space = host->engine->space},
-                           host->engine->focused);
+    EngineBinding::Shell* shell = binding.shell();
+    if (shell && !shell->PresentWindow(
+                     EngineBinding::WindowPlacement{.window = host->window, .space = host->engine->space},
+                     host->engine->focused)) {
+      host->engine->waiting.emplace();
     }
+  }
+  // The core refuses a tab for a window that is not open yet.
+  if (host && host->engine && host->engine->waiting) {
+    host->engine->waiting->emplace_back(contents, foreground);
+    return;
   }
   binding.Offer(contents.get(), host ? host->window : std::string(),
                 host && host->engine ? host->engine->space : std::string(), foreground);
+}
+
+// Offering a tab can close its Browser, so the tabs are gathered first.
+void EngineBrowsers::WindowOpened(const std::string& window) {
+  std::vector<std::pair<base::WeakPtr<content::WebContents>, bool>> waiting;
+  for (const auto& kept : kept_) {
+    if (kept->window != window || !kept->engine || !kept->engine->waiting) {
+      continue;
+    }
+    std::ranges::move(*kept->engine->waiting, std::back_inserter(waiting));
+    kept->engine->waiting.reset();
+  }
+  for (auto& [contents, foreground] : waiting) {
+    Offer(std::move(contents), foreground);
+  }
 }
 
 // The platform's BrowserWindow reports through these hooks.

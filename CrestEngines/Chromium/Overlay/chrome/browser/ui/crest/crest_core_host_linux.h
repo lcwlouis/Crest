@@ -9,6 +9,7 @@
 // WebUI reaches the core through this host, in the core's own wire format.
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -47,6 +48,19 @@ class CoreHost {
   crest_status_t Dispatch(base::span<const uint8_t> intent, std::vector<uint8_t>& out);
   crest_status_t Query(base::span<const uint8_t> query, std::vector<uint8_t>& out);
   crest_status_t PageRequest(base::span<const uint8_t> request, std::vector<uint8_t>& out);
+
+  // Where the tabs of a Browser the engine created for itself in `profile`
+  // go, as the core's EngineWindowPlacement answers over `windows`, the
+  // browser windows open now, frontmost first: the window, in GuidText's
+  // spelling, the Space, and whether that window opens for them. None when
+  // the core declines them.
+  struct EngineWindowPlace {
+    std::string window;
+    std::string space;
+    bool opens_window = false;
+  };
+  std::optional<EngineWindowPlace> PlaceEngineWindow(const std::string& profile, bool own_window,
+                                                     const std::vector<std::string>& windows);
 
   // Every batch of changes since the core started, oldest first. A UI that
   // starts late replays them to reach the state the core holds.

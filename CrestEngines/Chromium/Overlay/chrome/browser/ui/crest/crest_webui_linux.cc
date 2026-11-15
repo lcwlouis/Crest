@@ -39,6 +39,7 @@
 #include "chrome/browser/ui/crest/crest_core_host_linux.h"
 #include "chrome/browser/ui/crest/crest_engine_binding.h"
 #include "chrome/browser/ui/crest/crest_engine_page.h"
+#include "chrome/browser/ui/crest/crest_linux_ui.h"
 #include "chrome/browser/ui/crest/crest_linux_window.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
@@ -139,23 +140,15 @@ struct Shortcut {
   bool reserved = false;
 };
 
-std::vector<Shortcut>& Shortcuts() {
-  static base::NoDestructor<std::vector<Shortcut>> shortcuts;
-  return *shortcuts;
-}
 
-// The search engine a selection on the page the window shows searches with,
-// as the WebUI last named it for that page.
+// The search engine a selection on the page a window shows searches with,
+// as that window's WebUI last named it for that page.
 struct SelectionSearch {
   // The page's binding key.
   std::string page;
   std::u16string engine;
 };
 
-SelectionSearch& ShownSelectionSearch() {
-  static base::NoDestructor<SelectionSearch> search;
-  return *search;
-}
 
 // --- Appearance (Linux shell) -----------------------------------------------
 // Settings' Appearance choice, which the Mac applies to the whole application
@@ -269,20 +262,41 @@ class DownloadSaveDialog final : public ui::SelectFileDialog::Listener {
 // --- End of downloads -------------------------------------------------------
 
 class CrestUIHandler;
-// The window's main WebUI, which takes the window's keys and owns its state,
-// and the floating surfaces' page, which only draws what the main one sends.
-CrestUIHandler* g_handler = nullptr;
-CrestUIHandler* g_float = nullptr;
+
+// Every page of chrome://crest open now. Each window has two: its main WebUI,
+// which takes the window's keys and decides what it shows, and its floating
+// surfaces' page, which only draws what the main one sends.
+std::vector<CrestUIHandler*>& Handlers() {
+  static base::NoDestructor<std::vector<CrestUIHandler*>> handlers;
+  return *handlers;
+}
+
+CrestUIHandler* MainHandler(const LinuxWindow& window);
+CrestUIHandler* FloatHandler(const LinuxWindow& window);
+
+// The id the WebUI sent, in GuidText's spelling, which the binding and the
+// windows key by; empty when it is not one.
+std::string WindowKey(const base::Value& value) {
+  const std::optional<engine::Guid> id = value.is_string() ? ParseGuid(value.GetString()) : std::nullopt;
+  return id ? GuidText(*id) : std::string();
+}
 
 // Relays the core to the page and the page's messages to the core.
 class CrestUIHandler final : public content::WebUIMessageHandler, public CoreHost::Observer {
  public:
-  CrestUIHandler() = default;
+  CrestUIHandler() { Handlers().push_back(this); }
   CrestUIHandler(const CrestUIHandler&) = delete;
   CrestUIHandler& operator=(const CrestUIHandler&) = delete;
-  ~CrestUIHandler() override {
-    if (g_handler == this) g_handler = nullptr;
-    if (g_float == this) g_float = nullptr;
+  ~CrestUIHandler() override { std::erase(Handlers(), this); }
+
+  content::WebContents* contents() { return web_ui()->GetWebContents(); }
+  const std::vector<Shortcut>& shortcuts() const { return shortcuts_; }
+
+  // Fires `event` to the page; false while it cannot hear it.
+  bool Fire(const std::string& event, const base::Value& value) {
+    if (!IsJavascriptAllowed()) return false;
+    FireWebUIListener(event, value);
+    return true;
   }
 
   // content::WebUIMessageHandler:
@@ -320,6 +334,21 @@ class CrestUIHandler final : public content::WebUIMessageHandler, public CoreHos
     // Appearance (Linux shell).
     web_ui()->RegisterMessageCallback(
         "setAppearance", base::BindRepeating(&CrestUIHandler::HandleSetAppearance, base::Unretained(this)));
+    // Windows (Linux shell).
+    web_ui()->RegisterMessageCallback(
+        "adoptWindow", base::BindRepeating(&CrestUIHandler::HandleAdoptWindow, base::Unretained(this)));
+    web_ui()->RegisterMessageCallback(
+        "openWindow", base::BindRepeating(&CrestUIHandler::HandleOpenWindow, base::Unretained(this)));
+    web_ui()->RegisterMessageCallback(
+        "closeWindow", base::BindRepeating(&CrestUIHandler::HandleCloseWindow, base::Unretained(this)));
+    web_ui()->RegisterMessageCallback(
+        "requestClose", base::BindRepeating(&CrestUIHandler::HandleRequestClose, base::Unretained(this)));
+    web_ui()->RegisterMessageCallback(
+        "presentWindow", base::BindRepeating(&CrestUIHandler::HandlePresentWindow, base::Unretained(this)));
+    web_ui()->RegisterMessageCallback(
+        "setWindowTitle", base::BindRepeating(&CrestUIHandler::HandleSetWindowTitle, base::Unretained(this)));
+    web_ui()->RegisterMessageCallback(
+        "stackedWindows", base::BindRepeating(&CrestUIHandler::HandleStackedWindows, base::Unretained(this)));
     // Downloads (Linux shell).
     web_ui()->RegisterMessageCallback(
         "openDownload", base::BindRepeating(&CrestUIHandler::HandleOpenDownload, base::Unretained(this)));
@@ -348,8 +377,6 @@ class CrestUIHandler final : public content::WebUIMessageHandler, public CoreHos
   // order, then each new one as it comes.
   void HandleReady(const base::ListValue& args) {
     AllowJavascript();
-    // The page that starts the core's line is the window's main WebUI.
-    g_handler = this;
     CoreHost* host = CoreHost::Get();
     base::ListValue history;
     if (host) {
@@ -392,7 +419,7 @@ class CrestUIHandler final : public content::WebUIMessageHandler, public CoreHos
   // args: the core's page id. Shows that page beside the sidebar.
   void HandleShowPage(const base::ListValue& args) {
     if (args.empty() || !args[0].is_string()) return;
-    LinuxWindow* window = LinuxWindow::Current();
+    LinuxWindow* window = Window();
     if (!window) return;
     // No id: the shown tab has no page (the Start Page), which the WebUI
     // draws in the page's card itself.
@@ -417,7 +444,7 @@ class CrestUIHandler final : public content::WebUIMessageHandler, public CoreHos
       values[index] = static_cast<int>(args[index].GetDouble());
     }
     if (values[2] < 0 || values[3] < 0) return;
-    if (LinuxWindow* window = LinuxWindow::Current()) {
+    if (LinuxWindow* window = Window()) {
       window->SetPageBounds(gfx::Rect(values[0], values[1], values[2], values[3]));
     }
   }
@@ -428,7 +455,7 @@ class CrestUIHandler final : public content::WebUIMessageHandler, public CoreHos
   // and no other: the cards of a split, and a Peek's page over them.
   void HandleSetPageLayout(const base::ListValue& args) {
     if (args.size() != 2 || !args[0].is_list() || !args[1].is_string()) return;
-    LinuxWindow* window = LinuxWindow::Current();
+    LinuxWindow* window = Window();
     if (!window) return;
     std::vector<LinuxWindow::PageSlot> slots;
     for (const base::Value& entry : args[0].GetList()) {
@@ -462,8 +489,8 @@ class CrestUIHandler final : public content::WebUIMessageHandler, public CoreHos
   // The floating surfaces' page started; it hears what the main WebUI sends.
   void HandleFloatReady(const base::ListValue& args) {
     AllowJavascript();
-    g_float = this;
-    if (g_handler) g_handler->Fire("crest-float-ready", base::Value());
+    LinuxWindow* window = Window();
+    if (CrestUIHandler* main = window ? MainHandler(*window) : nullptr) main->Fire("crest-float-ready", base::Value());
   }
 
   // From the main WebUI. args: x, y, width, height (empty hides), whether the
@@ -476,25 +503,24 @@ class CrestUIHandler final : public content::WebUIMessageHandler, public CoreHos
       values[index] = static_cast<int>(args[index].GetDouble());
     }
     if (values[2] < 0 || values[3] < 0) return;
-    if (g_float) g_float->Fire("crest-float-state", base::Value(args[5].GetString()));
-    if (LinuxWindow* window = LinuxWindow::Current()) {
-      window->SetFloat(gfx::Rect(values[0], values[1], values[2], values[3]), args[4].GetIfBool().value_or(false));
+    LinuxWindow* window = Window();
+    if (!window) return;
+    if (CrestUIHandler* surfaces = FloatHandler(*window)) {
+      surfaces->Fire("crest-float-state", base::Value(args[5].GetString()));
     }
+    window->SetFloat(gfx::Rect(values[0], values[1], values[2], values[3]), args[4].GetIfBool().value_or(false));
   }
 
   // From the floating surfaces' page: what the person did there, as JSON
   // text, for the main WebUI to act on.
   void HandleFloatEvent(const base::ListValue& args) {
     if (args.size() != 1 || !args[0].is_string()) return;
-    if (g_handler) g_handler->Fire("crest-float-event", base::Value(args[0].GetString()));
+    LinuxWindow* window = Window();
+    if (CrestUIHandler* main = window ? MainHandler(*window) : nullptr) {
+      main->Fire("crest-float-event", base::Value(args[0].GetString()));
+    }
   }
 
- public:
-  void Fire(const std::string& event, const base::Value& value) {
-    if (IsJavascriptAllowed()) FireWebUIListener(event, value);
-  }
-
- private:
   // args: one list per key, [key, ctrl, alt, meta, shift (-1 when it does
   // not matter), reserved].
   void HandleSetShortcuts(const base::ListValue& args) {
@@ -512,7 +538,7 @@ class CrestUIHandler final : public content::WebUIMessageHandler, public CoreHos
       shortcut.reserved = (*fields)[5].GetIfBool().value_or(false);
       shortcuts.push_back(std::move(shortcut));
     }
-    Shortcuts() = std::move(shortcuts);
+    shortcuts_ = std::move(shortcuts);
   }
 
   // args: the page the window shows (empty for none) and the name of the
@@ -520,8 +546,8 @@ class CrestUIHandler final : public content::WebUIMessageHandler, public CoreHos
   void HandleSetSelectionSearch(const base::ListValue& args) {
     if (args.size() != 2 || !args[0].is_string() || !args[1].is_string()) return;
     const std::optional<engine::Guid> page = ParseGuid(args[0].GetString());
-    ShownSelectionSearch() = SelectionSearch{.page = page ? GuidText(*page) : std::string(),
-                                             .engine = base::UTF8ToUTF16(args[1].GetString())};
+    selection_search_ = SelectionSearch{.page = page ? GuidText(*page) : std::string(),
+                                        .engine = base::UTF8ToUTF16(args[1].GetString())};
   }
 
   // args: the core's clean copy of an address the page's menu copies.
@@ -535,36 +561,14 @@ class CrestUIHandler final : public content::WebUIMessageHandler, public CoreHos
   }
 
  public:
-  // Hands the WebUI a key it claimed, to perform.
-  bool FireShortcut(base::DictValue key) {
-    if (!IsJavascriptAllowed()) return false;
-    FireWebUIListener("crest-shortcut", key);
-    return true;
-  }
-
-  bool FireCommand(const std::string& command) {
-    if (!IsJavascriptAllowed()) return false;
-    FireWebUIListener("crest-command", base::Value(command));
-    return true;
-  }
-
-  bool FireSearchSelection(base::DictValue search) {
-    if (!IsJavascriptAllowed()) return false;
-    FireWebUIListener("crest-search-selection", search);
-    return true;
-  }
-
-  bool FireCopyLink(const GURL& url) {
-    if (!IsJavascriptAllowed()) return false;
-    FireWebUIListener("crest-copy-link", base::Value(url.spec()));
-    return true;
-  }
+  // The page this page's window shows and what a selection on it searches with.
+  const SelectionSearch& selection_search() const { return selection_search_; }
 
  private:
   // args: whether the WebUI draws a floating surface over the page now.
   void HandleSetOverlay(const base::ListValue& args) {
     if (args.size() != 1 || !args[0].is_bool()) return;
-    if (LinuxWindow* window = LinuxWindow::Current()) window->SetOverlay(args[0].GetBool());
+    if (LinuxWindow* window = Window()) window->SetOverlay(args[0].GetBool());
   }
 
   // args: the core's page id. Site Controls' Review Certificate: shows the
@@ -591,6 +595,71 @@ class CrestUIHandler final : public content::WebUIMessageHandler, public CoreHos
     if (!scheme) return;
     ui::NativeTheme::SetPreferredColorSchemeOverride(*scheme);
   }
+
+  // --- Windows (Linux shell) ------------------------------------------------
+
+  // The window this page draws, or null once it closed.
+  LinuxWindow* Window() { return LinuxWindow::Drawing(contents()); }
+
+  // args: the core's id of the window the WebUI opened for its window, once
+  // the core opened it. The engine's Browsers for that window find it.
+  void HandleAdoptWindow(const base::ListValue& args) {
+    const std::string id = args.size() == 1 ? WindowKey(args[0]) : std::string();
+    LinuxWindow* window = Window();
+    if (id.empty() || !window) return;
+    window->Adopt(id);
+    WindowAdopted(id);
+  }
+
+  // args: the kind of window ("browser" or "quick"), the core's id of a
+  // browser window or empty, its WebUI's parameters as a query, and whether
+  // it comes forward. A browser window already open under the id comes
+  // forward instead.
+  void HandleOpenWindow(const base::ListValue& args) {
+    if (args.size() != 4 || !args[0].is_string() || !args[1].is_string() || !args[2].is_string() ||
+        !args[3].is_bool()) {
+      return;
+    }
+    const LinuxWindow::Kind* kind = LinuxWindow::Kind::Named(args[0].GetString());
+    const std::string id = args[1].GetString().empty() ? std::string() : WindowKey(args[1]);
+    if (!kind || (!args[1].GetString().empty() && id.empty())) return;
+    if (LinuxWindow* open = LinuxWindow::Find(id)) {
+      if (args[3].GetBool()) open->Present();
+      return;
+    }
+    LinuxWindow::Open(Profile::FromWebUI(web_ui()), *kind, id, args[2].GetString(), args[3].GetBool());
+  }
+
+  // The WebUI agreed to its window closing, or closes it itself.
+  void HandleCloseWindow(const base::ListValue& args) {
+    if (LinuxWindow* window = Window()) window->Close();
+  }
+
+  // Closes the window as the person's close does, which asks the WebUI.
+  void HandleRequestClose(const base::ListValue& args) {
+    if (LinuxWindow* window = Window()) window->widget()->Close();
+  }
+
+  void HandlePresentWindow(const base::ListValue& args) {
+    if (LinuxWindow* window = Window()) window->Present();
+  }
+
+  // args: the window's title, as the desktop's window list names it.
+  void HandleSetWindowTitle(const base::ListValue& args) {
+    if (args.size() != 1 || !args[0].is_string()) return;
+    if (LinuxWindow* window = Window()) window->SetTitle(base::UTF8ToUTF16(args[0].GetString()));
+  }
+
+  // args: callback id. Answers the open browser windows' core ids, the one
+  // used last first, as the core's queries over stacked windows take them.
+  void HandleStackedWindows(const base::ListValue& args) {
+    AllowJavascript();
+    base::ListValue ids;
+    for (const std::string& id : LinuxWindow::Stacked()) ids.Append(base::ToLowerASCII(id));
+    ResolveJavascriptCallback(args[0], base::Value(std::move(ids)));
+  }
+
+  // --- End of windows -------------------------------------------------------
 
   // --- Downloads (Linux shell) ----------------------------------------------
 
@@ -663,14 +732,58 @@ class CrestUIHandler final : public content::WebUIMessageHandler, public CoreHos
 
   // --- End of downloads -----------------------------------------------------
 
+  // The keys this page's window takes for Crest, as the page registered them.
+  std::vector<Shortcut> shortcuts_;
+  // The page this page's window shows, and what a selection on it searches with.
+  SelectionSearch selection_search_;
   base::ScopedObservation<CoreHost, CoreHost::Observer> observation_{this};
   base::WeakPtrFactory<CrestUIHandler> weak_factory_{this};
 };
 
 }  // namespace
 
-bool ClaimShortcut(const input::NativeWebKeyboardEvent& event, bool page_declined) {
-  if (!g_handler || event.GetType() != input::NativeWebKeyboardEvent::Type::kRawKeyDown) return false;
+namespace {
+
+CrestUIHandler* MainHandler(const LinuxWindow& window) {
+  content::WebContents* contents = window.ui_contents();
+  for (CrestUIHandler* handler : Handlers()) {
+    if (contents && handler->contents() == contents) return handler;
+  }
+  return nullptr;
+}
+
+CrestUIHandler* FloatHandler(const LinuxWindow& window) {
+  content::WebContents* contents = window.float_contents();
+  for (CrestUIHandler* handler : Handlers()) {
+    if (contents && handler->contents() == contents) return handler;
+  }
+  return nullptr;
+}
+
+// Fires `event` to the main WebUI of `window`; false when it cannot hear it.
+bool Tell(LinuxWindow& window, const std::string& event, const base::Value& value) {
+  CrestUIHandler* handler = MainHandler(window);
+  return handler && handler->Fire(event, value);
+}
+
+// The main WebUI of the window whose shown page is `page`, which its menu
+// acts for, the window in use first when both show it; else the window in
+// use's.
+CrestUIHandler* HandlerForPage(const std::string& page) {
+  LinuxWindow* window = LinuxWindow::Active();
+  CrestUIHandler* in_use = window ? MainHandler(*window) : nullptr;
+  if (page.empty() || (in_use && in_use->selection_search().page == page)) return in_use;
+  for (CrestUIHandler* handler : Handlers()) {
+    if (handler->selection_search().page == page) return handler;
+  }
+  return in_use;
+}
+
+}  // namespace
+
+bool ClaimShortcut(LinuxWindow& window, const input::NativeWebKeyboardEvent& event, bool page_declined) {
+  CrestUIHandler* handler = MainHandler(window);
+  if (!handler || event.GetType() != input::NativeWebKeyboardEvent::Type::kRawKeyDown) return false;
   const int modifiers = event.GetModifiers();
   const bool ctrl = modifiers & blink::WebInputEvent::kControlKey;
   const bool alt = modifiers & blink::WebInputEvent::kAltKey;
@@ -682,7 +795,7 @@ bool ClaimShortcut(const input::NativeWebKeyboardEvent& event, bool page_decline
   // closes a Peek before its page sees it, as the Mac's Peek keyboard
   // monitor takes it.
   if (!ctrl && !alt && !meta && key != "Escape") return false;
-  for (const Shortcut& shortcut : Shortcuts()) {
+  for (const Shortcut& shortcut : handler->shortcuts()) {
     if (!page_declined && !shortcut.reserved) continue;
     if (shortcut.key != key && !(shortcut.key == "+" && key == "=")) continue;
     if (shortcut.ctrl != ctrl || shortcut.alt != alt || shortcut.meta != meta) continue;
@@ -693,35 +806,65 @@ bool ClaimShortcut(const input::NativeWebKeyboardEvent& event, bool page_decline
     fired.Set("altKey", alt);
     fired.Set("metaKey", meta);
     fired.Set("shiftKey", shift);
-    return g_handler->FireShortcut(std::move(fired));
+    return handler->Fire("crest-shortcut", base::Value(std::move(fired)));
   }
   return false;
 }
 
-void PerformCommand(const std::string& command) {
-  if (g_handler) g_handler->FireCommand(command);
+void PerformCommand(LinuxWindow& window, const std::string& command) {
+  Tell(window, "crest-command", base::Value(command));
 }
 
 std::u16string SelectionSearchEngine(const std::string& page) {
-  const SelectionSearch& search = ShownSelectionSearch();
-  return !page.empty() && search.page == page ? search.engine : std::u16string();
+  // The window the search will go to names its engine.
+  const CrestUIHandler* handler = HandlerForPage(page);
+  if (!handler || page.empty() || handler->selection_search().page != page) return std::u16string();
+  return handler->selection_search().engine;
 }
 
 bool SearchSelection(const std::string& page, const std::u16string& text) {
-  if (!g_handler) return false;
+  CrestUIHandler* handler = HandlerForPage(page);
+  if (!handler) return false;
   base::DictValue search;
   // The sidebar spells ids in lower case.
   search.Set("pageId", base::ToLowerASCII(page));
   search.Set("text", text);
-  return g_handler->FireSearchSelection(std::move(search));
+  return handler->Fire("crest-search-selection", base::Value(std::move(search)));
 }
 
-bool CopyLink(const GURL& url) {
-  return g_handler && url.is_valid() && g_handler->FireCopyLink(url);
+bool CopyLink(const std::string& page, const GURL& url) {
+  CrestUIHandler* handler = HandlerForPage(page);
+  return handler && url.is_valid() && handler->Fire("crest-copy-link", base::Value(url.spec()));
 }
 
-void ReportPageFocused(const std::string& page) {
-  if (g_handler) g_handler->Fire("crest-page-focused", base::Value(page));
+void ReportPageFocused(LinuxWindow& window, const std::string& page) {
+  Tell(window, "crest-page-focused", base::Value(page));
+}
+
+void ReportPageLeft(LinuxWindow& window, const std::string& page) {
+  Tell(window, "crest-page-left", base::Value(page));
+}
+
+void ReportPageArrived(LinuxWindow& window, const std::string& page) {
+  Tell(window, "crest-page-arrived", base::Value(page));
+}
+
+void ReportWindowActive(LinuxWindow& window, bool active) {
+  Tell(window, "crest-window-active", base::Value(active));
+}
+
+bool AskToClose(LinuxWindow& window, bool last) {
+  return Tell(window, "crest-close-requested", base::Value(last));
+}
+
+void ShowSpace(LinuxWindow& window, const std::string& space) {
+  Tell(window, "crest-show-space", base::Value(space));
+}
+
+bool OpenExternalLinks(LinuxWindow& window, const std::vector<std::string>& urls) {
+  base::ListValue links;
+  for (const std::string& url : urls) links.Append(url);
+  return Tell(window, "crest-open-external", base::Value(std::move(links)));
 }
 
 CrestUIConfig::CrestUIConfig() : DefaultWebUIConfig(content::kChromeUIScheme, kCrestUIHost) {}

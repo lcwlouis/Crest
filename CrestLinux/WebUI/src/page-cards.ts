@@ -37,6 +37,8 @@ export interface PageCardsContext {
     readonly report: (error: unknown) => void;
     /** The page a Peek shows over the cards, placed, and whether it is the page in use. */
     readonly peek: () => { readonly placement: PagePlacement; readonly inUse: boolean } | null;
+    /** Whether the window shows the page `pageId`: another window may show it while this one is in the background. */
+    readonly shows: (pageId: Guid) => boolean;
 }
 
 /** A divider drag in flight: the shares it started from and those the pointer reached. */
@@ -169,7 +171,7 @@ export class PageCards {
     /** The page a card shows over itself: one the engine made live that has not failed to load. */
     private shownPage(tabId: Guid): PageState | undefined {
         const page = this.context.model.pageFor(tabId);
-        return page && page.phase === "Live" && !page.live.failure ? page : undefined;
+        return page && page.phase === "Live" && !page.live.failure && this.context.shows(page.id) ? page : undefined;
     }
 
     private cardsState(): ShownCards | undefined {
