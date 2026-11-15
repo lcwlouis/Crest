@@ -3,9 +3,12 @@
 // Swift UI's CoreState does on the Mac.
 
 import type {
+    ArchivedTabState,
     Change,
+    DownloadState,
     FolderState,
     Guid,
+    HistoryEntryState,
     PageState,
     SidebarList,
     SpaceState,
@@ -22,6 +25,9 @@ export interface Space {
     splitGroups: Map<Guid, SplitGroupState>;
     /** The core's sidebar outline: each list by `listKey`. */
     lists: Map<string, SidebarList>;
+    /** The Space's history, newest visit first, and its archived tabs, as the core orders them. */
+    history: HistoryEntryState[];
+    archive: ArchivedTabState[];
 }
 
 /** The key of the list holding `section`'s top level, or the inside of `folderId`. */
@@ -36,7 +42,16 @@ function spaceFrom(state: SpaceState): Space {
         folders: new Map(state.folders.map((folder) => [folder.id, folder])),
         splitGroups: new Map(state.splitGroups.map((group) => [group.id, group])),
         lists: new Map(state.sidebar.lists.map((list) => [listKey(list.section, list.folderId), list])),
+        history: [...state.history],
+        archive: [...state.archivedTabs],
     };
+}
+
+/** `entries` in the core's `order` when it sends one, else as they are. */
+function reorder<T>(entries: T[], order: readonly Guid[] | null, id: (entry: T) => Guid): T[] {
+    if (!order) return entries;
+    const byId = new Map(entries.map((entry) => [id(entry), entry]));
+    return order.map((key) => byId.get(key)).filter((entry): entry is T => entry !== undefined);
 }
 
 export interface Workspace {
@@ -49,6 +64,8 @@ export class Model {
     readonly workspaces = new Map<Guid, Workspace>();
     readonly windows = new Map<Guid, WindowState>();
     readonly pages = new Map<Guid, PageState>();
+    /** Every download the core's ledger records, in its order, as the Mac's CoreState keeps them. */
+    downloads: DownloadState[] = [];
 
     apply(changes: readonly Change[]): void {
         for (const change of changes) this.applyOne(change);
@@ -146,6 +163,40 @@ export class Model {
             case "PageRemoved":
                 this.pages.delete(change.value.pageId);
                 break;
+            case "HistoryChanged": {
+                const space = this.workspaces.get(change.value.workspaceId)?.spaces.get(change.value.spaceId);
+                if (!space) break;
+                const { recorded, removed, order } = change.value;
+                const gone = new Set([...removed, ...recorded.map((entry) => entry.id)]);
+                space.history = reorder([...recorded, ...space.history.filter((entry) => !gone.has(entry.id))], order, (entry) => entry.id);
+                break;
+            }
+            case "ArchiveChanged": {
+                const space = this.workspaces.get(change.value.workspaceId)?.spaces.get(change.value.spaceId);
+                if (!space) break;
+                const { archived, removed, order } = change.value;
+                const gone = new Set(removed);
+                const next = space.archive.filter((entry) => !gone.has(entry.tab.id));
+                for (const entry of archived) {
+                    const index = next.findIndex((held) => held.tab.id === entry.tab.id);
+                    if (index >= 0) next[index] = entry;
+                    else next.push(entry);
+                }
+                space.archive = reorder(next, order, (entry) => entry.tab.id);
+                break;
+            }
+            case "DownloadUpdated": {
+                const { download, position } = change.value;
+                const index = this.downloads.findIndex((held) => held.id === download.id);
+                if (index >= 0) this.downloads[index] = download;
+                else this.downloads.splice(Math.min(Math.max(position, 0), this.downloads.length), 0, download);
+                break;
+            }
+            case "DownloadsRemoved": {
+                const removed = new Set(change.value.downloadIds);
+                this.downloads = this.downloads.filter((download) => !removed.has(download.id));
+                break;
+            }
             default:
                 break;
         }

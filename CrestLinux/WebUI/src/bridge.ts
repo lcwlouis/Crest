@@ -239,3 +239,25 @@ export async function pageRequest<K extends PageRequest["kind"] & keyof PageRequ
     reader.finish();
     return result;
 }
+
+/** Opens a finished download's file, given as its `file:` address, in the desktop's default app. */
+export function openDownload(fileUrl: string): void {
+    chrome.send("openDownload", [fileUrl]);
+}
+
+/** Shows a finished download's file, given as its `file:` address, in the desktop's file manager. */
+export function showDownloadInFolder(fileUrl: string): void {
+    chrome.send("showDownloadInFolder", [fileUrl]);
+}
+
+/**
+ * Where a download's file goes: the person's Downloads folder under a name
+ * no file there has, or the place they choose in the save dialog when
+ * `asks`. The path is null when they cancelled or the folder is unavailable.
+ */
+export function chooseDownloadPath(
+    filename: string,
+    asks: boolean,
+): Promise<{ readonly path: string | null; readonly unavailable: boolean }> {
+    return send("chooseDownloadPath", filename, asks);
+}

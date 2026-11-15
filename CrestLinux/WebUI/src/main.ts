@@ -22,13 +22,15 @@ import { Palette } from "./palette.js";
 import { Prompts } from "./prompts.js";
 import { FloatSurfaces } from "./surfaces.js";
 import { TabIcons } from "./icons.js";
-import type { Guid, LaunchEnvironment, PageState, TabState } from "../generated/crest_contracts.js";
+import type { Guid, Intent, LaunchEnvironment, PageState, TabState } from "../generated/crest_contracts.js";
 import { Model } from "./model.js";
 import { PageStates } from "./page-states.js";
 import type { Space, Workspace } from "./model.js";
 import { InlineRename } from "./rename.js";
 import { element, Sidebar, symbol } from "./sidebar.js";
 import { SidebarMenus } from "./sidebar-menus.js";
+import { DownloadDestinations } from "./download-destinations.js";
+import { Utilities } from "./utilities.js";
 
 const model = new Model();
 const icons = new TabIcons(() => render());
@@ -118,6 +120,21 @@ const address = element("button", "address");
 address.addEventListener("click", () => palette.open("current", address.dataset.url ?? ""));
 root.append(navigation, address);
 const rename = new InlineRename(() => render());
+const sendChecked = (intent: Intent): Promise<boolean> =>
+    dispatch(intent).then(
+        () => true,
+        (error: unknown) => (report(error), false),
+    );
+const utilities = new Utilities({
+    model,
+    imageOf: (tabId) => icons.imageOf(tabId),
+    windowId: () => windowId,
+    space: shownSpace,
+    workspace: () => model.workspace,
+    send: sendChecked,
+    redraw: () => render(),
+});
+const downloadDestinations = new DownloadDestinations((intent) => dispatch(intent).catch((error: unknown) => console.error(error)));
 const sidebar = new Sidebar(
     {
         model,
@@ -132,15 +149,12 @@ const sidebar = new Sidebar(
             rename,
             windowId: () => windowId,
             shownTabId,
-            send: (intent) =>
-                dispatch(intent).then(
-                    () => true,
-                    (error: unknown) => (report(error), false),
-                ),
+            send: sendChecked,
             report,
             perform: (command) => void commands.perform(command),
         }),
         rename,
+        utilities,
     },
     root,
 );
@@ -156,6 +170,7 @@ const commands = new Commands({
     report,
     openPalette: (mode) => palette.open(mode, mode === "current" ? (address.dataset.url ?? "") : ""),
     find: (action) => (action === "open" ? findBar.open() : findBar.step(action === "previous")),
+    toggleUtility: (surface) => utilities.toggleSurface(surface),
 });
 
 // The surfaces floating over the page.
@@ -303,6 +318,8 @@ function render(): void {
         reload.title = loading ? "Stop" : "Reload";
     }
     showAddress(page);
+    // The list's search field stands in the address field's place, as on the Mac.
+    address.hidden = utilities.isOpen;
     sidebar.render();
 }
 
@@ -422,6 +439,7 @@ async function start(): Promise<void> {
             findBar.follow();
             prompts.apply(changes);
             pageStates.apply(changes);
+            downloadDestinations.apply(changes);
         },
         (bytes) => {
             try {

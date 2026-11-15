@@ -11,6 +11,7 @@ import { pageRequest, query } from "./bridge.js";
 import { listKey } from "./model.js";
 import type { Model, Space, Workspace } from "./model.js";
 import { Notices, postNotice } from "./notices.js";
+import { UtilitySurface } from "./utilities.js";
 
 /** What commands act on: the window's shown Space, tab and page. */
 export interface CommandContext {
@@ -24,6 +25,8 @@ export interface CommandContext {
     readonly report: (error: unknown) => void;
     readonly openPalette: (mode: "newTab" | "current") => void;
     readonly find: (action: "open" | "next" | "previous") => void;
+    /** Opens one of the sidebar's lists, or puts it away when it shows. */
+    readonly toggleUtility: (surface: UtilitySurface) => void;
 }
 
 /** The commands the Linux window performs; the rest wait for their surfaces. */
@@ -31,7 +34,7 @@ const known = new Set<string>([
     "NewTab", "OpenLocation", "CloseTabOrWindow", "ArchiveTab", "Back", "Forward", "ReloadPage", "ReloadFromOrigin",
     "StopLoading", "ToggleSelectedTabPinned", "DuplicateTab", "ReopenClosedTab", "ClearUnpinnedTabs", "PreviousTab",
     "NextTab", "PreviousSpace", "NextSpace", "SelectNumbered", "ZoomIn", "ZoomOut", "ActualSize", "CopyPageLink",
-    "CopyPageLinkAsMarkdown", "FindInPage", "FindNext", "FindPrevious",
+    "CopyPageLinkAsMarkdown", "FindInPage", "FindNext", "FindPrevious", "ShowHistory", "ShowArchive", "ShowDownloads",
 ]);
 
 /** The levels the page zoom commands step through, as the Mac's pageZoomLevels. */
@@ -166,6 +169,12 @@ export class Commands {
                         .then(() => postNotice(Notices.urlCopied))
                         .catch(this.context.report);
             }
+            case "ShowHistory":
+                return () => this.context.toggleUtility(UtilitySurface.history);
+            case "ShowArchive":
+                return () => this.context.toggleUtility(UtilitySurface.archive);
+            case "ShowDownloads":
+                return () => this.context.toggleUtility(UtilitySurface.downloads);
             default:
                 return null;
         }
