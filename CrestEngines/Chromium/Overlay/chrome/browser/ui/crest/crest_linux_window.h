@@ -33,6 +33,11 @@ class LinuxWindow final {
   LinuxWindow& operator=(const LinuxWindow&) = delete;
   ~LinuxWindow();
 
+  // `bounds`, in screen coordinates, moved onto the work area of the display
+  // it is most on, and shrunk to fit it, as the Mac keeps a window it
+  // restores or moves on a screen.
+  static gfx::Rect OnScreen(const gfx::Rect& bounds);
+
   views::Widget* widget() const { return widget_.get(); }
 
   // Shows the page `page` (a core page id) beside the sidebar. False when the

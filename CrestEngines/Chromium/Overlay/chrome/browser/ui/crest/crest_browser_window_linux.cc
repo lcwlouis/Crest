@@ -18,6 +18,7 @@ static_assert(!std::is_abstract_v<CrestBrowserWindow>);
 #include "chrome/browser/ui/autofill/update_address_bubble_controller.h"
 #include "chrome/browser/ui/crest/crest_chrome_hooks.h"
 #include "chrome/browser/ui/crest/crest_linux_ui.h"
+#include "chrome/browser/ui/crest/crest_linux_window.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/exclusive_access/exclusive_access_bubble.h"
@@ -1000,7 +1001,9 @@ void CrestBrowserWindow::SetBounds(const gfx::Rect& bounds) {
   views::Widget* window = crest::WindowForBrowser(browser_);
   if (!window || IsFullscreen() || !crest::OwnsWindow(browser_)) return;
   if (browser_->GetType() != BrowserWindowInterface::Type::TYPE_NORMAL) return;
-  window->SetBounds(bounds);
+  // Bounds Chromium saved (a restored session's, an extension's) may name a
+  // place no display covers now.
+  window->SetBounds(crest::LinuxWindow::OnScreen(bounds));
 }
 
 bool CrestLocationBar::IsMouseHovered() const { return false; }

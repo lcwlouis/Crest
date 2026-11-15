@@ -13,6 +13,8 @@
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
 #include "third_party/skia/include/core/SkColor.h"
+#include "ui/display/display.h"
+#include "ui/display/screen.h"
 #include "ui/gfx/geometry/rounded_corners_f.h"
 #include "ui/views/controls/native/native_view_host.h"
 #include "ui/views/controls/webview/webview.h"
@@ -73,6 +75,15 @@ LinuxWindow* LinuxWindow::Current() {
   return g_window;
 }
 
+// static
+gfx::Rect LinuxWindow::OnScreen(const gfx::Rect& bounds) {
+  display::Screen* screen = display::Screen::Get();
+  if (!screen) return bounds;
+  gfx::Rect placed = bounds;
+  placed.AdjustToFit(screen->GetDisplayMatching(bounds).work_area());
+  return placed;
+}
+
 LinuxWindow::LinuxWindow(Profile* profile) {
   g_window = this;
   SetLinuxUI(&ui_shell_);
@@ -97,7 +108,7 @@ LinuxWindow::LinuxWindow(Profile* profile) {
   views::Widget::InitParams params(views::Widget::InitParams::CLIENT_OWNS_WIDGET,
                                    views::Widget::InitParams::TYPE_WINDOW);
   params.delegate = &delegate_;
-  params.bounds = gfx::Rect(80, 80, 1280, 820);
+  params.bounds = OnScreen(gfx::Rect(80, 80, 1280, 820));
   params.wm_class_name = "crest";
   params.wm_class_class = "Crest";
   params.name = "CrestWindow";
