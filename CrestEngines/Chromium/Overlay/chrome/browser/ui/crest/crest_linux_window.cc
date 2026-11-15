@@ -2,15 +2,25 @@
 
 #include <algorithm>
 #include <functional>
+#include <map>
 #include <memory>
+#include <optional>
 #include <utility>
 #include <vector>
 
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
+#include "base/files/file_path.h"
+#include "base/files/file_util.h"
+#include "base/json/json_reader.h"
+#include "base/json/json_writer.h"
 #include "base/location.h"
+#include "base/logging.h"
 #include "base/no_destructor.h"
 #include "base/task/sequenced_task_runner.h"
+#include "base/task/thread_pool.h"
+#include "base/timer/timer.h"
+#include "base/values.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/crest/crest_engine_binding.h"
 #include "chrome/browser/ui/crest/crest_engine_browsers.h"
@@ -21,6 +31,7 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "third_party/skia/include/core/SkColor.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/rounded_corners_f.h"
 #include "ui/gfx/geometry/vector2d.h"
 #include "ui/views/controls/native/native_view_host.h"
@@ -48,6 +59,68 @@ constexpr float kPageCornerRadius = 13;
 // How far a new window opens down and to the right of the one in use, as the
 // Mac's windows cascade. Wayland places windows itself and ignores it.
 constexpr int kCascadeStep = 22;
+
+// --- Saved frames -------------------------------------------------------------
+// Each browser window keeps its frame under the core's id for it, as the
+// Mac's window keeps it under its autosave name, so a window the launch
+// reopens comes back where it was. Read once off the UI thread at start,
+// written there a moment after the frames change.
+
+struct Frame {
+  gfx::Rect bounds;
+  bool maximized = false;
+};
+
+struct SavedFrames {
+  base::FilePath file;
+  bool read = false;
+  std::map<std::string, Frame> by_window;
+  base::OneShotTimer save;
+  scoped_refptr<base::SequencedTaskRunner> disk;
+};
+
+SavedFrames& Frames() {
+  static base::NoDestructor<SavedFrames> frames;
+  return *frames;
+}
+
+// How long the frames wait after a change before they are written.
+constexpr base::TimeDelta kFrameSaveDelay = base::Seconds(1);
+
+std::string ReadFramesFile(const base::FilePath& file) {
+  std::string contents;
+  if (!base::ReadFileToStringWithMaxSize(file, &contents, 1 << 20)) return std::string();
+  return contents;
+}
+
+void WriteFrames() {
+  SavedFrames& frames = Frames();
+  frames.save.Stop();
+  if (frames.file.empty() || !frames.disk) return;
+  base::DictValue saved;
+  for (const auto& [window, frame] : frames.by_window) {
+    base::DictValue entry;
+    entry.Set("x", frame.bounds.x());
+    entry.Set("y", frame.bounds.y());
+    entry.Set("width", frame.bounds.width());
+    entry.Set("height", frame.bounds.height());
+    entry.Set("maximized", frame.maximized);
+    saved.Set(window, std::move(entry));
+  }
+  std::optional<std::string> json = base::WriteJson(saved);
+  if (!json) return;
+  frames.disk->PostTask(FROM_HERE, base::BindOnce(
+                                       [](const base::FilePath& file, const std::string& json) {
+                                         if (!base::WriteFile(file, json)) {
+                                           LOG(WARNING) << "Crest could not keep its window frames.";
+                                         }
+                                       },
+                                       frames.file, std::move(*json)));
+}
+
+void SaveFramesSoon() {
+  Frames().save.Start(FROM_HERE, kFrameSaveDelay, base::BindOnce(&WriteFrames));
+}
 
 // The window's contents: the WebUI fills them, and each page sits over it in
 // the bounds the WebUI last named, which the WebUI lays out again on resize.
@@ -130,6 +203,15 @@ LinuxWindow* LinuxWindow::Open(Profile* profile, const Kind& kind, const std::st
   gfx::Rect bounds(gfx::Point(80, 80), kind.size);
   if (in_use) bounds.set_origin(in_use->widget()->GetWindowBoundsInScreen().origin() +
                                 gfx::Vector2d(kCascadeStep, kCascadeStep));
+  // A window the launch reopens opens where it was.
+  std::optional<Frame> saved;
+  if (kind.browses && !id.empty() && Frames().read) {
+    window->frame_restored_ = true;
+    if (auto found = Frames().by_window.find(id); found != Frames().by_window.end()) {
+      saved = found->second;
+      bounds = saved->bounds;
+    }
+  }
   views::Widget::InitParams params(views::Widget::InitParams::CLIENT_OWNS_WIDGET,
                                    views::Widget::InitParams::TYPE_WINDOW);
   params.delegate = &window->delegate_;
@@ -155,7 +237,38 @@ LinuxWindow* LinuxWindow::Open(Profile* profile, const Kind& kind, const std::st
   } else {
     window->widget_->ShowInactive();
   }
+  if (saved && saved->maximized) window->widget_->Maximize();
   return window;
+}
+
+// static
+void LinuxWindow::LoadFrames(const base::FilePath& file) {
+  SavedFrames& frames = Frames();
+  if (frames.disk) return;
+  frames.file = file;
+  // Blocks shutdown, so the frames a quit kept reach the disk.
+  frames.disk = base::ThreadPool::CreateSequencedTaskRunner(
+      {base::MayBlock(), base::TaskShutdownBehavior::BLOCK_SHUTDOWN});
+  frames.disk->PostTaskAndReplyWithResult(
+      FROM_HERE, base::BindOnce(&ReadFramesFile, file), base::BindOnce([](std::string json) {
+        SavedFrames& frames = Frames();
+        frames.read = true;
+        if (std::optional<base::DictValue> saved = base::JSONReader::ReadDict(json, base::JSON_PARSE_RFC)) {
+          for (const auto [window, value] : *saved) {
+            const base::DictValue* entry = value.GetIfDict();
+            if (!entry) continue;
+            const std::optional<int> x = entry->FindInt("x");
+            const std::optional<int> y = entry->FindInt("y");
+            const std::optional<int> width = entry->FindInt("width");
+            const std::optional<int> height = entry->FindInt("height");
+            if (!x || !y || !width || !height || *width <= 0 || *height <= 0) continue;
+            // A frame a window kept since it opened stays the newer one.
+            frames.by_window.try_emplace(window, Frame{.bounds = gfx::Rect(*x, *y, *width, *height),
+                                                       .maximized = entry->FindBool("maximized").value_or(false)});
+          }
+        }
+        for (LinuxWindow* window : Windows()) window->RestoreFrame();
+      }));
 }
 
 // static
@@ -246,6 +359,37 @@ LinuxWindow::~LinuxWindow() {
   widget_.reset();
 }
 
+void LinuxWindow::Adopt(const std::string& id) {
+  id_ = id;
+  RestoreFrame();
+}
+
+void LinuxWindow::RestoreFrame() {
+  SavedFrames& frames = Frames();
+  if (!kind_.browses || id_.empty() || frame_restored_ || !frames.read) return;
+  frame_restored_ = true;
+  const auto found = frames.by_window.find(id_);
+  if (found == frames.by_window.end()) {
+    RememberFrame();
+    return;
+  }
+  const Frame frame = found->second;
+  if (widget_->IsMaximized()) widget_->Restore();
+  widget_->SetBounds(frame.bounds);
+  if (frame.maximized) widget_->Maximize();
+}
+
+void LinuxWindow::RememberFrame() {
+  if (!kind_.browses || id_.empty() || !frame_restored_) return;
+  if (widget_->IsMinimized() || widget_->IsFullscreen()) return;
+  Frames().by_window[id_] = Frame{.bounds = widget_->GetRestoredBounds(), .maximized = widget_->IsMaximized()};
+  SaveFramesSoon();
+}
+
+void LinuxWindow::OnWidgetBoundsChanged(views::Widget* widget, const gfx::Rect& new_bounds) {
+  RememberFrame();
+}
+
 content::WebContents* LinuxWindow::ui_contents() const {
   return ui_ ? ui_->web_contents() : nullptr;
 }
@@ -290,6 +434,7 @@ void LinuxWindow::OnWidgetActivationChanged(views::Widget* widget, bool active) 
     // the Mac's key window does.
     EngineBinding::Get().Browsers().WindowInUse(
         [this](content::WebContents* contents) { return Shows(contents); });
+    FocusInUse();
   }
   ReportWindowActive(*this, active);
 }
@@ -472,7 +617,11 @@ void LinuxWindow::Restack() {
   widget_->ReorderNativeViews();
 }
 
+// A window in the background moves no focus, since focusing a view there
+// would take activation from the window in use: it focuses its page in use
+// once it comes into use.
 void LinuxWindow::FocusInUse() {
+  if (!widget_->IsActive()) return;
   Slot* slot = SlotShowing(focused_page_);
   if (overlay_raised_ && !(slot && slot->above)) {
     ui_->RequestFocus();
@@ -522,6 +671,14 @@ void LinuxWindow::SetOverlay(bool raised) {
 }
 
 void LinuxWindow::Closing() {
+  // The window keeps its frame, as the Mac's autosaved frame outlives its
+  // window; the last browser window's close writes the frames at once.
+  if (kind_.browses && !id_.empty()) {
+    RememberFrame();
+    const bool last = std::ranges::none_of(
+        Windows(), [this](const LinuxWindow* other) { return other != this && other->kind_.browses; });
+    if (last) WriteFrames();
+  }
   // The window does not own the pages it shows; it lets go before they go.
   for (Slot& slot : slots_) Detach(slot);
   focused_page_.clear();

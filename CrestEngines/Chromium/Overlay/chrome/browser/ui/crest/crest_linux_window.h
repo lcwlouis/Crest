@@ -33,6 +33,7 @@
 #include "ui/views/widget/widget_observer.h"
 
 class Profile;
+namespace base { class FilePath; }
 namespace content { class WebContents; }
 namespace views { class WebView; }
 
@@ -87,6 +88,11 @@ class LinuxWindow final : public views::WidgetObserver {
   static void CloseAll();
   // Stops showing `page` in any window: the engine lets it go.
   static void ReleaseEverywhere(const std::string& page);
+  // Reads the frames the browser windows kept under their ids from `file`,
+  // as the Mac's windows keep theirs under their autosave names, and keeps
+  // each window's there from now on. A window with an id takes its own once
+  // they are read.
+  static void LoadFrames(const base::FilePath& file);
 
   LinuxWindow(const LinuxWindow&) = delete;
   LinuxWindow& operator=(const LinuxWindow&) = delete;
@@ -97,8 +103,9 @@ class LinuxWindow final : public views::WidgetObserver {
   // The core's identity for the window, in GuidText's spelling; empty for a
   // Quick Window and until the WebUI adopts one.
   const std::string& id() const { return id_; }
-  // The WebUI opened the core's window `id` for this one.
-  void Adopt(const std::string& id) { id_ = id; }
+  // The WebUI opened the core's window `id` for this one, which places it at
+  // the frame that window kept.
+  void Adopt(const std::string& id);
   content::WebContents* ui_contents() const;
   content::WebContents* float_contents() const;
 
@@ -176,6 +183,12 @@ class LinuxWindow final : public views::WidgetObserver {
 
   // views::WidgetObserver:
   void OnWidgetActivationChanged(views::Widget* widget, bool active) override;
+  void OnWidgetBoundsChanged(views::Widget* widget, const gfx::Rect& new_bounds) override;
+
+  // Places a browser window at the frame its id kept, once the frames are
+  // read, and keeps its frame under its id after that.
+  void RestoreFrame();
+  void RememberFrame();
 
   // The window is closing.
   void Closing();
@@ -244,6 +257,9 @@ class LinuxWindow final : public views::WidgetObserver {
   bool float_focused_ = false;
   // When the person last used the window, in the order of every window's use.
   uint64_t used_ = 0;
+  // Whether the window took the frame its id kept, or found none, so its own
+  // frame is the one to keep.
+  bool frame_restored_ = false;
   // The WebUI agreed to the window closing, or there is nothing to ask.
   bool closes_ = false;
 };
