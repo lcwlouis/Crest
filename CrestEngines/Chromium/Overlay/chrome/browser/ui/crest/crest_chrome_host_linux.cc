@@ -248,7 +248,13 @@ std::unique_ptr<RenderViewContextMenuObserver> AdaptPageMenu(content::WebContent
   // These destinations require Chrome profile/Views UI. Crest owns Space and
   // window routing; never expose an engine-only window or profile here.
   for (size_t i = menu.GetItemCount(); i > 0; --i) {
-    switch (menu.GetCommandIdAt(i - 1)) {
+    const int command = menu.GetCommandIdAt(i - 1);
+    // "Open link as <profile>" rows, one per other Chromium profile.
+    if (command >= IDC_OPEN_LINK_IN_PROFILE_FIRST && command <= IDC_OPEN_LINK_IN_PROFILE_LAST) {
+      menu.RemoveItemAt(i - 1);
+      continue;
+    }
+    switch (command) {
       case IDC_CONTENT_CONTEXT_OPENLINKNEWWINDOW:
       case IDC_CONTENT_CONTEXT_OPENLINKOFFTHERECORD:
       case IDC_CONTENT_CONTEXT_OPENLINKINPROFILE:
