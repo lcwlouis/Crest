@@ -265,3 +265,199 @@
     }
   }
 }
+
+/* --- Crest's password prompts (credential-float.ts): the Mac's
+   BrowserCredentialPromptSurface on its panel, with
+   BrowserCredentialPromptMetrics.pointer's measures. Here, since the main
+   WebUI draws the same card to measure it. --- */
+
+.credential-slot {
+  padding: 16px;
+}
+
+.credential-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-sizing: border-box;
+  padding: var(--crest-space-m);
+  border-radius: var(--crest-radius-control);
+  background: var(--crest-window-background);
+  color: var(--crest-primary);
+  font: var(--crest-text-body) var(--crest-font-ui);
+  box-shadow: 0 6px 14px rgb(0 0 0 / 0.16), inset 0 0 0 0.5px var(--crest-subtle-border);
+  overflow: hidden;
+}
+
+.credential-header {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.credential-identity {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--crest-radius-compact);
+  background: color-mix(in srgb, var(--crest-accent) 14%, transparent);
+  color: var(--crest-accent);
+}
+
+.credential-words {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.credential-title {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.credential-subtitle,
+.credential-row-detail {
+  color: var(--crest-secondary);
+  font-size: var(--crest-text-subheadline);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.credential-spacer {
+  flex: 1;
+  min-width: 8px;
+}
+
+.credential-close {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: var(--crest-radius-compact);
+  background: none;
+  color: var(--crest-secondary);
+}
+
+.credential-close:hover,
+.credential-row:hover {
+  background: var(--crest-hover);
+}
+
+.credential-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+}
+
+.credential-card .prompt-button {
+  flex: none;
+  height: 28px;
+  padding: 0 var(--crest-space-m);
+  font: inherit;
+}
+
+.credential-notice,
+.credential-empty,
+.credential-destination,
+.credential-error,
+.credential-loading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--crest-secondary);
+  font-size: var(--crest-text-subheadline);
+}
+
+.credential-error {
+  color: var(--crest-danger);
+}
+
+.credential-mark {
+  display: inline-flex;
+  flex: none;
+}
+
+.credential-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0 -6px;
+}
+
+.credential-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 6px;
+  border: none;
+  border-radius: var(--crest-radius-compact);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+}
+
+.credential-row-icon,
+.credential-row-go {
+  display: inline-flex;
+  flex: none;
+  color: var(--crest-secondary);
+}
+
+.credential-row-go {
+  margin-inline-start: auto;
+  color: var(--crest-accent);
+}
+
+.credential-row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.credential-row-title {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.credential-strong {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+}
+
+.credential-explanation {
+  margin: 0;
+  color: var(--crest-secondary);
+  font-size: var(--crest-text-subheadline);
+}
+
+.credential-progress {
+  width: 12px;
+  height: 12px;
+  border: 2px solid color-mix(in srgb, currentColor 25%, transparent);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: credential-spin 0.8s linear infinite;
+}
+
+@keyframes credential-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

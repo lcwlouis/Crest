@@ -60,6 +60,11 @@ export class Commands {
     private readonly context: CommandContext;
     private readonly zoom = new Map<Guid, number>();
 
+    /** The zoom this window set on the page `pageId`; 1 when it set none. */
+    zoomOf(pageId: Guid): number {
+        return this.zoom.get(pageId) ?? 1;
+    }
+
     constructor(context: CommandContext) {
         this.context = context;
     }

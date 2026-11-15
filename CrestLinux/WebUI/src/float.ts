@@ -1,11 +1,14 @@
 // The page of the small surfaces that float over a web page: the find bar,
-// the questions sites ask (prompt-float.ts), and what Crest shows over a page
+// the questions sites ask (prompt-float.ts), Crest's password prompts
+// (credential-float.ts), and what Crest shows over a page
 // while it stays in use (page-layers.ts). It keeps no state of its own: the
 // window's main WebUI sends the scene to draw (setFloat), each surface in a
 // layer of its own, and hears what the person did here (floatEvent); it
 // talks to the core itself. Crest's keys pressed here go to the main WebUI,
 // which performs them as it does those the window takes from the page.
 
+import { credentialCard, isCredentialState } from "./credential-float.js";
+import type { CredentialFloatEvent, CredentialPromptState } from "./credential-float.js";
 import { infoBarStack, isPageLayerState, linkHoverLabel, noticeCapsule, openingCover } from "./page-layers.js";
 import type { PageLayerEvent, PageLayerState } from "./page-layers.js";
 import { isPromptState, PromptView } from "./prompt-float.js";
@@ -23,6 +26,7 @@ export type FloatState =
           readonly activeMatch: number;
       }
     | PromptFloatState
+    | CredentialPromptState
     | PageLayerState;
 
 /** A layer of the scene, placed in this page's CSS pixels. */
@@ -56,6 +60,7 @@ export type FloatEvent =
           readonly shiftKey: boolean;
       }
     | PromptFloatEvent
+    | CredentialFloatEvent
     | PageLayerEvent;
 
 const surface = document.getElementById("surface")!;
@@ -158,10 +163,18 @@ document.addEventListener("keydown", (event) => {
 });
 
 /** The slots the layers draw in, one for each kind of surface. */
-type Slot = "find" | "prompt" | "notice" | "linkHover" | "opening" | "infoBars";
+type Slot = "find" | "prompt" | "credential" | "notice" | "linkHover" | "opening" | "infoBars";
 
 function slotOf(state: FloatState): Slot {
     return isPromptState(state) ? "prompt" : state.kind;
+}
+
+/** Draws a password prompt, keeping its card while it shows the same thing. */
+function drawCredential(into: HTMLElement, state: CredentialPromptState): void {
+    const key = JSON.stringify(state);
+    if (into.dataset.key === key && into.firstElementChild) return;
+    into.dataset.key = key;
+    into.replaceChildren(credentialCard(state, send));
 }
 
 const slots = new Map<Slot, HTMLElement>();
@@ -173,6 +186,8 @@ function slot(name: Slot): HTMLElement {
         // The find bar and the prompts leave room around them for their shadows.
         made.className = name === "find" || name === "prompt" ? "float-slot padded" : "float-slot";
         if (name === "notice") made.classList.add("notice-layer");
+        // A password prompt leaves the room the main WebUI placed around it (credential-prompts.ts).
+        if (name === "credential") made.classList.add("credential-slot");
         made.hidden = true;
         surface.append(made);
         slots.set(name, made);
@@ -221,6 +236,7 @@ function draw(scene: FloatScene): void {
         into.style.zIndex = String(index);
         if (layer.state.kind === "find") drawFind(into, layer.state);
         else if (isPromptState(layer.state)) prompts.draw(layer.state);
+        else if (isCredentialState(layer.state)) drawCredential(into, layer.state);
         else if (isPageLayerState(layer.state)) drawPageLayer(into, layer.state);
     });
     for (const [name, into] of slots) {
