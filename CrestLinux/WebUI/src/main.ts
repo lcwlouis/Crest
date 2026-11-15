@@ -28,6 +28,7 @@ import type { Space, Workspace } from "./model.js";
 import { InlineRename } from "./rename.js";
 import { element, Sidebar, symbol } from "./sidebar.js";
 import { SidebarMenus } from "./sidebar-menus.js";
+import { DownloadDestinations } from "./download-destinations.js";
 import { Utilities } from "./utilities.js";
 
 const model = new Model();
@@ -132,6 +133,7 @@ const utilities = new Utilities({
     send: sendChecked,
     redraw: () => render(),
 });
+const downloadDestinations = new DownloadDestinations((intent) => dispatch(intent).catch((error: unknown) => console.error(error)));
 const sidebar = new Sidebar(
     {
         model,
@@ -434,6 +436,7 @@ async function start(): Promise<void> {
             followShownPage();
             findBar.follow();
             prompts.apply(changes);
+            downloadDestinations.apply(changes);
         },
         (bytes) => {
             try {

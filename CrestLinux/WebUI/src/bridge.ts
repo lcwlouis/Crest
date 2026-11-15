@@ -249,3 +249,15 @@ export function openDownload(fileUrl: string): void {
 export function showDownloadInFolder(fileUrl: string): void {
     chrome.send("showDownloadInFolder", [fileUrl]);
 }
+
+/**
+ * Where a download's file goes: the person's Downloads folder under a name
+ * no file there has, or the place they choose in the save dialog when
+ * `asks`. The path is null when they cancelled or the folder is unavailable.
+ */
+export function chooseDownloadPath(
+    filename: string,
+    asks: boolean,
+): Promise<{ readonly path: string | null; readonly unavailable: boolean }> {
+    return send("chooseDownloadPath", filename, asks);
+}
