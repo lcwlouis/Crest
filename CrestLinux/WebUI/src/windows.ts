@@ -116,6 +116,11 @@ export class Windows {
         return this.id;
     }
 
+    /** Whether this is the launch's first window, which asks the core what the launch opens. */
+    get launches(): boolean {
+        return this.opening.windowId === null;
+    }
+
     /** Whether the window shows `pageId` where its tab is: always while in use, else unless another window took it. */
     shows(pageId: Guid): boolean {
         return this.active || !this.left.has(pageId);

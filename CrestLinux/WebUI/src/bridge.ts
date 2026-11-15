@@ -444,3 +444,41 @@ export function listenToWindow(events: WindowEvents): void {
     listen("crest-show-space", (spaceId) => events.showSpace((spaceId as string).toLowerCase()));
     listen("crest-open-external", (urls) => events.openExternal(urls as string[]));
 }
+
+// --- Setup (Linux shell) ------------------------------------------------------
+
+/**
+ * Asks the core a question it answers without waiting on its other work, such
+ * as reading another browser's files, away from the browser's UI thread, as
+ * the Mac asks it away from its main thread.
+ */
+export async function queryAway<K extends Query["kind"] & keyof QueryAnswers>(
+    kind: K,
+    value: Extract<Query, { kind: K }>["value"],
+): Promise<QueryAnswers[K]> {
+    const writer = new WireWriter();
+    encodeQuery(writer, { kind, value } as Query);
+    const answer = await send<CallAnswer>("queryAway", toBase64(writer.bytes()));
+    const bytes = fromBase64(answer.bytes);
+    if (answer.status === CREST_REJECTED) throw new Refused(rejectionIn(bytes));
+    if (answer.status !== CREST_OK) throw new Error(`The core could not answer ${kind} (status ${answer.status}).`);
+    const reader = new WireReader(bytes);
+    const result = decodeQueryAnswer(kind, reader);
+    reader.finish();
+    return result;
+}
+
+/** The person's home folder and XDG config folder, where other browsers keep their data. */
+export function homeFolders(): Promise<{ readonly home: string; readonly config: string }> {
+    return send("homeFolders");
+}
+
+/** The folder the person picks in a folder picker titled `title`, opening at `folder`; null when they cancel. */
+export function chooseImportFolder(title: string, folder: string): Promise<string | null> {
+    return send("chooseImportFolder", title, folder);
+}
+
+/** Which of `folders` are folders on this computer, in their order. */
+export function existingFolders(folders: readonly string[]): Promise<string[]> {
+    return send("existingFolders", [...folders]);
+}

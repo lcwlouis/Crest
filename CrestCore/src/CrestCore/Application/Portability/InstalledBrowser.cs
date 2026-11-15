@@ -243,11 +243,13 @@ internal sealed partial class InstalledBrowser {
         string.Equals(Path.GetFullPath(first), Path.GetFullPath(second), StringComparison.Ordinal);
 
     /// The name the person gave each profile of a Mozilla browser, by the full
-    /// path of its folder, from the `profiles.ini` the browser keeps beside
-    /// `folder`, its folder of profiles; none when that cannot be read.
+    /// path of its folder, from the `profiles.ini` the browser keeps in
+    /// `folder`, its folder of profiles, as it does on Linux, or else beside
+    /// it, as it does on the Mac; none when that cannot be read.
     private static Dictionary<string, string> MozillaProfileNames(ImportFolder folder) {
         Dictionary<string, string> names = new(StringComparer.Ordinal);
-        string? root = Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(Path.GetFullPath(folder.Path)));
+        string inside = Path.TrimEndingDirectorySeparator(Path.GetFullPath(folder.Path));
+        string? root = new ImportFolder(inside).File(MozillaProfileList) is not null ? inside : Path.GetDirectoryName(inside);
         if (root is null || new ImportFolder(root).File(MozillaProfileList) is not { } list) return names;
         string text;
         try {

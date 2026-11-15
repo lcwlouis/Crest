@@ -215,6 +215,14 @@ crest_status_t CoreHost::Query(base::span<const uint8_t> query, std::vector<uint
   return status;
 }
 
+crest_status_t CoreHost::QueryAway(base::span<const uint8_t> query, std::vector<uint8_t>& out) {
+  if (shut_down_) return CREST_INVALID_STATE;
+  crest_buffer_t buffer = {nullptr, 0};
+  const crest_status_t status = library_->query(app_, query.data(), query.size(), &buffer);
+  out = library_->Take(buffer);
+  return status;
+}
+
 // The generator writes C++ only for the engine contract, so this one query
 // the shell asks without a WebUI is written here: EngineWindowPlacement's
 // fields in their declared order after its tag, and EngineWindowPlace's in
