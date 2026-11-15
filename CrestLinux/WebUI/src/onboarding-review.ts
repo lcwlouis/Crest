@@ -253,7 +253,7 @@ function groupLabel(setup: Onboarding, review: ReviewSpace): string | null {
 /** Where the Space goes: a new Space, or one the person has (BrowserOnboardingReviewDestinationMenu). */
 function destinationMenu(setup: Onboarding, review: ReviewSpace): HTMLElement {
     const destination = review.record.destinationId;
-    const spaces = setup.destinationSpaces;
+    const spaces = setup.importDestinations;
     const chosen = spaces.find((space) => space.id === destination);
     const control = el("button", "onboarding-destination");
     control.type = "button";
