@@ -7,12 +7,14 @@
 
 #include "base/base64.h"
 #include "base/command_line.h"
+#include "base/environment.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/memory/ref_counted_memory.h"
 #include "base/memory/weak_ptr.h"
+#include "base/nix/xdg_util.h"
 #include "base/no_destructor.h"
 #include "base/path_service.h"
 #include "base/scoped_observation.h"
@@ -200,6 +202,74 @@ class DownloadSaveDialog final : public ui::SelectFileDialog::Listener {
 
 // --- End of downloads -------------------------------------------------------
 
+// --- Setup (Linux shell) ----------------------------------------------------
+// Setup imports from the browsers installed here, which keep their data in
+// the person's home folder and its XDG config folder; when it cannot read a
+// browser's data where it looked, the person picks the browser's data folder,
+// as the Mac's BrowserImportFilePicker asks for it.
+
+// The folder picker for one browser's data, which deletes itself once
+// answered. Answers the folder, or none when the person cancels or no dialog
+// can be shown.
+class ImportFolderDialog final : public ui::SelectFileDialog::Listener {
+ public:
+  using Answer = base::OnceCallback<void(base::FilePath folder)>;
+
+  static void Show(content::WebContents* contents, const std::u16string& title, const base::FilePath& folder,
+                   Answer answer) {
+    auto* listener = new ImportFolderDialog(std::move(answer));
+    listener->dialog_ = ui::SelectFileDialog::Create(listener, nullptr);
+    if (!listener->dialog_) {
+      listener->Finish(base::FilePath());
+      return;
+    }
+    listener->dialog_->SelectFile(ui::SelectFileDialog::SELECT_FOLDER, title, folder, nullptr, 0,
+                                  base::FilePath::StringType(), contents->GetTopLevelNativeWindow());
+  }
+
+  // ui::SelectFileDialog::Listener:
+  void FileSelected(const ui::SelectedFileInfo& file, int index) override { Finish(file.path()); }
+  void FileSelectionCanceled() override { Finish(base::FilePath()); }
+
+ private:
+  explicit ImportFolderDialog(Answer answer) : answer_(std::move(answer)) {}
+  ~ImportFolderDialog() override {
+    if (dialog_) dialog_->ListenerDestroyed();
+  }
+
+  void Finish(const base::FilePath& folder) {
+    std::move(answer_).Run(folder);
+    delete this;
+  }
+
+  Answer answer_;
+  scoped_refptr<ui::SelectFileDialog> dialog_;
+};
+
+// The answer of a query the core answered away from the UI thread.
+struct AwayAnswer {
+  crest_status_t status = CREST_INTERNAL_ERROR;
+  std::vector<uint8_t> bytes;
+};
+
+// Asks the core `query` on the thread this runs on.
+AwayAnswer AskAway(std::vector<uint8_t> query) {
+  AwayAnswer answer;
+  if (CoreHost* host = CoreHost::Get()) answer.status = host->QueryAway(query, answer.bytes);
+  return answer;
+}
+
+// Which of `folders` are folders on this computer, in their order.
+base::ListValue ExistingFolders(std::vector<std::string> folders) {
+  base::ListValue existing;
+  for (const std::string& folder : folders) {
+    if (base::DirectoryExists(base::FilePath::FromUTF8Unsafe(folder))) existing.Append(folder);
+  }
+  return existing;
+}
+
+// --- End of setup -----------------------------------------------------------
+
 class CrestUIHandler;
 
 // Every page of chrome://crest open now. Each window has two: its main WebUI,
@@ -247,6 +317,8 @@ class CrestUIHandler final : public content::WebUIMessageHandler, public CoreHos
     web_ui()->RegisterMessageCallback(
         "query", base::BindRepeating(&CrestUIHandler::HandleCall, base::Unretained(this), Call::kQuery));
     web_ui()->RegisterMessageCallback(
+        "queryAway", base::BindRepeating(&CrestUIHandler::HandleCall, base::Unretained(this), Call::kQueryAway));
+    web_ui()->RegisterMessageCallback(
         "pageRequest", base::BindRepeating(&CrestUIHandler::HandleCall, base::Unretained(this), Call::kPageRequest));
     web_ui()->RegisterMessageCallback(
         "showPage", base::BindRepeating(&CrestUIHandler::HandleShowPage, base::Unretained(this)));
@@ -288,6 +360,13 @@ class CrestUIHandler final : public content::WebUIMessageHandler, public CoreHos
         "showDownloadInFolder", base::BindRepeating(&CrestUIHandler::HandleShowDownloadInFolder, base::Unretained(this)));
     web_ui()->RegisterMessageCallback(
         "chooseDownloadPath", base::BindRepeating(&CrestUIHandler::HandleChooseDownloadPath, base::Unretained(this)));
+    // Setup (Linux shell).
+    web_ui()->RegisterMessageCallback(
+        "homeFolders", base::BindRepeating(&CrestUIHandler::HandleHomeFolders, base::Unretained(this)));
+    web_ui()->RegisterMessageCallback(
+        "chooseImportFolder", base::BindRepeating(&CrestUIHandler::HandleChooseImportFolder, base::Unretained(this)));
+    web_ui()->RegisterMessageCallback(
+        "existingFolders", base::BindRepeating(&CrestUIHandler::HandleExistingFolders, base::Unretained(this)));
   }
 
   void OnJavascriptDisallowed() override { observation_.Reset(); }
@@ -301,7 +380,7 @@ class CrestUIHandler final : public content::WebUIMessageHandler, public CoreHos
   }
 
  private:
-  enum class Call { kDispatch, kQuery, kPageRequest };
+  enum class Call { kDispatch, kQuery, kQueryAway, kPageRequest };
 
   // The page started: it hears every batch the core published so far, in
   // order, then each new one as it comes.
@@ -327,6 +406,15 @@ class CrestUIHandler final : public content::WebUIMessageHandler, public CoreHos
       RejectJavascriptCallback(callback, base::Value(host ? "The message is not base64." : "Crest's core is not running."));
       return;
     }
+    // A query the core answers without waiting on its other work, such as
+    // reading another browser's files, runs away from the UI thread.
+    if (call == Call::kQueryAway) {
+      base::ThreadPool::PostTaskAndReplyWithResult(
+          FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_BLOCKING},
+          base::BindOnce(&AskAway, std::move(*message)),
+          base::BindOnce(&CrestUIHandler::AnswerAway, weak_factory_.GetWeakPtr(), callback.Clone()));
+      return;
+    }
     std::vector<uint8_t> out;
     crest_status_t status = CREST_INTERNAL_ERROR;
     switch (call) {
@@ -334,6 +422,7 @@ class CrestUIHandler final : public content::WebUIMessageHandler, public CoreHos
         status = host->Dispatch(*message, out);
         break;
       case Call::kQuery:
+      case Call::kQueryAway:
         status = host->Query(*message, out);
         break;
       case Call::kPageRequest:
@@ -344,6 +433,16 @@ class CrestUIHandler final : public content::WebUIMessageHandler, public CoreHos
     answer.Set("status", status);
     answer.Set("bytes", Encode(out));
     ResolveJavascriptCallback(callback, base::Value(std::move(answer)));
+  }
+
+  // Answers a query the core answered away from the UI thread, as HandleCall
+  // answers one.
+  void AnswerAway(base::Value callback, AwayAnswer answer) {
+    if (!IsJavascriptAllowed()) return;
+    base::DictValue fields;
+    fields.Set("status", answer.status);
+    fields.Set("bytes", Encode(answer.bytes));
+    ResolveJavascriptCallback(callback, base::Value(std::move(fields)));
   }
 
   // args: the core's page id. Shows that page beside the sidebar.
@@ -607,6 +706,68 @@ class CrestUIHandler final : public content::WebUIMessageHandler, public CoreHos
   }
 
   // --- End of downloads -----------------------------------------------------
+
+  // --- Setup (Linux shell) --------------------------------------------------
+
+  // args: callback id. Answers {home, config}: the person's home folder and
+  // their XDG config folder, where the browsers setup imports from keep
+  // their data.
+  void HandleHomeFolders(const base::ListValue& args) {
+    AllowJavascript();
+    std::unique_ptr<base::Environment> environment = base::Environment::Create();
+    base::DictValue folders;
+    folders.Set("home", base::GetHomeDir().AsUTF8Unsafe());
+    folders.Set("config", base::nix::GetXDGDirectory(environment.get(), base::nix::kXdgConfigHomeEnvVar,
+                                                     base::nix::kDotConfigDir)
+                              .AsUTF8Unsafe());
+    ResolveJavascriptCallback(args[0], base::Value(std::move(folders)));
+  }
+
+  // args: callback id, the picker's title, the folder it opens at. Answers
+  // the folder the person chose, or null when they cancelled.
+  void HandleChooseImportFolder(const base::ListValue& args) {
+    AllowJavascript();
+    if (args.size() != 3 || !args[1].is_string() || !args[2].is_string()) {
+      RejectJavascriptCallback(args[0], base::Value("chooseImportFolder takes a title and a folder."));
+      return;
+    }
+    ImportFolderDialog::Show(web_ui()->GetWebContents(), base::UTF8ToUTF16(args[1].GetString()),
+                             base::FilePath::FromUTF8Unsafe(args[2].GetString()),
+                             base::BindOnce(&CrestUIHandler::AnswerImportFolder, weak_factory_.GetWeakPtr(),
+                                            args[0].Clone()));
+  }
+
+  void AnswerImportFolder(base::Value callback, base::FilePath folder) {
+    if (!IsJavascriptAllowed()) return;
+    ResolveJavascriptCallback(callback, folder.empty() ? base::Value() : base::Value(folder.AsUTF8Unsafe()));
+  }
+
+  // args: callback id, a list of paths. Answers those that are folders here,
+  // which setup lists as browsers whose data it could not read where it
+  // looked, so the person can pick the data folder. The disk is asked away
+  // from the UI thread.
+  void HandleExistingFolders(const base::ListValue& args) {
+    AllowJavascript();
+    if (args.size() != 2 || !args[1].is_list()) {
+      RejectJavascriptCallback(args[0], base::Value("existingFolders takes a list of paths."));
+      return;
+    }
+    std::vector<std::string> folders;
+    for (const base::Value& folder : args[1].GetList()) {
+      if (folder.is_string()) folders.push_back(folder.GetString());
+    }
+    base::ThreadPool::PostTaskAndReplyWithResult(
+        FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
+        base::BindOnce(&ExistingFolders, std::move(folders)),
+        base::BindOnce(&CrestUIHandler::AnswerExistingFolders, weak_factory_.GetWeakPtr(), args[0].Clone()));
+  }
+
+  void AnswerExistingFolders(base::Value callback, base::ListValue folders) {
+    if (!IsJavascriptAllowed()) return;
+    ResolveJavascriptCallback(callback, base::Value(std::move(folders)));
+  }
+
+  // --- End of setup ---------------------------------------------------------
 
   // The keys this page's window takes for Crest, as the page registered them.
   std::vector<Shortcut> shortcuts_;
