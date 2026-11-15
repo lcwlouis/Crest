@@ -12,6 +12,13 @@
   position: absolute;
   inset: 0;
   display: none;
+  /* A window too narrow for every card at its minimum clips the row at
+     its trailing edge, as the Mac's does (BrowserSplitColumnLayout.widths);
+     it never scrolls. The margin keeps the focus ring and the gap fill,
+     but not past the trailing edge, where the page ends. */
+  overflow: clip;
+  overflow-clip-margin: 4px;
+  clip-path: inset(-4px 0 -4px -4px);
 }
 
 body.split-view .page-card-row {
