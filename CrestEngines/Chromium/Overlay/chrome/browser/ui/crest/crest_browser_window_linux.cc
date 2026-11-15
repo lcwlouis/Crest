@@ -991,9 +991,15 @@ bool CrestBrowserWindow::IsVisible() const {
   return window && window->IsVisible();
 }
 
+// Only a normal Browser places the Crest window it shows in. A popup, app,
+// devtools or Picture in Picture Browser shows as a tab in the person's window
+// (a page's popup, a sign-in flow's account window), so the bounds Chromium
+// gives it from window.open, resizeTo or moveTo would move and resize the
+// person's whole window.
 void CrestBrowserWindow::SetBounds(const gfx::Rect& bounds) {
   views::Widget* window = crest::WindowForBrowser(browser_);
   if (!window || IsFullscreen() || !crest::OwnsWindow(browser_)) return;
+  if (browser_->GetType() != BrowserWindowInterface::Type::TYPE_NORMAL) return;
   window->SetBounds(bounds);
 }
 
