@@ -162,7 +162,7 @@ const commands = new Commands({
 const surfaces = new FloatSurfaces();
 const findBar = new FindBar(shownPage, report, surfaces);
 const prompts = new Prompts({ model, page: shownPage }, surfaces);
-const pageStates = new PageStates({ model, page: shownPage }, surfaces);
+const pageStates = new PageStates({ model, tab: shownTab, page: shownPage, report }, surfaces);
 listenToFloat(
     (event) => surfaces.handle(event as FloatEvent),
     () => surfaces.restore(),
