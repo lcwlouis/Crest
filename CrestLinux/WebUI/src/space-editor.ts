@@ -192,6 +192,18 @@ export class SpaceEditor {
     /** The look a control shows while it moves, before the core has it. */
     private draft: SpaceBranding | null = null;
     private restoreFocus: Element | null = null;
+    private pressing = false;
+    private redrawAfterPress = false;
+    private readonly onPointerUp = (): void => {
+        if (!this.pressing) return;
+        // After the click that ends the press.
+        setTimeout(() => {
+            this.pressing = false;
+            if (!this.redrawAfterPress) return;
+            this.redrawAfterPress = false;
+            if (this.layer && !this.draft) this.render();
+        }, 0);
+    };
     private readonly onKey = (event: KeyboardEvent): void => {
         if (event.key !== "Escape" || Menu.isOpen) return;
         event.preventDefault();
@@ -236,6 +248,9 @@ export class SpaceEditor {
         if (!this.layer) return;
         if (document.activeElement === this.name) this.rename();
         window.removeEventListener("keydown", this.onKey);
+        window.removeEventListener("pointerup", this.onPointerUp, true);
+        this.pressing = false;
+        this.redrawAfterPress = false;
         this.layer.remove();
         this.layer = null;
         this.body = null;
@@ -256,6 +271,13 @@ export class SpaceEditor {
         }
         // A control that is moving keeps its place; the core's answer draws once it settles.
         if (this.draft) return;
+        // A press in progress keeps the controls it landed on, or its click is lost:
+        // pressing a control while the name field has the keyboard keeps the name,
+        // and the core's answer would otherwise redraw the controls under the press.
+        if (this.pressing) {
+            this.redrawAfterPress = true;
+            return;
+        }
         this.render();
     }
 
@@ -346,6 +368,8 @@ export class SpaceEditor {
         layer.addEventListener("mousedown", (event) => {
             if (event.target === layer) this.close();
         });
+        layer.addEventListener("pointerdown", () => (this.pressing = true), true);
+        window.addEventListener("pointerup", this.onPointerUp, true);
         document.body.append(layer);
         this.layer = layer;
         window.addEventListener("keydown", this.onKey);
