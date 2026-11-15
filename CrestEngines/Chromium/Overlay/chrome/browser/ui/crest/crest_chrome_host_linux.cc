@@ -212,6 +212,9 @@ void EnsureCrestUIStarted(Browser* browser) {
   }
   RegisterCrestUI();
   state.ui_profile = browser->GetProfile();
+  // The frames the browser windows kept, which the windows the launch
+  // reopens come back at.
+  LinuxWindow::LoadFrames(StorageDirectory(browser->GetProfile()).Append("WindowFrames.json"));
   // The launch's first window, whose WebUI opens the rest the core reopens.
   LinuxWindow::Open(browser->GetProfile(), LinuxWindow::Kind::kBrowser, std::string(), std::string(),
                     /*activates=*/true);
