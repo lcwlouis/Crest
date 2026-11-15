@@ -444,8 +444,11 @@ let about: Promise<AboutInformation | null> | null = null;
 
 /** The build's version and release notes, which the build writes beside the page. */
 export function aboutInformation(): Promise<AboutInformation | null> {
-    about ??= fetch("about.json")
-        .then((response) => (response.ok ? (response.json() as Promise<AboutInformation>) : null))
+    // Beside index.html, written by build.mjs; named by a variable so the
+    // compiler does not look for it.
+    const module = "../about.js";
+    about ??= (import(module) as Promise<{ default: AboutInformation }>)
+        .then((loaded) => loaded.default)
         .catch(() => null);
     return about;
 }

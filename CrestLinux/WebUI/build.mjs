@@ -54,5 +54,6 @@ const notes = Object.entries(JSON.parse(readFileSync(join(repository, "Documenta
     .sort(([a], [b]) => (a < b ? 1 : a > b ? -1 : 0))
     .slice(0, 12)
     .map(([id, entry]) => ({ id, category: entry.category, message: entry.message }));
-writeFileSync(join(destination, "about.json"), JSON.stringify({ version, build, notes }));
+// A module, not JSON: chrome:// pages cannot fetch chrome:// addresses.
+writeFileSync(join(destination, "about.js"), `export default ${JSON.stringify({ version, build, notes })};\n`);
 console.log(`Crest's WebUI is in ${destination}`);
