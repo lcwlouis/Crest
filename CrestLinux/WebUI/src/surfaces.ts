@@ -65,6 +65,8 @@ export class FloatSurfaces {
     private focusOwner: FloatSurface | null = null;
     /** What the floating page last drew, so a scene that changed nothing is not sent again. */
     private sent = "";
+    /** The scene showing, and where. */
+    private drawn: { bounds: FloatPlacement["bounds"]; scene: FloatScene } | null = null;
 
     add(surface: FloatSurface): void {
         this.surfaces.push(surface);
@@ -103,9 +105,13 @@ export class FloatSurfaces {
      * that does not keep it, such as an info bar's button.
      */
     returnKeyboard(): void {
+        // The window gives the page the keyboard as the view hides only when
+        // the view had asked for it, so it asks first.
         this.focusOwner = null;
+        if (this.drawn) setFloat(this.drawn.bounds, true, this.drawn.scene);
         setFloat(hidden, false, { layers: [] } satisfies FloatScene);
         this.sent = "";
+        this.drawn = null;
         this.draw(null);
     }
 
@@ -137,6 +143,7 @@ export class FloatSurfaces {
             this.focusOwner = null;
             setFloat(hidden, false, { layers: [] } satisfies FloatScene);
             this.sent = "";
+            this.drawn = null;
         }
         if (focus) this.focusOwner = focusing;
         if (shown.length === 0) {
@@ -164,6 +171,7 @@ export class FloatSurfaces {
         const drawn = JSON.stringify([bounds, scene]);
         if (drawn === this.sent && !focus) return;
         this.sent = drawn;
+        this.drawn = bounds.width === 0 ? null : { bounds, scene };
         setFloat(bounds, focus, scene);
     }
 }

@@ -1,8 +1,10 @@
 // What the window shows of a page beyond the page itself, as the Mac's page
 // surface and window chrome show it: notices at the window's top, the
-// address of the link under the pointer, and a page still opening.
+// address of the link under the pointer, a page still opening, and the
+// engine's bars for the page.
 
 import type { Change, EnginePresentation, PageState } from "../generated/crest_contracts.js";
+import { InfoBars } from "./infobars.js";
 import { LinkHoverPreview } from "./link-hover.js";
 import type { Model } from "./model.js";
 import { NoticeLayer } from "./notices.js";
@@ -19,17 +21,20 @@ export interface PageStatesContext {
 export class PageStates {
     private readonly linkHover: LinkHoverPreview;
     private readonly opening: PageOpening;
+    private readonly infoBars: InfoBars;
 
     constructor(context: PageStatesContext, surfaces: FloatSurfaces) {
         new NoticeLayer(surfaces);
         this.linkHover = new LinkHoverPreview(context.page, surfaces);
         this.opening = new PageOpening(context.page, surfaces);
+        this.infoBars = new InfoBars(context.page, surfaces);
     }
 
     /** Follows a batch of the core's changes, and the page the window shows. */
     apply(changes: readonly Change[]): void {
         this.linkHover.follow();
         this.opening.apply(changes);
+        this.infoBars.apply(changes);
     }
 
     /** Hears one of the engine's presentations. */
@@ -44,6 +49,12 @@ export class PageStates {
             case "PageNavigationCommitted":
                 this.linkHover.invalidate(presentation.value.pageId);
                 this.opening.committed(presentation.value.pageId);
+                break;
+            case "InfoBarShown":
+                this.infoBars.added(presentation.value);
+                break;
+            case "InfoBarRemoved":
+                this.infoBars.removed(presentation.value);
                 break;
             default:
                 break;
