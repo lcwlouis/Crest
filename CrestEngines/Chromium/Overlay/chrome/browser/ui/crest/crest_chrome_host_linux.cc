@@ -231,7 +231,7 @@ void AnswerPermissionRequests(permissions::PermissionPrompt::Delegate& delegate,
     std::vector<GURL> origins;
     for (const auto& request : delegate.Requests()) {
       if (request->request_type() == permissions::RequestType::kMultipleDownloads) {
-        origins.push_back(request->requesting_origin_url());
+        origins.push_back(request->requesting_origin());
       }
     }
     content::WebContents* contents = delegate.GetAssociatedWebContents();
