@@ -81,14 +81,28 @@ std::string Encode(base::span<const uint8_t> bytes) {
 std::string KeyName(int code) {
   if (code >= ui::VKEY_A && code <= ui::VKEY_Z) return std::string(1, static_cast<char>('a' + code - ui::VKEY_A));
   if (code >= ui::VKEY_0 && code <= ui::VKEY_9) return std::string(1, static_cast<char>('0' + code - ui::VKEY_0));
+  if (code >= ui::VKEY_F1 && code <= ui::VKEY_F24) return "F" + base::NumberToString(code - ui::VKEY_F1 + 1);
   switch (code) {
+    case ui::VKEY_ESCAPE: return "Escape";
+    case ui::VKEY_BACK: return "Backspace";
+    case ui::VKEY_DELETE: return "Delete";
+    case ui::VKEY_HOME: return "Home";
+    case ui::VKEY_END: return "End";
+    case ui::VKEY_PRIOR: return "PageUp";
+    case ui::VKEY_NEXT: return "PageDown";
+    case ui::VKEY_SPACE: return " ";
+    case ui::VKEY_OEM_COMMA: return ",";
+    case ui::VKEY_OEM_1: return ";";
+    case ui::VKEY_OEM_2: return "/";
+    case ui::VKEY_OEM_3: return "`";
+    case ui::VKEY_OEM_5: return "\\";
+    case ui::VKEY_OEM_7: return "'";
     case ui::VKEY_LEFT: return "ArrowLeft";
     case ui::VKEY_RIGHT: return "ArrowRight";
     case ui::VKEY_UP: return "ArrowUp";
     case ui::VKEY_DOWN: return "ArrowDown";
     case ui::VKEY_TAB: return "Tab";
     case ui::VKEY_RETURN: return "Enter";
-    case ui::VKEY_ESCAPE: return "Escape";
     case ui::VKEY_OEM_4: return "[";
     case ui::VKEY_OEM_6: return "]";
     case ui::VKEY_OEM_PLUS: return "=";

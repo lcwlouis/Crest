@@ -14,7 +14,7 @@ import {
     registerShortcuts,
     updateShortcuts,
 } from "./bridge.js";
-import { Commands, shortcutTable } from "./commands.js";
+import { Commands, shortcutTable, useShortcutBindings } from "./commands.js";
 import { FindBar } from "./find.js";
 import type { FloatEvent } from "./float.js";
 import { NavigationError, ShortcutCommand } from "../generated/crest_contracts.js";
@@ -35,8 +35,14 @@ import { DownloadDestinations } from "./download-destinations.js";
 import { PageCards } from "./page-cards.js";
 import { Peek } from "./peek.js";
 import { Utilities } from "./utilities.js";
+import { applyDeviceAppearance } from "./device-appearance.js";
+import { Preferences } from "./preferences.js";
+import { isSettingsKey, Settings, settingsShortcut } from "./settings.js";
+import { settingsPages, spaceSectionPages } from "./settings-pages.js";
 
 const model = new Model();
+const preferences = new Preferences();
+applyDeviceAppearance();
 const icons = new TabIcons(() => render());
 /** The window this sidebar draws: the saved window the launch reopens, once known. */
 let windowId: Guid = crypto.randomUUID();
@@ -141,9 +147,23 @@ const spaces = new SpaceActions({
     model,
     windowId: () => windowId,
     send: sendChecked,
-    edit: (spaceId, intent) => spaceEditor.open(spaceId, intent),
+    edit: (spaceId, intent) => settings.openSpace(spaceId, intent),
 });
 const spaceEditor = new SpaceEditor({ model, actions: spaces });
+const settings = new Settings(
+    {
+        model,
+        preferences,
+        windowId: () => windowId,
+        space: shownSpace,
+        tab: shownTab,
+        spaces,
+        spaceEditor,
+        pages: settingsPages,
+        spaceSections: spaceSectionPages,
+    },
+    document.getElementById("page")!,
+);
 const downloadDestinations = new DownloadDestinations((intent) => dispatch(intent).catch((error: unknown) => console.error(error)));
 const sidebar = new Sidebar(
     {
@@ -162,6 +182,7 @@ const sidebar = new Sidebar(
             send: sendChecked,
             report,
             perform: (command) => void commands.perform(command),
+            openSettings: () => settings.open(),
         }),
         rename,
         utilities,
@@ -219,7 +240,7 @@ const peek: Peek = new Peek({
  * it before its page sees them.
  */
 function windowShortcuts(): [string, boolean, boolean, boolean, number, boolean][] {
-    const table = shortcutTable(commands);
+    const table = [...shortcutTable(commands), settingsShortcut];
     if (peek.isOpen) table.push(["Escape", false, false, false, -1, true], ["o", true, false, false, 0, true]);
     return table;
 }
@@ -249,6 +270,7 @@ const palette = new Palette({
     page: shownPage,
     send: (intent) => void dispatch(intent).catch(report),
     report,
+    openSettings: (name) => settings.openPage(name),
 });
 
 // The Start Page, which Crest draws in the page's card for a tab that shows
@@ -274,6 +296,7 @@ const startPalette = new Palette(
         page: shownPage,
         send: (intent) => void dispatch(intent).catch(report),
         report,
+        openSettings: (name) => settings.openPage(name),
     },
     startBar,
 );
@@ -329,18 +352,32 @@ function showStartPage(shown: boolean): void {
 // hands Crest the keys it reserves from pages through the host.
 document.addEventListener("keydown", (event) => {
     if (palette.isOpen || event.defaultPrevented) return;
-    if (peek.handleKey(event) || commands.handleKey(event)) event.preventDefault();
+    if (isSettingsKey(event)) {
+        event.preventDefault();
+        settings.open();
+    } else if (peek.handleKey(event) || commands.handleKey(event)) event.preventDefault();
 });
 registerShortcuts(
     windowShortcuts(),
     (key) => {
         if (palette.isOpen) palette.close();
-        if (!peek.handleKey(key)) commands.handleKey(key);
+        if (isSettingsKey(key)) settings.open();
+        else if (!peek.handleKey(key)) commands.handleKey(key);
     },
     (command) => {
         if (ShortcutCommand.all.includes(command as ShortcutCommand)) commands.perform(command as ShortcutCommand);
     },
 );
+
+// The person's own keys, once the core publishes them, replace the defaults.
+let appliedBindings: readonly unknown[] | null = null;
+preferences.listen(() => {
+    const bindings = preferences.shortcuts?.bindings;
+    if (!bindings || bindings === appliedBindings) return;
+    appliedBindings = bindings;
+    useShortcutBindings(bindings);
+    updateShortcuts(windowShortcuts());
+});
 
 /** Steps the shown page through its history, as the Mac's back and forward controls do. */
 function step(offset: number): void {
@@ -438,6 +475,7 @@ async function start(): Promise<void> {
     await connect(
         (changes) => {
             model.apply(changes);
+            preferences.apply(changes);
             icons.apply(changes);
             render();
             peek.apply(changes);
@@ -448,6 +486,7 @@ async function start(): Promise<void> {
             downloadDestinations.apply(changes);
             spaces.apply(changes);
             spaceEditor.follow();
+            settings.follow();
         },
         (bytes) => {
             try {
@@ -461,6 +500,7 @@ async function start(): Promise<void> {
         },
     );
     const workspaceId = await openSession();
+    await preferences.adopt(report);
     // The launch reopens the window the person left, with the Space and tabs
     // it showed, as the Mac's launch does.
     // TODO(linux): reopen every saved window, and run the setup the plan

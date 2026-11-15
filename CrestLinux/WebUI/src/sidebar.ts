@@ -5,6 +5,7 @@
 // page only draws the lists the core publishes (SpaceState.sidebar) and sends
 // the person's actions back as intents.
 
+import { pinColumnRequest } from "./device-appearance.js";
 import type { BrandColor, FolderState, Guid, Intent, SidebarRow, TabPlacement, TabState } from "../generated/crest_contracts.js";
 import { SpaceAccent } from "../generated/crest_contracts.js";
 import { spaceIcon } from "./crest.js";
@@ -15,6 +16,7 @@ import type { InlineRename } from "./rename.js";
 import type { SidebarMenus } from "./sidebar-menus.js";
 import type { SpaceActions } from "./space-actions.js";
 import { SpaceGroups } from "./space-groups.js";
+import { sfSymbol, sfSymbolPaths } from "./symbols.js";
 import type { Utilities } from "./utilities.js";
 
 /** What the sidebar asks of the window it sits in. */
@@ -82,14 +84,17 @@ function cssPixels(token: string, fallback: number): number {
 
 /**
  * The pinned grid's columns, as the Mac's PinnedTabGridLayout counts them:
- * as many as fit up to four, then balanced so 5 pins make 3 and 2.
+ * as many as fit up to the device's pin layout, and in its automatic layout
+ * balanced so 5 pins make 3 and 2.
  */
 function pinnedColumns(count: number, width: number): number {
     const style = getComputedStyle(document.documentElement);
     const minimum = parseFloat(style.getPropertyValue("--pin-tile-min-width")) || 36;
     const spacing = parseFloat(style.getPropertyValue("--pin-spacing")) || 8;
-    const requested = parseInt(style.getPropertyValue("--pin-max-columns"), 10) || 4;
-    const capacity = Math.max(1, Math.min(requested, Math.floor((width + spacing) / (minimum + spacing))));
+    const requested = pinColumnRequest();
+    const capacity = Math.max(1, Math.min(requested.columns, Math.floor((width + spacing) / (minimum + spacing))));
+    // Only the automatic layout balances its rows; a chosen count fills each row.
+    if (!requested.balances) return Math.max(1, Math.min(count, capacity));
     const rows = Math.ceil(count / capacity);
     return Math.ceil(count / rows);
 }
@@ -375,6 +380,9 @@ export class Sidebar {
             icon.append(img);
         } else if (/\p{Extended_Pictographic}/u.test(tab.symbol)) {
             icon.textContent = tab.symbol;
+        } else if (tab.nativeContent && sfSymbolPaths(tab.symbol)) {
+            // Crest's own views, such as Settings, wear their symbol.
+            icon.innerHTML = sfSymbol(tab.symbol, 14);
         } else {
             icon.classList.add("letter");
             icon.textContent = (tab.displayTitle || "?").slice(0, 1).toUpperCase();
