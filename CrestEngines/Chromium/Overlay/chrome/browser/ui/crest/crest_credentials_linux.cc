@@ -69,8 +69,8 @@ std::optional<CredentialItem> Decode(const SecretService::Item& found) {
 // The clipboard's state when Crest last copied a password, while that copy
 // is still what it holds as far as Crest knows.
 std::optional<ui::ClipboardSequenceNumberToken>& LeasedClipboard() {
-  static base::NoDestructor<std::optional<ui::ClipboardSequenceNumberToken>> leased;
-  return *leased;
+  static std::optional<ui::ClipboardSequenceNumberToken> leased;
+  return leased;
 }
 
 void ExpireCopiedPassword(ui::ClipboardSequenceNumberToken copied) {
