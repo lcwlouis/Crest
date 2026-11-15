@@ -18,7 +18,7 @@
 // which the Mac's Scan for more finds below Application Support by app
 // (FindChromiumBrowsers), are not looked for under ~/.config yet.
 
-import type { ImportData, ImportProfile } from "../generated/crest_contracts.js";
+import type { ImportData } from "../generated/crest_contracts.js";
 import { ImportSource } from "../generated/crest_contracts.js";
 import { chooseImportFolder, existingFolders, homeFolders, queryAway } from "./bridge.js";
 
@@ -146,19 +146,20 @@ export class InstalledImportSource {
 
     /** The payload of what the core found in this browser's folder, when it found a profile there. */
     get detectedPayload(): ImportPayload | null {
-        return this.detected && hasProfiles(this.detected) ? this.payload(this.detected.profiles) : null;
-    }
-
-    /** `profiles` of this browser as the payload the core reads. */
-    payload(profiles: readonly ImportProfile[] = this.detected?.profiles ?? []): ImportPayload {
-        return { application: this.application, profiles };
+        return this.detected && hasProfiles(this.detected) ? importPayload(this.application, this.detected) : null;
     }
 }
 
-/** What the core reads of one browser: its profiles' files. */
+/** What the core reads of one browser: its profiles' files, and the password stores they keep (BrowserDetectedImportPayload). */
 export interface ImportPayload {
     readonly application: ImportSource;
-    readonly profiles: readonly ImportProfile[];
+    readonly profiles: ImportData["profiles"];
+    readonly passwordStores: ImportData["passwordStores"];
+}
+
+/** What the core found `application` keeps, as the payload it reads. */
+export function importPayload(application: ImportSource, data: ImportData): ImportPayload {
+    return { application, profiles: data.profiles, passwordStores: data.passwordStores };
 }
 
 // MARK: - Access

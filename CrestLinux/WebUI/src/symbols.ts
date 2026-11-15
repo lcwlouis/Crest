@@ -154,6 +154,18 @@ Object.assign(paths, {
     "rectangle.stack.badge.minus": '<rect x="3" y="9" width="14" height="11" rx="2"/><path d="M5 6h12"/><path d="M7 3h8"/><path d="M18 5h4"/>',
     "book.fill": '<path d="M4 5a2 2 0 0 1 2-2h14v15H6a2 2 0 0 0-2 2z"/><path d="M4 20a2 2 0 0 0 2 1h14"/>',
 });
+// Passwords' glyphs (settings-passwords, credential-prompts).
+Object.assign(paths, {
+    eye: '<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
+    "eye.slash": '<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/><path d="M4 4l16 16"/>',
+    "doc.on.doc": '<rect x="8" y="8" width="12" height="13" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h2"/>',
+    circle: '<circle cx="12" cy="12" r="9"/>',
+    "ellipsis.circle": '<circle cx="12" cy="12" r="9"/><path d="M8 12h.01M12 12h.01M16 12h.01"/>',
+    "chevron.forward": '<path d="M9 6l6 6-6 6"/>',
+    "key.horizontal": '<circle cx="8" cy="12" r="4.5"/><path d="M12.5 12H21v3M18 12v2.5"/>',
+    "wand.and.stars": '<path d="M4 20L15 9"/><path d="M14 4v3M12.5 5.5h3M19 9v3M17.5 10.5h3M18 3v2M17 4h2"/>',
+    "person.badge.key": '<circle cx="10" cy="7.5" r="3.5"/><path d="M3 20a7 7 0 0 1 10-6.3"/><circle cx="17" cy="15" r="2.5"/><path d="M17 17.5V21M17 19.5h2"/>',
+});
 for (const name of [
     "gearshape", "briefcase", "person", "house", "graduationcap", "paintbrush", "gamecontroller", "sun.max", "sun.horizon", "moon", "star",
     "bolt", "flame", "drop", "key", "crown", "leaf", "mountain.2", "heart", "pin", "bookmark", "rectangle.stack",

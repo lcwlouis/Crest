@@ -28,6 +28,7 @@ import type { Change, Guid, Intent, LaunchEnvironment, PageState, TabState } fro
 import { Model } from "./model.js";
 import { PageMenu } from "./pagemenu.js";
 import { Onboarding } from "./onboarding.js";
+import { CredentialPrompts } from "./credential-prompts.js";
 import { PageStates } from "./page-states.js";
 import type { Space, Workspace } from "./model.js";
 import { InlineRename } from "./rename.js";
@@ -286,6 +287,7 @@ const surfaces = new FloatSurfaces();
 const findBar = new FindBar(shownPage, report, surfaces);
 const prompts = new Prompts({ model, page: shownPage }, surfaces);
 const pageStates = new PageStates({ model, tab: shownTab, page: shownPage, report }, surfaces);
+const credentialPrompts = new CredentialPrompts({ model, page: shownPage, zoom: (pageId) => commands.zoomOf(pageId) }, surfaces);
 listenToFloat(
     (event) => {
         const floatEvent = event as FloatEvent;
@@ -542,6 +544,7 @@ async function start(): Promise<void> {
             sitePermissions.apply(changes);
             siteControls.apply(changes);
             pageStates.apply(changes);
+            credentialPrompts.apply(changes);
             downloadDestinations.apply(changes);
             spaces.apply(changes);
             spaceEditor.follow();
@@ -557,6 +560,7 @@ async function start(): Promise<void> {
                 if (presentation.kind === "PeekRequested") peek.requested(presentation.value);
                 pageStates.present(presentation);
                 sitePermissions.present(presentation);
+                credentialPrompts.present(presentation);
             } catch (error) {
                 console.error(error);
             }

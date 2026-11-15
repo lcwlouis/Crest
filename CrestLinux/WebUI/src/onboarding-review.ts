@@ -218,15 +218,14 @@ function checklist(setup: Onboarding, review: ReviewSpace, application: ImportSo
     );
 
     if (ImportSources.facts[application].suppliesPasswords) {
-        // TODO(linux): passwords come in once Linux reads and keeps them
-        // through libsecret; until then the row says why it is off.
+        const passwordCount = Math.max(review.record.passwordCount, 0);
         list.append(
             row(
                 `Bring passwords for ${review.source.settings.name}`,
-                false,
-                () => undefined,
-                [el("span", "onboarding-check-title", "Passwords"), el("span", "onboarding-detail", "Not available on Linux yet")],
-                false,
+                review.record.includesPasswords,
+                (on) => void send({ kind: "IncludeImportPasswords", value: { sourceSpaceId, included: on } }),
+                [el("span", "onboarding-check-title", `${passwordCount} passwords`)],
+                review.isIncluded && passwordCount > 0,
             ),
         );
     }

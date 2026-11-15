@@ -7,8 +7,14 @@
 // asking for a data folder, reading a browser's files away from the UI thread,
 // and committing the reviewed import.
 //
-// Left out on Linux, each with a TODO(linux) where it would go: passwords,
-// which wait on libsecret (the review's Passwords row says so); extensions,
+// Passwords come in as on the Mac: setup counts the logins a browser built on
+// Chromium keeps as it reads the browser, and reads them with their passwords
+// only when the review brings any, through the Secret Service, which keeps
+// the browser's Safe Storage key on Linux as the Keychain does on the Mac.
+// TODO(linux): Firefox and Zen keep passwords under NSS, which the Mac's
+// importer does not read either.
+//
+// Left out on Linux, each with a TODO(linux) where it would go: extensions,
 // which Linux does not install from another browser yet; the Getting Started
 // tab, which Linux does not draw yet (the guide Space is shown instead); the
 // customization style the look picks for Settings, which Linux does not
@@ -31,8 +37,11 @@ import type {
     SpaceState,
 } from "../generated/crest_contracts.js";
 import { ImportSource as ImportSources, SetupPhase, SpaceHouse } from "../generated/crest_contracts.js";
-import { dispatch, openWindow, query, queryAway } from "./bridge.js";
-import { ImportAccess, InstalledImportSource } from "./import-sources.js";
+import { dispatch, openWindow, passwordImportCandidates, query, queryAway, readImportPasswords } from "./bridge.js";
+import type { ImportedLogin } from "./bridge.js";
+import { credentialOrigin, CredentialStore } from "./credentials.js";
+import type { ImportedPassword, PasswordImportResult } from "./credentials.js";
+import { ImportAccess, importPayload, InstalledImportSource } from "./import-sources.js";
 import type { ImportPayload } from "./import-sources.js";
 import type { Model } from "./model.js";
 import { completePage, importPage, lookPage, welcomePage } from "./onboarding-pages.js";
@@ -133,6 +142,9 @@ export class Onboarding {
     customizationSpaceId: Guid | null = null;
     private welcomeHouse = 0;
     private welcomeTimer: number | null = null;
+
+    /** What the review over the browser being read was read from, for its passwords. */
+    private currentImportPayload: ImportPayload | null = null;
 
     private previewKey = "";
     private previewSpaces: readonly SpaceState[] | null = null;
@@ -445,7 +457,7 @@ export class Onboarding {
         const remembered = await ImportAccess.read(application);
         if (generation !== this.generation) return;
         if (remembered && remembered.profiles.length > 0) {
-            this.readImport({ application, profiles: remembered.profiles });
+            this.readImport(importPayload(application, remembered));
             return;
         }
         if (remembered) ImportAccess.clear(application);
@@ -474,7 +486,7 @@ export class Onboarding {
             return;
         }
         ImportAccess.remember(chosen.folder, application);
-        this.readImport({ application, profiles: chosen.data.profiles });
+        this.readImport(importPayload(application, chosen.data));
     }
 
     /** Reads the browser's files away from the UI thread and hands the core what they hold to review. */
@@ -483,18 +495,21 @@ export class Onboarding {
         this.isReading = true;
         this.render(true);
         const generation = this.generation;
-        void queryAway("ReadImport", { source: payload.application, profiles: payload.profiles }).then(
-            async (imported) => {
+        void Promise.all([
+            passwordCandidates(payload),
+            queryAway("ReadImport", { source: payload.application, profiles: payload.profiles }),
+        ]).then(
+            async ([candidates, imported]) => {
                 if (generation !== this.generation) return;
                 this.isReading = false;
+                this.currentImportPayload = payload;
                 try {
                     await dispatch({
                         kind: "ReviewImport",
                         value: {
                             source: payload.application,
                             spaces: imported.spaces,
-                            // TODO(linux): passwords wait on reading them through libsecret.
-                            passwords: [],
+                            passwords: candidates,
                             // TODO(linux): extensions wait on Linux installing them from another browser.
                             extensions: [],
                             leftOut: imported.leftOut,
@@ -549,6 +564,16 @@ export class Onboarding {
             return;
         }
         const generation = this.generation;
+        // Passwords that can't be read, as when the Secret Service is
+        // locked, stay behind; the Spaces and tabs still come in.
+        let passwords: ImportedPassword[] = [];
+        let unreadPasswordCount = 0;
+        try {
+            passwords = await selectedPasswords(review.includedPasswordCount, this.currentImportPayload);
+        } catch {
+            unreadPasswordCount = review.includedPasswordCount;
+        }
+        if (generation !== this.generation) return;
         try {
             await dispatch({ kind: "ImportReviewedSpaces", value: { workspaceId: this.workspaceId, windowId: this.windowId } });
         } catch (error) {
@@ -556,10 +581,18 @@ export class Onboarding {
             await this.send({ kind: "FailImport", value: { source: review.source, reason: "Import", detail: explanation(error) } });
             return;
         }
+        // From here the import is applied, so its passwords are saved
+        // whatever the person does next (the Mac's finalization task).
+        const workspace = this.host.model.workspaces.get(this.workspaceId);
+        const saved: PasswordImportResult = workspace
+            ? await CredentialStore.shared.importPasswords(workspace, passwords)
+            : { importedCount: 0, skippedCount: 0, unsavedCount: passwords.length };
         if (generation !== this.generation) return;
-        // TODO(linux): passwords the review brings are saved here once Linux
-        // keeps them (libsecret); none come in until then.
-        await this.send({ kind: "FinishImportCommit", value: { passwordCount: 0, unsavedPasswordCount: 0 } });
+        this.currentImportPayload = null;
+        await this.send({
+            kind: "FinishImportCommit",
+            value: { passwordCount: saved.importedCount, unsavedPasswordCount: saved.unsavedCount + unreadPasswordCount },
+        });
         await this.readCurrentSource();
     }
 
@@ -829,4 +862,49 @@ export function failureMessage(flow: SetupFlowState | null): string | null {
 /** Whether the phase keeps setup busy. */
 export function isBusy(flow: SetupFlowState | null): boolean {
     return flow ? SetupPhase.facts[flow.phase].isBusy : false;
+}
+
+// MARK: - Passwords
+
+/** The logins `answer` holds, or the failure it names, thrown. */
+function loginsIn(answer: { readonly logins?: readonly ImportedLogin[]; readonly failure?: string }): readonly ImportedLogin[] {
+    if (answer.failure !== undefined || answer.logins === undefined) throw new Error(answer.failure ?? "unreadableDatabase");
+    return answer.logins;
+}
+
+/**
+ * Where the passwords the browser keeps belong, as the core counts them for
+ * the review (LiveBrowserOnboardingImportReader.passwordCandidates): none
+ * when its password stores can't be read, so its Spaces and tabs still come
+ * in for review.
+ */
+async function passwordCandidates(payload: ImportPayload): Promise<{ profileName: string; host: string }[]> {
+    if (!ImportSources.facts[payload.application].suppliesPasswords || payload.passwordStores.length === 0) return [];
+    try {
+        const logins = loginsIn(await passwordImportCandidates(payload.passwordStores));
+        return logins.flatMap((login) => {
+            const origin = credentialOrigin(login.url);
+            return origin ? [{ profileName: login.profileName, host: origin.host }] : [];
+        });
+    } catch {
+        return [];
+    }
+}
+
+/**
+ * The passwords the review brings, read only when it brings any
+ * (LiveBrowserOnboardingImportCommitter.selectedPasswords). Throws when they
+ * can't be read.
+ */
+async function selectedPasswords(includedCount: number, payload: ImportPayload | null): Promise<ImportedPassword[]> {
+    if (!payload || includedCount <= 0) return [];
+    const facts = ImportSources.facts[payload.application];
+    if (!facts.suppliesPasswords || facts.safeStorageService === null) throw new Error("unsupportedBrowser");
+    if (payload.passwordStores.length === 0) return [];
+    const logins = loginsIn(await readImportPasswords(facts.safeStorageService, payload.passwordStores));
+    return logins.flatMap((login) => {
+        const origin = credentialOrigin(login.url);
+        if (!origin || !login.password) return [];
+        return [{ sourceProfileName: login.profileName, origin, username: login.username ?? "", password: login.password }];
+    });
 }

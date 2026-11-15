@@ -43,9 +43,15 @@ LINUX_SHELL_SOURCES = (
     "ui/crest/crest_contracts.h",
     "ui/crest/crest_core_host_linux.cc",
     "ui/crest/crest_core_host_linux.h",
+    "ui/crest/crest_credentials_linux.cc",
+    "ui/crest/crest_credentials_linux.h",
     "ui/crest/crest_linux_ui.h",
     "ui/crest/crest_linux_window.cc",
     "ui/crest/crest_linux_window.h",
+    "ui/crest/crest_password_import_linux.cc",
+    "ui/crest/crest_password_import_linux.h",
+    "ui/crest/crest_secret_service_linux.cc",
+    "ui/crest/crest_secret_service_linux.h",
     "ui/crest/crest_webui_linux.cc",
     "ui/crest/crest_webui_linux.h",
 )
@@ -54,8 +60,11 @@ PLATFORM_SOURCES = {
     '      "ui/crest/crest_chrome_host.mm",\n': "".join(
         f'      "{name}",\n' for name in ("ui/crest/crest_chrome_host_linux.cc", *LINUX_SHELL_SOURCES)),
 }
-# What the Linux shell links beyond the Mac host's dependencies.
-LINUX_SHELL_DEPS = ("//ui/views/controls/webview",)
+# What the Linux shell links beyond the Mac host's dependencies: its page
+# views, the clipboard a copied password goes on, and BoringSSL, which
+# decrypts the passwords setup imports. libsecret and the system SQLite are
+# loaded at run time, so the build needs neither.
+LINUX_SHELL_DEPS = ("//ui/views/controls/webview", "//ui/base/clipboard", "//third_party/boringssl")
 
 
 def sections(text):
