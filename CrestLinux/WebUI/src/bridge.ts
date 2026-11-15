@@ -426,3 +426,84 @@ export function chooseImportFolder(title: string, folder: string): Promise<strin
 export function existingFolders(folders: readonly string[]): Promise<string[]> {
     return send("existingFolders", [...folders]);
 }
+
+// --- Passwords (Linux shell) --------------------------------------------------
+// Crest's saved passwords live in the desktop's Secret Service, which the
+// browser process reaches (crest_credentials_linux), as the Mac's Swift
+// reaches the Keychain. The core never keeps them.
+
+/** One item Crest keeps in the Secret Service, as the Mac's CredentialKeychainItem. */
+export interface CredentialItem {
+    readonly account: string;
+    /** The item's descriptor, as JSON. */
+    readonly metadata: string;
+    readonly synchronizable: boolean;
+    /** The password, when it was read. */
+    readonly secret?: string;
+}
+
+/**
+ * The items the Secret Service keeps under `service`, or only `account`'s
+ * when one is named, with their passwords when `withSecrets`. Rejects when
+ * the Secret Service cannot be reached or refuses.
+ */
+export function credentialItems(service: string, account: string, withSecrets: boolean): Promise<CredentialItem[]> {
+    return send("credentialItems", service, account, withSecrets);
+}
+
+/** Stores `item` under `service`, in place of the account's earlier item. */
+export function upsertCredential(service: string, item: Required<CredentialItem>): Promise<true> {
+    return send("upsertCredential", service, item);
+}
+
+/** Removes `account`'s item from `service`, or every item of it when `account` is empty. */
+export function deleteCredential(service: string, account: string): Promise<true> {
+    return send("deleteCredential", service, account);
+}
+
+/**
+ * Puts `password` on the clipboard, marked confidential, and takes it off
+ * after `seconds` unless something else was copied since. Answers whether it
+ * was copied.
+ */
+export function copyPassword(password: string, seconds: number): Promise<boolean> {
+    return send("copyPassword", password, seconds);
+}
+
+/** One profile's password store, as the core found it (ImportPasswordStore). */
+export interface PasswordStore {
+    readonly id: string;
+    readonly profileName: string;
+    readonly path: string;
+}
+
+/** A login another browser keeps; `username` and `password` only once read to import. */
+export interface ImportedLogin {
+    readonly profileId: string;
+    readonly profileName: string;
+    readonly url: string;
+    readonly username?: string;
+    readonly password?: string;
+}
+
+/** Why another browser's passwords could not be read, as the Mac's BrowserPasswordImportError. */
+export type PasswordImportFailure = "unreadableDatabase" | "safeStorageUnavailable";
+
+/** The logins read, or why none could be. */
+export interface PasswordImportAnswer {
+    readonly logins?: readonly ImportedLogin[];
+    readonly failure?: PasswordImportFailure;
+}
+
+/** The logins `stores` keep, without their passwords. */
+export function passwordImportCandidates(stores: readonly PasswordStore[]): Promise<PasswordImportAnswer> {
+    return send("passwordImportCandidates", [...stores]);
+}
+
+/**
+ * The logins `stores` keep with their passwords, decrypted with the key the
+ * Secret Service keeps under `safeStorage`, such as "Chrome Safe Storage".
+ */
+export function readImportPasswords(safeStorage: string, stores: readonly PasswordStore[]): Promise<PasswordImportAnswer> {
+    return send("readImportPasswords", safeStorage, [...stores]);
+}
