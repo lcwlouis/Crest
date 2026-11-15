@@ -121,17 +121,32 @@ body.has-page #page {
   color: var(--muted);
 }
 
-.address.loading {
-  background:
-    linear-gradient(90deg, rgb(var(--crest-primary-rgb) / 0.06), transparent) no-repeat,
-    var(--crest-chrome-surface);
-  background-size: 60% 100%, auto;
-  animation: address-loading 1.2s ease-in-out infinite;
+/* A loading page fills the field with the Space's accent from its leading
+   edge, as far as the load has come (BrowserSidebarAddressFieldSurface). The
+   engine says only whether a page loads, which the Mac's Chromium pages draw
+   as half way. */
+.address {
+  position: relative;
+  isolation: isolate;
 }
 
-@keyframes address-loading {
-  from { background-position: -60% 0, 0 0; }
-  to { background-position: 160% 0, 0 0; }
+.address::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: var(--space-tint);
+  opacity: 0;
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform var(--crest-dur-loading-progress) var(--crest-ease-smooth),
+    opacity var(--crest-dur-loading-progress) var(--crest-ease-smooth);
+}
+
+.address.loading::before {
+  opacity: var(--address-loading-fill-opacity);
+  transform: scaleX(0.5);
 }
 
 /* --- Space page --- */
