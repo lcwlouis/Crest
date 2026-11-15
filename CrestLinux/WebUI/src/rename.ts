@@ -6,6 +6,7 @@
 // here and the row that is being named takes it in place of its title.
 
 import type { Guid } from "../generated/crest_contracts.js";
+import { holdOverlay } from "./overlay.js";
 
 export type RenameSubject = { readonly kind: "tab" | "folder"; readonly id: Guid };
 
@@ -19,6 +20,7 @@ export class InlineRename {
     private placed = false;
 
     private readonly redraw: () => void;
+    private releaseOverlay: (() => void) | null = null;
 
     constructor(redraw: () => void) {
         this.redraw = redraw;
@@ -43,6 +45,9 @@ export class InlineRename {
         if (this.subject) this.finish(true);
         this.subject = subject;
         this.commit = commit;
+        // The field holds the overlay so the window keeps the keyboard on the
+        // WebUI while it is named, rather than handing it back to the page.
+        this.releaseOverlay = holdOverlay();
         this.field.value = title;
         this.field.setAttribute("aria-label", subject.kind === "tab" ? "Tab Name" : "Folder Name");
         this.placed = false;
@@ -73,6 +78,7 @@ export class InlineRename {
             if (this.placed) {
                 this.subject = null;
                 this.commit = null;
+                this.release();
             }
             return;
         }
@@ -91,8 +97,14 @@ export class InlineRename {
         if (!this.subject) return;
         this.subject = null;
         this.commit = null;
+        this.release();
         if (keeps) commit?.(this.field.value);
         this.field.remove();
         this.redraw();
+    }
+
+    private release(): void {
+        this.releaseOverlay?.();
+        this.releaseOverlay = null;
     }
 }

@@ -104,6 +104,8 @@ export class Menu {
     private readonly layer = element("div", "menu-layer");
     private readonly panels: Panel[] = [];
     private readonly releaseOverlay = holdOverlay();
+    /** Set while an item's action runs, which releases the overlay after it. */
+    private activating = false;
     private readonly openedAt = performance.now();
     private readonly restoreFocus: Element | null = document.activeElement;
     private readonly onClose: (() => void) | undefined;
@@ -174,7 +176,7 @@ export class Menu {
         window.clearTimeout(this.submenuTimer);
         for (const [target, type, listener, capture] of this.listeners) target.removeEventListener(type, listener, capture);
         this.layer.remove();
-        this.releaseOverlay();
+        if (!this.activating) this.releaseOverlay();
         if (Menu.current === this) Menu.current = null;
         if (this.restoreFocus instanceof HTMLElement && this.restoreFocus.isConnected) {
             this.restoreFocus.focus({ preventScroll: true });
@@ -309,7 +311,12 @@ export class Menu {
     private openSubmenu(panel: Panel, index: number, highlightFirst: boolean): void {
         const entry = panel.items[index];
         if (!entry?.item.submenu || entry.item.disabled) return;
-        if (panel.child?.index === index) return;
+        if (panel.child?.index === index) {
+            // Already open from the pointer: the keyboard moves into it.
+            const open = panel.child.panel;
+            if (highlightFirst && open.highlighted < 0) this.highlight(open, this.next(open, -1, 1));
+            return;
+        }
         this.closeChild(panel);
         const child = this.panel(entry.item.submenu);
         this.layer.append(child.node);
@@ -325,8 +332,17 @@ export class Menu {
             this.openSubmenu(panel, index, fromKeyboard);
             return;
         }
-        this.close();
-        entry.item.action?.();
+        // The overlay stays up through the action, so a surface it opens, such
+        // as a rename field or an alert, keeps the keyboard rather than losing
+        // it to the page as the overlay drops.
+        this.activating = true;
+        try {
+            this.close();
+            entry.item.action?.();
+        } finally {
+            this.activating = false;
+            this.releaseOverlay();
+        }
     }
 
     /** The next enabled item from `from` going `step`, or `from` when there is none. */
