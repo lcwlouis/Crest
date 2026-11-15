@@ -10,10 +10,13 @@
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/functional/bind.h"
+#include "base/functional/callback_helpers.h"
 #include "base/memory/ref_counted_memory.h"
+#include "base/memory/weak_ptr.h"
 #include "base/no_destructor.h"
 #include "base/path_service.h"
 #include "base/scoped_observation.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/thread_pool.h"
@@ -21,6 +24,14 @@
 #include "components/input/native_web_keyboard_event.h"
 #include "third_party/blink/public/common/input/web_input_event.h"
 #include "ui/events/keycodes/keyboard_codes.h"
+#include "chrome/browser/platform_util.h"
+#include "chrome/browser/profiles/profile.h"
+#include "chrome/common/chrome_paths.h"
+#include "net/base/filename_util.h"
+#include "ui/shell_dialogs/select_file_dialog.h"
+#include "ui/shell_dialogs/select_file_policy.h"
+#include "ui/shell_dialogs/selected_file_info.h"
+#include "url/gurl.h"
 #include "chrome/browser/ui/crest/crest_core_host_linux.h"
 #include "chrome/browser/ui/crest/crest_engine_binding.h"
 #include "chrome/browser/ui/crest/crest_linux_window.h"
@@ -74,7 +85,22 @@ std::string Encode(base::span<const uint8_t> bytes) {
 std::string KeyName(int code) {
   if (code >= ui::VKEY_A && code <= ui::VKEY_Z) return std::string(1, static_cast<char>('a' + code - ui::VKEY_A));
   if (code >= ui::VKEY_0 && code <= ui::VKEY_9) return std::string(1, static_cast<char>('0' + code - ui::VKEY_0));
+  if (code >= ui::VKEY_F1 && code <= ui::VKEY_F24) return "F" + base::NumberToString(code - ui::VKEY_F1 + 1);
   switch (code) {
+    case ui::VKEY_ESCAPE: return "Escape";
+    case ui::VKEY_BACK: return "Backspace";
+    case ui::VKEY_DELETE: return "Delete";
+    case ui::VKEY_HOME: return "Home";
+    case ui::VKEY_END: return "End";
+    case ui::VKEY_PRIOR: return "PageUp";
+    case ui::VKEY_NEXT: return "PageDown";
+    case ui::VKEY_SPACE: return " ";
+    case ui::VKEY_OEM_COMMA: return ",";
+    case ui::VKEY_OEM_1: return ";";
+    case ui::VKEY_OEM_2: return "/";
+    case ui::VKEY_OEM_3: return "`";
+    case ui::VKEY_OEM_5: return "\\";
+    case ui::VKEY_OEM_7: return "'";
     case ui::VKEY_LEFT: return "ArrowLeft";
     case ui::VKEY_RIGHT: return "ArrowRight";
     case ui::VKEY_UP: return "ArrowUp";
@@ -122,18 +148,92 @@ SelectionSearch& ShownSelectionSearch() {
   return *search;
 }
 
+// --- Downloads (Linux shell) ------------------------------------------------
+// The sidebar's Downloads list opens a finished file and shows it in its
+// folder; the WebUI answers the core's DownloadDestinationAsked with a path
+// found here: a free name in the Downloads folder, or the place the person
+// picks in a save dialog, as the Mac's BrowserPlatformDownloadDirectory.
+
+// The local file a download's destination, a file: URL, names; empty if none.
+base::FilePath DownloadFile(const base::ListValue& args) {
+  base::FilePath path;
+  if (args.size() != 1 || !args[0].is_string() || !net::FileURLToFilePath(GURL(args[0].GetString()), &path)) {
+    return base::FilePath();
+  }
+  return path;
+}
+
+// `name` in the Downloads folder, made if missing, or "stem N.ext" with the
+// first N no file there has, as the Mac's BrowserDownloadDestination. Empty
+// when the folder is unavailable. Blocks on the disk.
+base::FilePath FreeDownloadPath(const base::FilePath& name) {
+  base::FilePath folder;
+  if (!base::PathService::Get(chrome::DIR_DEFAULT_DOWNLOADS, &folder) || !base::CreateDirectory(folder)) {
+    return base::FilePath();
+  }
+  base::FilePath candidate = folder.Append(name);
+  const base::FilePath::StringType stem = name.RemoveFinalExtension().value();
+  const base::FilePath::StringType extension = name.FinalExtension();
+  for (int suffix = 1; base::PathExists(candidate); ++suffix) {
+    candidate = folder.Append(stem + " " + base::NumberToString(suffix) + extension);
+  }
+  return candidate;
+}
+
+// The save dialog for one download, which deletes itself once answered, as
+// Chromium's DownloadFilePicker. Answers the path, or none when the person
+// cancels; `unavailable` when no dialog can be shown.
+class DownloadSaveDialog final : public ui::SelectFileDialog::Listener {
+ public:
+  using Answer = base::OnceCallback<void(base::FilePath path, bool unavailable)>;
+
+  static void Show(content::WebContents* contents, const base::FilePath& suggested, Answer answer) {
+    auto* listener = new DownloadSaveDialog(std::move(answer));
+    listener->dialog_ = ui::SelectFileDialog::Create(listener, nullptr);
+    if (!listener->dialog_) {
+      listener->Finish(base::FilePath(), true);
+      return;
+    }
+    listener->dialog_->SelectFile(ui::SelectFileDialog::SELECT_SAVEAS_FILE, u"Save Download", suggested,
+                                  nullptr, 0, base::FilePath::StringType(), contents->GetTopLevelNativeWindow());
+  }
+
+  // ui::SelectFileDialog::Listener:
+  void FileSelected(const ui::SelectedFileInfo& file, int index) override { Finish(file.path(), false); }
+  void FileSelectionCanceled() override { Finish(base::FilePath(), false); }
+
+ private:
+  explicit DownloadSaveDialog(Answer answer) : answer_(std::move(answer)) {}
+  ~DownloadSaveDialog() override {
+    if (dialog_) dialog_->ListenerDestroyed();
+  }
+
+  void Finish(const base::FilePath& path, bool unavailable) {
+    std::move(answer_).Run(path, unavailable);
+    delete this;
+  }
+
+  Answer answer_;
+  scoped_refptr<ui::SelectFileDialog> dialog_;
+};
+
+// --- End of downloads -------------------------------------------------------
+
 class CrestUIHandler;
+// The window's main WebUI, which takes the window's keys and owns its state,
+// and the floating surfaces' page, which only draws what the main one sends.
 CrestUIHandler* g_handler = nullptr;
+CrestUIHandler* g_float = nullptr;
 
 // Relays the core to the page and the page's messages to the core.
 class CrestUIHandler final : public content::WebUIMessageHandler, public CoreHost::Observer {
  public:
-  // The window has one chrome://crest, which takes the window's keys.
-  CrestUIHandler() { g_handler = this; }
+  CrestUIHandler() = default;
   CrestUIHandler(const CrestUIHandler&) = delete;
   CrestUIHandler& operator=(const CrestUIHandler&) = delete;
   ~CrestUIHandler() override {
     if (g_handler == this) g_handler = nullptr;
+    if (g_float == this) g_float = nullptr;
   }
 
   // content::WebUIMessageHandler:
@@ -151,6 +251,12 @@ class CrestUIHandler final : public content::WebUIMessageHandler, public CoreHos
     web_ui()->RegisterMessageCallback(
         "setPageBounds", base::BindRepeating(&CrestUIHandler::HandleSetPageBounds, base::Unretained(this)));
     web_ui()->RegisterMessageCallback(
+        "floatReady", base::BindRepeating(&CrestUIHandler::HandleFloatReady, base::Unretained(this)));
+    web_ui()->RegisterMessageCallback(
+        "setFloat", base::BindRepeating(&CrestUIHandler::HandleSetFloat, base::Unretained(this)));
+    web_ui()->RegisterMessageCallback(
+        "floatEvent", base::BindRepeating(&CrestUIHandler::HandleFloatEvent, base::Unretained(this)));
+    web_ui()->RegisterMessageCallback(
         "setShortcuts", base::BindRepeating(&CrestUIHandler::HandleSetShortcuts, base::Unretained(this)));
     web_ui()->RegisterMessageCallback(
         "setSelectionSearch", base::BindRepeating(&CrestUIHandler::HandleSetSelectionSearch, base::Unretained(this)));
@@ -158,6 +264,13 @@ class CrestUIHandler final : public content::WebUIMessageHandler, public CoreHos
         "copyLink", base::BindRepeating(&CrestUIHandler::HandleCopyLink, base::Unretained(this)));
     web_ui()->RegisterMessageCallback(
         "setOverlay", base::BindRepeating(&CrestUIHandler::HandleSetOverlay, base::Unretained(this)));
+    // Downloads (Linux shell).
+    web_ui()->RegisterMessageCallback(
+        "openDownload", base::BindRepeating(&CrestUIHandler::HandleOpenDownload, base::Unretained(this)));
+    web_ui()->RegisterMessageCallback(
+        "showDownloadInFolder", base::BindRepeating(&CrestUIHandler::HandleShowDownloadInFolder, base::Unretained(this)));
+    web_ui()->RegisterMessageCallback(
+        "chooseDownloadPath", base::BindRepeating(&CrestUIHandler::HandleChooseDownloadPath, base::Unretained(this)));
   }
 
   void OnJavascriptDisallowed() override { observation_.Reset(); }
@@ -177,6 +290,8 @@ class CrestUIHandler final : public content::WebUIMessageHandler, public CoreHos
   // order, then each new one as it comes.
   void HandleReady(const base::ListValue& args) {
     AllowJavascript();
+    // The page that starts the core's line is the window's main WebUI.
+    g_handler = this;
     CoreHost* host = CoreHost::Get();
     base::ListValue history;
     if (host) {
@@ -249,6 +364,42 @@ class CrestUIHandler final : public content::WebUIMessageHandler, public CoreHos
     }
   }
 
+  // The floating surfaces' page started; it hears what the main WebUI sends.
+  void HandleFloatReady(const base::ListValue& args) {
+    AllowJavascript();
+    g_float = this;
+    if (g_handler) g_handler->Fire("crest-float-ready", base::Value());
+  }
+
+  // From the main WebUI. args: x, y, width, height (empty hides), whether the
+  // surface takes the keyboard, and the state it draws, as JSON text.
+  void HandleSetFloat(const base::ListValue& args) {
+    if (args.size() != 6 || !args[5].is_string()) return;
+    int values[4];
+    for (size_t index = 0; index < 4; ++index) {
+      if (!args[index].is_int() && !args[index].is_double()) return;
+      values[index] = static_cast<int>(args[index].GetDouble());
+    }
+    if (values[2] < 0 || values[3] < 0) return;
+    if (g_float) g_float->Fire("crest-float-state", base::Value(args[5].GetString()));
+    if (LinuxWindow* window = LinuxWindow::Current()) {
+      window->SetFloat(gfx::Rect(values[0], values[1], values[2], values[3]), args[4].GetIfBool().value_or(false));
+    }
+  }
+
+  // From the floating surfaces' page: what the person did there, as JSON
+  // text, for the main WebUI to act on.
+  void HandleFloatEvent(const base::ListValue& args) {
+    if (args.size() != 1 || !args[0].is_string()) return;
+    if (g_handler) g_handler->Fire("crest-float-event", base::Value(args[0].GetString()));
+  }
+
+ public:
+  void Fire(const std::string& event, const base::Value& value) {
+    if (IsJavascriptAllowed()) FireWebUIListener(event, value);
+  }
+
+ private:
   // args: one list per key, [key, ctrl, alt, meta, shift (-1 when it does
   // not matter), reserved].
   void HandleSetShortcuts(const base::ListValue& args) {
@@ -321,7 +472,62 @@ class CrestUIHandler final : public content::WebUIMessageHandler, public CoreHos
     if (LinuxWindow* window = LinuxWindow::Current()) window->SetOverlay(args[0].GetBool());
   }
 
+  // --- Downloads (Linux shell) ----------------------------------------------
+
+  // args: a finished download's destination, as a file: URL. Opens the file
+  // in the desktop's app for it.
+  void HandleOpenDownload(const base::ListValue& args) {
+    const base::FilePath path = DownloadFile(args);
+    if (path.empty()) return;
+    platform_util::OpenItem(Profile::FromWebUI(web_ui()), path, platform_util::OPEN_FILE, base::DoNothing());
+  }
+
+  // args: a finished download's destination, as a file: URL. Shows it in the
+  // desktop's file manager.
+  void HandleShowDownloadInFolder(const base::ListValue& args) {
+    const base::FilePath path = DownloadFile(args);
+    if (path.empty()) return;
+    platform_util::ShowItemInFolder(Profile::FromWebUI(web_ui()), path);
+  }
+
+  // args: callback id, the name to save under (the WebUI made it safe),
+  // whether to ask where to save. Answers {path, null when the person
+  // cancels or the folder is unavailable, and unavailable}.
+  void HandleChooseDownloadPath(const base::ListValue& args) {
+    AllowJavascript();
+    if (args.size() != 3 || !args[1].is_string() || !args[2].is_bool()) {
+      RejectJavascriptCallback(args[0], base::Value("chooseDownloadPath takes a name and whether to ask."));
+      return;
+    }
+    const base::FilePath name = base::FilePath::FromUTF8Unsafe(args[1].GetString()).BaseName();
+    base::ThreadPool::PostTaskAndReplyWithResult(
+        FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_BLOCKING}, base::BindOnce(&FreeDownloadPath, name),
+        base::BindOnce(&CrestUIHandler::ChooseDownloadPath, weak_factory_.GetWeakPtr(), args[0].Clone(), name,
+                       args[2].GetBool()));
+  }
+
+  void ChooseDownloadPath(base::Value callback, const base::FilePath& name, bool asks, const base::FilePath& free) {
+    if (!asks) {
+      AnswerDownloadPath(std::move(callback), free, free.empty());
+      return;
+    }
+    DownloadSaveDialog::Show(
+        web_ui()->GetWebContents(), free.empty() ? name : free,
+        base::BindOnce(&CrestUIHandler::AnswerDownloadPath, weak_factory_.GetWeakPtr(), std::move(callback)));
+  }
+
+  void AnswerDownloadPath(base::Value callback, base::FilePath path, bool unavailable) {
+    if (!IsJavascriptAllowed()) return;
+    base::DictValue answer;
+    answer.Set("path", path.empty() ? base::Value() : base::Value(path.AsUTF8Unsafe()));
+    answer.Set("unavailable", unavailable);
+    ResolveJavascriptCallback(callback, base::Value(std::move(answer)));
+  }
+
+  // --- End of downloads -----------------------------------------------------
+
   base::ScopedObservation<CoreHost, CoreHost::Observer> observation_{this};
+  base::WeakPtrFactory<CrestUIHandler> weak_factory_{this};
 };
 
 }  // namespace

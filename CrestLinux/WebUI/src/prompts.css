@@ -1,0 +1,227 @@
+/* The questions sites ask, on the surface floating over the page
+   (prompt-float.ts). */
+
+/* --- Buttons both prompts share: a plain choice and the prominent one in
+   Crest's accent, whose label takes the ink that reads on it. --- */
+
+.prompt-button {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  padding: 0 var(--crest-space-m);
+  border: var(--crest-button-stroke) solid var(--crest-subtle-border);
+  border-radius: var(--crest-radius-compact);
+  background: var(--crest-chrome-surface);
+  color: var(--crest-primary);
+  font: inherit;
+  font-weight: var(--crest-control-title-weight);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background var(--crest-dur-hover), transform var(--crest-dur-press);
+}
+
+.prompt-button:hover {
+  background: var(--crest-hover);
+}
+
+.prompt-button:active {
+  transform: scale(var(--crest-button-pressed-scale));
+  background: var(--crest-selection);
+}
+
+.prompt-button.prominent {
+  border-color: transparent;
+  background: var(--crest-accent);
+  color: var(--crest-ink);
+}
+
+.prompt-button.prominent:hover {
+  background: color-mix(in srgb, var(--crest-accent) 88%, var(--crest-ink));
+}
+
+.prompt-button.prominent:active {
+  background: color-mix(in srgb, var(--crest-accent) var(--crest-button-pressed-fill-opacity), var(--crest-ink));
+}
+
+.prompt-button:focus-visible,
+.permission-dismiss:focus-visible,
+.permission-check:focus-visible {
+  outline: var(--crest-field-focus-ring) solid color-mix(in srgb, var(--crest-accent) 32%, transparent);
+  outline-offset: 1px;
+}
+
+/* --- A site's permission request: BrowserPagePermissionPrompt, on Crest's
+   flyout surface (crestPopover). --- */
+
+.permission-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--crest-space-m);
+  width: 280px;
+  box-sizing: border-box;
+  padding: 14px;
+  border-radius: var(--crest-radius-control);
+  background: var(--crest-window-background);
+  color: var(--crest-primary);
+  box-shadow: var(--find-shadow), inset 0 0 0 1px var(--crest-subtle-border);
+  outline: none;
+}
+
+.permission-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.permission-symbol {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  color: var(--crest-secondary);
+}
+
+.permission-words {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.permission-site {
+  font-size: var(--crest-text-callout);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.permission-request {
+  color: var(--crest-secondary);
+  font-size: var(--crest-text-callout);
+}
+
+.permission-inside {
+  color: var(--crest-secondary);
+  font-size: var(--crest-text-caption);
+  overflow-wrap: anywhere;
+}
+
+.permission-dismiss {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: var(--crest-radius-compact);
+  background: none;
+  color: var(--crest-secondary);
+}
+
+.permission-dismiss:hover {
+  background: var(--crest-hover);
+}
+
+.permission-remember {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--crest-text-caption);
+}
+
+.permission-check {
+  margin: 0;
+  accent-color: var(--crest-accent);
+}
+
+.permission-buttons {
+  display: flex;
+  gap: var(--crest-space-s);
+}
+
+/* --- Dialogs: BrowserDialogPresenter's sheets, as a card over the dimmed
+   page that holds the keyboard until the person answers. --- */
+
+.prompt-scrim {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: max(24px, 12vh) var(--crest-space-2xl) var(--crest-space-2xl);
+  box-sizing: border-box;
+  overflow: auto;
+  border-radius: var(--page-corner-radius);
+  background: rgb(0 0 0 / var(--palette-scrim-opacity));
+}
+
+.dialog-card {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--crest-space-s);
+  width: 340px;
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: var(--crest-space-xl);
+  border-radius: var(--crest-radius-card);
+  background: var(--crest-window-background);
+  color: var(--crest-primary);
+  box-shadow: var(--crest-floating-sidebar-shadow), inset 0 0 0 1px var(--crest-subtle-border);
+  text-align: center;
+  outline: none;
+}
+
+.dialog-caution {
+  align-self: center;
+  color: var(--crest-warning);
+}
+
+.dialog-caution .caution-mark {
+  fill: var(--crest-window-background);
+  stroke: var(--crest-window-background);
+}
+
+.dialog-title {
+  margin: 0;
+  font-size: var(--crest-text-headline);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.dialog-message {
+  margin: 0;
+  font-size: var(--crest-text-subheadline);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 40vh;
+  overflow: auto;
+}
+
+.dialog-field {
+  height: 28px;
+  box-sizing: border-box;
+  padding: 0 var(--crest-space-s);
+  border: var(--crest-field-border) solid var(--crest-subtle-border);
+  border-radius: var(--crest-radius-compact);
+  background: var(--crest-chrome-surface);
+  color: var(--crest-primary);
+  font: inherit;
+  outline: none;
+}
+
+.dialog-field:focus {
+  border-color: var(--crest-accent);
+  box-shadow: 0 0 0 var(--crest-field-focus-ring) color-mix(in srgb, var(--crest-accent) 32%, transparent);
+}
+
+.dialog-buttons {
+  display: flex;
+  gap: var(--crest-space-s);
+  margin-top: var(--crest-space-s);
+}

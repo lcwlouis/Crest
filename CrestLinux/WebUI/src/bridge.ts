@@ -4,6 +4,7 @@
 
 import {
     decodeChange,
+    decodeEnginePresentation,
     decodePageRequestAnswer,
     decodeQueryAnswer,
     decodeRejection,
@@ -15,6 +16,7 @@ import {
 } from "../generated/crest_contracts.js";
 import type {
     Change,
+    EnginePresentation,
     Intent,
     PageRequest,
     PageRequestAnswers,
@@ -166,6 +168,39 @@ export function setOverlay(raised: boolean): void {
     chrome.send("setOverlay", [raised]);
 }
 
+/**
+ * Places the floating surface over the page, in CSS pixels of this page (an
+ * empty rectangle hides it), and hands it the state it draws.
+ */
+export function setFloat(
+    bounds: { x: number; y: number; width: number; height: number },
+    focus: boolean,
+    state: unknown,
+): void {
+    chrome.send("setFloat", [
+        Math.round(bounds.x),
+        Math.round(bounds.y),
+        Math.round(bounds.width),
+        Math.round(bounds.height),
+        focus,
+        JSON.stringify(state),
+    ]);
+}
+
+/** Hears what the person does on the floating surface, and when it is ready for state. */
+export function listenToFloat(onEvent: (event: unknown) => void, onReady: () => void): void {
+    listen("crest-float-event", (json) => onEvent(JSON.parse(json as string)));
+    listen("crest-float-ready", () => onReady());
+}
+
+/** Reads one of the engine's presentations, as the core's line relays it. */
+export function decodePresentation(bytes: Uint8Array): EnginePresentation {
+    const reader = new WireReader(bytes);
+    const presentation = decodeEnginePresentation(reader);
+    reader.finish();
+    return presentation;
+}
+
 /** A key the window took from a page for one of Crest's shortcuts. */
 export interface HostKey {
     readonly key: string;
@@ -219,6 +254,11 @@ export function registerPageMenu(
     listen("crest-copy-link", (url) => onCopyLink(url as string));
 }
 
+/** Tells the window Crest's keys again, after the person changed them. */
+export function updateShortcuts(shortcuts: readonly (readonly [string, boolean, boolean, boolean, number, boolean])[]): void {
+    chrome.send("setShortcuts", shortcuts.map((shortcut) => [...shortcut]));
+}
+
 /** Asks the engine about one of its pages directly, as the Mac's views do. */
 export async function pageRequest<K extends PageRequest["kind"] & keyof PageRequestAnswers>(
     kind: K,
@@ -232,4 +272,26 @@ export async function pageRequest<K extends PageRequest["kind"] & keyof PageRequ
     const result = decodePageRequestAnswer(kind, reader);
     reader.finish();
     return result;
+}
+
+/** Opens a finished download's file, given as its `file:` address, in the desktop's default app. */
+export function openDownload(fileUrl: string): void {
+    chrome.send("openDownload", [fileUrl]);
+}
+
+/** Shows a finished download's file, given as its `file:` address, in the desktop's file manager. */
+export function showDownloadInFolder(fileUrl: string): void {
+    chrome.send("showDownloadInFolder", [fileUrl]);
+}
+
+/**
+ * Where a download's file goes: the person's Downloads folder under a name
+ * no file there has, or the place they choose in the save dialog when
+ * `asks`. The path is null when they cancelled or the folder is unavailable.
+ */
+export function chooseDownloadPath(
+    filename: string,
+    asks: boolean,
+): Promise<{ readonly path: string | null; readonly unavailable: boolean }> {
+    return send("chooseDownloadPath", filename, asks);
 }

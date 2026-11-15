@@ -2,18 +2,47 @@
 // it, as the Mac app does at launch, then draws the shown Space's tabs and
 // shows the selected tab's page beside the sidebar.
 
-import { connect, dispatch, pageRequest, query, Refused, registerShortcuts, setPageBounds, showPage } from "./bridge.js";
-import { Commands, shortcutTable } from "./commands.js";
+import {
+    connect,
+    decodePresentation,
+    dispatch,
+    listenToFloat,
+    pageRequest,
+    query,
+    Refused,
+    registerShortcuts,
+    setPageBounds,
+    showPage,
+    updateShortcuts,
+} from "./bridge.js";
+import { Commands, shortcutTable, useShortcutBindings } from "./commands.js";
+import { FindBar } from "./find.js";
+import type { FloatEvent } from "./float.js";
 import { NavigationError, ShortcutCommand } from "../generated/crest_contracts.js";
 import { Palette } from "./palette.js";
+import { Prompts } from "./prompts.js";
+import { FloatSurfaces } from "./surfaces.js";
 import { TabIcons } from "./icons.js";
-import type { Guid, LaunchEnvironment, PageState, TabState } from "../generated/crest_contracts.js";
+import type { Guid, Intent, LaunchEnvironment, PageState, TabState } from "../generated/crest_contracts.js";
 import { Model } from "./model.js";
 import { PageMenu } from "./pagemenu.js";
+import { PageStates } from "./page-states.js";
 import type { Space, Workspace } from "./model.js";
+import { InlineRename } from "./rename.js";
 import { element, Sidebar, symbol } from "./sidebar.js";
+import { SidebarMenus } from "./sidebar-menus.js";
+import { SpaceActions } from "./space-actions.js";
+import { SpaceEditor } from "./space-editor.js";
+import { DownloadDestinations } from "./download-destinations.js";
+import { Utilities } from "./utilities.js";
+import { applyDeviceAppearance } from "./device-appearance.js";
+import { Preferences } from "./preferences.js";
+import { isSettingsKey, Settings, settingsShortcut } from "./settings.js";
+import { settingsPages, spaceSectionPages } from "./settings-pages.js";
 
 const model = new Model();
+const preferences = new Preferences();
+applyDeviceAppearance();
 const icons = new TabIcons(() => render());
 /** The window this sidebar draws: the saved window the launch reopens, once known. */
 let windowId: Guid = crypto.randomUUID();
@@ -100,6 +129,43 @@ navigation.append(back, forward, reload);
 const address = element("button", "address");
 address.addEventListener("click", () => palette.open("current", address.dataset.url ?? ""));
 root.append(navigation, address);
+const rename = new InlineRename(() => render());
+const sendChecked = (intent: Intent): Promise<boolean> =>
+    dispatch(intent).then(
+        () => true,
+        (error: unknown) => (report(error), false),
+    );
+const utilities = new Utilities({
+    model,
+    imageOf: (tabId) => icons.imageOf(tabId),
+    windowId: () => windowId,
+    space: shownSpace,
+    workspace: () => model.workspace,
+    send: sendChecked,
+    redraw: () => render(),
+});
+const spaces = new SpaceActions({
+    model,
+    windowId: () => windowId,
+    send: sendChecked,
+    edit: (spaceId, intent) => settings.openSpace(spaceId, intent),
+});
+const spaceEditor = new SpaceEditor({ model, actions: spaces });
+const settings = new Settings(
+    {
+        model,
+        preferences,
+        windowId: () => windowId,
+        space: shownSpace,
+        tab: shownTab,
+        spaces,
+        spaceEditor,
+        pages: settingsPages,
+        spaceSections: spaceSectionPages,
+    },
+    document.getElementById("page")!,
+);
+const downloadDestinations = new DownloadDestinations((intent) => dispatch(intent).catch((error: unknown) => console.error(error)));
 const sidebar = new Sidebar(
     {
         model,
@@ -108,6 +174,20 @@ const sidebar = new Sidebar(
         shownTabId,
         send: (intent) => void dispatch(intent).catch(report),
         openNewTab: () => palette.open("newTab"),
+        menus: new SidebarMenus({
+            model,
+            icons,
+            rename,
+            windowId: () => windowId,
+            shownTabId,
+            send: sendChecked,
+            report,
+            perform: (command) => void commands.perform(command),
+            openSettings: () => settings.open(),
+        }),
+        rename,
+        utilities,
+        spaces,
     },
     root,
 );
@@ -122,6 +202,8 @@ const commands = new Commands({
     send: (intent) => void dispatch(intent).catch(report),
     report,
     openPalette: (mode) => palette.open(mode, mode === "current" ? (address.dataset.url ?? "") : ""),
+    find: (action) => (action === "open" ? findBar.open() : findBar.step(action === "previous")),
+    toggleUtility: (surface) => utilities.toggleSurface(surface),
 });
 
 // The rows Crest adds to the context menu Chromium shows over a page.
@@ -131,6 +213,20 @@ const pageMenu = new PageMenu({
     send: (intent) => void dispatch(intent).catch(report),
     report,
 });
+// The surfaces floating over the page.
+const surfaces = new FloatSurfaces();
+const findBar = new FindBar(shownPage, report, surfaces);
+const prompts = new Prompts({ model, page: shownPage }, surfaces);
+const pageStates = new PageStates({ model, tab: shownTab, page: shownPage, report }, surfaces);
+listenToFloat(
+    (event) => {
+        const floatEvent = event as FloatEvent;
+        // A key the floating view passed on is the window's, as one the page left.
+        if (floatEvent.kind === "key") commands.handleKey(floatEvent);
+        else surfaces.handle(floatEvent);
+    },
+    () => surfaces.restore(),
+);
 
 const palette = new Palette({
     icons,
@@ -142,6 +238,7 @@ const palette = new Palette({
     page: shownPage,
     send: (intent) => void dispatch(intent).catch(report),
     report,
+    openSettings: (name) => settings.openPage(name),
 });
 
 // The Start Page, which Crest draws in the page's card for a tab that shows
@@ -167,6 +264,7 @@ const startPalette = new Palette(
         page: shownPage,
         send: (intent) => void dispatch(intent).catch(report),
         report,
+        openSettings: (name) => settings.openPage(name),
     },
     startBar,
 );
@@ -222,18 +320,32 @@ function showStartPage(shown: boolean): void {
 // hands Crest the keys it reserves from pages through the host.
 document.addEventListener("keydown", (event) => {
     if (palette.isOpen || event.defaultPrevented) return;
-    if (commands.handleKey(event)) event.preventDefault();
+    if (isSettingsKey(event)) {
+        event.preventDefault();
+        settings.open();
+    } else if (commands.handleKey(event)) event.preventDefault();
 });
 registerShortcuts(
-    shortcutTable(commands),
+    [...shortcutTable(commands), settingsShortcut],
     (key) => {
         if (palette.isOpen) palette.close();
-        commands.handleKey(key);
+        if (isSettingsKey(key)) settings.open();
+        else commands.handleKey(key);
     },
     (command) => {
         if (ShortcutCommand.all.includes(command as ShortcutCommand)) commands.perform(command as ShortcutCommand);
     },
 );
+
+// The person's own keys, once the core publishes them, replace the defaults.
+let appliedBindings: readonly unknown[] | null = null;
+preferences.listen(() => {
+    const bindings = preferences.shortcuts?.bindings;
+    if (!bindings || bindings === appliedBindings) return;
+    appliedBindings = bindings;
+    useShortcutBindings(bindings);
+    updateShortcuts([...shortcutTable(commands), settingsShortcut]);
+});
 
 /** Steps the shown page through its history, as the Mac's back and forward controls do. */
 function step(offset: number): void {
@@ -268,6 +380,8 @@ function render(): void {
     }
     showAddress(page);
     pageMenu.follow(page);
+    // The list's search field stands in the address field's place, as on the Mac.
+    address.hidden = utilities.isOpen;
     sidebar.render();
 }
 
@@ -325,8 +439,7 @@ function followShownPageView(): void {
     }
     if (!tab) return;
     if (!page) {
-        // TODO(linux): other native views (settings, history) are drawn
-        // with the surfaces they belong to.
+        // Crest's own views draw in the card: Settings (settings.ts).
         if (tab.nativeContent || opening.has(tab.id)) return;
         opening.add(tab.id);
         const pageId = crypto.randomUUID();
@@ -381,13 +494,30 @@ async function start(): Promise<void> {
     await connect(
         (changes) => {
             model.apply(changes);
+            preferences.apply(changes);
             icons.apply(changes);
             render();
             followShownPage();
+            findBar.follow();
+            prompts.apply(changes);
+            pageStates.apply(changes);
+            downloadDestinations.apply(changes);
+            spaces.apply(changes);
+            spaceEditor.follow();
+            settings.follow();
         },
-        () => {},
+        (bytes) => {
+            try {
+                const presentation = decodePresentation(bytes);
+                if (presentation.kind === "FindFinished") findBar.finished(presentation.value);
+                pageStates.present(presentation);
+            } catch (error) {
+                console.error(error);
+            }
+        },
     );
     const workspaceId = await openSession();
+    await preferences.adopt(report);
     // The launch reopens the window the person left, with the Space and tabs
     // it showed, as the Mac's launch does.
     // TODO(linux): reopen every saved window, and run the setup the plan

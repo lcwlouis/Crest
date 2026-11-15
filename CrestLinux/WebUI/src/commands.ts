@@ -1,15 +1,18 @@
 // Crest's commands on Linux: the ShortcutCommand list the core publishes,
-// performed as the Mac's BrowserCommandActions perform them, and their
-// default keys, read from the contract with Ctrl in place of Command.
+// performed as the Mac's BrowserCommandActions perform them, and their keys:
+// the person's own as the core publishes them, else the contract's
+// defaults, with Ctrl in place of Command.
 //
 // A command the Linux window cannot perform yet is left out of the command
 // bar and its keys do nothing, so nothing offers what does not work.
 
-import { ShortcutCommand, ShortcutModifiers, ShortcutSection } from "../generated/crest_contracts.js";
-import type { Guid, Intent, PageState, PaletteCommand, TabState } from "../generated/crest_contracts.js";
+import { ShortcutCommand, ShortcutModifiers, ShortcutPreference, ShortcutSection, ShortcutSpecialKey } from "../generated/crest_contracts.js";
+import type { Guid, Intent, KeyCombination, PageState, PaletteCommand, ShortcutBinding, TabState } from "../generated/crest_contracts.js";
 import { pageRequest, query } from "./bridge.js";
 import { listKey } from "./model.js";
 import type { Model, Space, Workspace } from "./model.js";
+import { Notices, postNotice } from "./notices.js";
+import { UtilitySurface } from "./utilities.js";
 
 /** What commands act on: the window's shown Space, tab and page. */
 export interface CommandContext {
@@ -22,6 +25,9 @@ export interface CommandContext {
     readonly send: (intent: Intent) => void;
     readonly report: (error: unknown) => void;
     readonly openPalette: (mode: "newTab" | "current") => void;
+    readonly find: (action: "open" | "next" | "previous") => void;
+    /** Opens one of the sidebar's lists, or puts it away when it shows. */
+    readonly toggleUtility: (surface: UtilitySurface) => void;
 }
 
 /** The commands the Linux window performs; the rest wait for their surfaces. */
@@ -29,11 +35,18 @@ const known = new Set<string>([
     "NewTab", "OpenLocation", "CloseTabOrWindow", "ArchiveTab", "Back", "Forward", "ReloadPage", "ReloadFromOrigin",
     "StopLoading", "ToggleSelectedTabPinned", "DuplicateTab", "ReopenClosedTab", "ClearUnpinnedTabs", "PreviousTab",
     "NextTab", "PreviousSpace", "NextSpace", "SelectNumbered", "ZoomIn", "ZoomOut", "ActualSize", "CopyPageLink",
-    "CopyPageLinkAsMarkdown",
+    "CopyPageLinkAsMarkdown", "FindInPage", "FindNext", "FindPrevious", "ShowHistory", "ShowArchive", "ShowDownloads",
 ]);
 
-/** Chromium's zoom steps, which the Mac's page zoom also follows. */
-const zoomSteps = [0.25, 0.33, 0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4, 5];
+/** Whether the Linux window performs `command` at all. */
+export function performsOnLinux(command: ShortcutCommand): boolean {
+    return known.has(ShortcutCommand.facts[command].kind);
+}
+
+/** The levels the page zoom commands step through, as the Mac's pageZoomLevels. */
+export const zoomSteps = [0.5, 0.67, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3];
+/** Two zooms closer than this are the same level. */
+const zoomTolerance = 0.001;
 
 export class Commands {
     private readonly context: CommandContext;
@@ -59,7 +72,7 @@ export class Commands {
 
     /** Whether the Linux window performs `command` at all, whatever it shows now. */
     isKnown(command: ShortcutCommand): boolean {
-        return known.has(ShortcutCommand.facts[command].kind);
+        return performsOnLinux(command);
     }
 
     supports(command: ShortcutCommand): boolean {
@@ -141,6 +154,13 @@ export class Commands {
                 const kind = facts.kind;
                 return page ? () => this.zoomPage(page, kind) : null;
             }
+            case "FindInPage":
+                return page ? () => this.context.find("open") : null;
+            case "FindNext":
+            case "FindPrevious": {
+                const action = facts.kind === "FindNext" ? "next" : "previous";
+                return page ? () => this.context.find(action) : null;
+            }
             case "CopyPageLink":
             case "CopyPageLinkAsMarkdown": {
                 const url = page?.live.url ?? tab?.url;
@@ -152,8 +172,15 @@ export class Commands {
                 return () =>
                     void query("LinkToCopy", { url })
                         .then((clean) => navigator.clipboard.writeText(markdown ? `[${title}](${clean})` : clean))
+                        .then(() => postNotice(Notices.urlCopied))
                         .catch(this.context.report);
             }
+            case "ShowHistory":
+                return () => this.context.toggleUtility(UtilitySurface.history);
+            case "ShowArchive":
+                return () => this.context.toggleUtility(UtilitySurface.archive);
+            case "ShowDownloads":
+                return () => this.context.toggleUtility(UtilitySurface.downloads);
             default:
                 return null;
         }
@@ -204,13 +231,19 @@ export class Commands {
         this.context.send({ kind: "ShowTab", value: { windowId: this.context.windowId(), spaceId: space.state.id, tabId } });
     }
 
+    /**
+     * Steps the page's zoom and says where it is now, as the Mac's zoom
+     * commands do; a step that changes nothing says nothing.
+     */
     private zoomPage(page: PageState, kind: "ZoomIn" | "ZoomOut" | "ActualSize"): void {
         const current = this.zoom.get(page.id) ?? 1;
         let factor = 1;
-        if (kind === "ZoomIn") factor = zoomSteps.find((step) => step > current + 0.001) ?? current;
-        if (kind === "ZoomOut") factor = [...zoomSteps].reverse().find((step) => step < current - 0.001) ?? current;
+        if (kind === "ZoomIn") factor = zoomSteps.find((step) => step > current + zoomTolerance) ?? Math.max(current, zoomSteps.at(-1)!);
+        if (kind === "ZoomOut") factor = [...zoomSteps].reverse().find((step) => step < current - zoomTolerance) ?? Math.min(current, zoomSteps[0]!);
+        if (factor === current) return;
         this.zoom.set(page.id, factor);
         this.request(pageRequest("ZoomPage", { pageId: page.id, factor }));
+        postNotice(Notices.pageZoom(`${Math.round(factor * 100)}%`));
     }
 }
 
@@ -227,29 +260,96 @@ function linuxModifiers(modifiers: number): { ctrl: boolean; alt: boolean; shift
     };
 }
 
-const specialKeys: Record<string, string> = {
-    upArrow: "ArrowUp",
-    downArrow: "ArrowDown",
-    leftArrow: "ArrowLeft",
-    rightArrow: "ArrowRight",
-    tab: "Tab",
-    return: "Enter",
-    escape: "Escape",
-    delete: "Backspace",
-    space: " ",
+/** The DOM names of the special keys that are not function keys. */
+const namedKeys: Partial<Record<ShortcutSpecialKey, string>> = {
+    Tab: "Tab",
+    LeftArrow: "ArrowLeft",
+    RightArrow: "ArrowRight",
+    UpArrow: "ArrowUp",
+    DownArrow: "ArrowDown",
+    Escape: "Escape",
+    ReturnKey: "Enter",
+    Delete: "Backspace",
+    ForwardDelete: "Delete",
+    Home: "Home",
+    End: "End",
+    PageUp: "PageUp",
+    PageDown: "PageDown",
+    Space: " ",
 };
 
-/** The keys each command answers to by default on a desktop. */
-const keymap: { command: ShortcutCommand; key: string; ctrl: boolean; alt: boolean; shift: boolean; meta: boolean }[] =
-    ShortcutCommand.all.flatMap((command) =>
-        ShortcutCommand.facts[command].defaultShortcuts
-            .filter((shortcut) => shortcut.platform === "Desktop")
-            .map((shortcut) => ({
-                command,
-                key: shortcut.keys.isSpecialKey ? (specialKeys[shortcut.keys.key] ?? shortcut.keys.key) : shortcut.keys.key.toLowerCase(),
-                ...linuxModifiers(shortcut.keys.modifiers),
-            })),
+/** A special key's DOM name (ShortcutSpecialKey). */
+function domKey(key: ShortcutSpecialKey): string {
+    const number = ShortcutSpecialKey.facts[key].functionKeyNumber;
+    return number !== null ? `F${number}` : (namedKeys[key] ?? key);
+}
+
+/** The DOM key of a special key, by the name a binding spells it with. */
+const specialKeys: Record<string, string> = Object.fromEntries(
+    ShortcutSpecialKey.all.map((key) => [ShortcutSpecialKey.facts[key].name, domKey(key)]),
+);
+
+interface Binding {
+    readonly command: ShortcutCommand;
+    readonly key: string;
+    readonly ctrl: boolean;
+    readonly alt: boolean;
+    readonly shift: boolean;
+    readonly meta: boolean;
+    /** Whether the window takes the keys before the page sees them. */
+    readonly reserved: boolean;
+}
+
+function binding(command: ShortcutCommand, keys: KeyCombination, reserved: boolean): Binding {
+    return {
+        command,
+        key: keys.isSpecialKey ? (specialKeys[keys.key] ?? keys.key) : keys.key.toLowerCase(),
+        ...linuxModifiers(keys.modifiers),
+        reserved,
+    };
+}
+
+/** The keys each command answers to: its desktop defaults until the core publishes the person's own. */
+let keymap: Binding[] = ShortcutCommand.all.flatMap((command) =>
+    ShortcutCommand.facts[command].defaultShortcuts
+        .filter((shortcut) => shortcut.platform === "Desktop")
+        .map((shortcut) => binding(command, shortcut.keys, ShortcutCommand.facts[command].isReservedFromPages)),
+);
+
+/**
+ * Answers each command to the keys the core says it has (ShortcutsChanged),
+ * taken before the page sees them where its preference runs Crest first.
+ */
+export function useShortcutBindings(bindings: readonly ShortcutBinding[]): void {
+    keymap = bindings.flatMap((entry) =>
+        entry.keys ? [binding(entry.command, entry.keys, ShortcutPreference.facts[entry.preference].runsBeforePage)] : [],
     );
+}
+
+/** The keys `event` holds as the contract spells them, or null for a lone modifier. */
+export function keysOf(event: KeyLike): KeyCombination | null {
+    if (["Control", "Alt", "Shift", "Meta", "OS", "AltGraph"].includes(event.key)) return null;
+    const special = ShortcutSpecialKey.all.find((key) => domKey(key) === event.key);
+    const code = event.code ?? "";
+    const plain = code.startsWith("Key") ? code.slice(3).toLowerCase() : code.startsWith("Digit") ? code.slice(5) : event.key.toLowerCase();
+    let modifiers = 0;
+    if (event.ctrlKey) modifiers |= ShortcutModifiers.Command;
+    if (event.ctrlKey && event.metaKey) modifiers |= ShortcutModifiers.Control;
+    if (event.altKey) modifiers |= ShortcutModifiers.Option;
+    if (event.shiftKey) modifiers |= ShortcutModifiers.Shift;
+    return special
+        ? { key: ShortcutSpecialKey.facts[special].name, isSpecialKey: true, modifiers }
+        : { key: plain, isSpecialKey: false, modifiers };
+}
+
+/** How Linux writes `keys`: its modifiers by their Linux names, then the key. */
+export function keysLabel(keys: KeyCombination): string {
+    const { ctrl, alt, shift, meta } = linuxModifiers(keys.modifiers);
+    const special = keys.isSpecialKey ? ShortcutSpecialKey.all.find((key) => ShortcutSpecialKey.facts[key].name === keys.key) : undefined;
+    const facts = special ? ShortcutSpecialKey.facts[special] : undefined;
+    const key = facts ? (facts.functionKeyNumber !== null ? `F${facts.functionKeyNumber}` : (facts.glyph ?? facts.title?.text ?? keys.key)) : keys.key.toUpperCase();
+    return [ctrl && "Ctrl", meta && "Super", alt && "Alt", shift && "Shift", key].filter(Boolean).join("+");
+}
 
 /** What a key press says, from the page's own events or from the window. */
 export interface KeyLike {
@@ -280,7 +380,7 @@ export function shortcutTable(commands: Commands): [string, boolean, boolean, bo
             binding.alt,
             binding.meta,
             shiftMatters(binding.key) ? Number(binding.shift) : -1,
-            ShortcutCommand.facts[binding.command].isReservedFromPages,
+            binding.reserved,
         ]);
 }
 
