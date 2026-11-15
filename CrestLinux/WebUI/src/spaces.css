@@ -1,0 +1,497 @@
+/* A Space's icon, and its editor: the Mac's Space page in Settings
+   (BrowserSettingsSpacePage) with the Appearance page's Crest Studio
+   (BrowserSpaceBrandingEditor, BrowserCrestStudioMetrics), drawn as one sheet
+   on Crest's flyout surface until Linux has Settings. */
+
+:root {
+  --space-editor-width: 560px;
+  --space-editor-max-height: calc(100vh - 64px);
+  --space-editor-radius: 12px;
+  --space-editor-padding: 20px;
+  --space-editor-header-height: 52px;
+  --space-editor-header-icon-size: 26px;
+  --studio-group-gap: 10px;
+  --studio-tile-width: 72px;
+  --studio-tile-art: 56px;
+  --studio-tile-radius: 10px;
+  --studio-symbol-size: 34px;
+  --studio-slot-size: 44px;
+  --studio-row-height: 28px;
+  --studio-row-title-width: 150px;
+  --studio-preview-height: 132px;
+  --studio-field: var(--crest-canvas);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --studio-field: rgb(255 255 255 / 0.06);
+  }
+}
+
+/* --- A Space's icon: its crest, emoji or symbol --- */
+
+.space-icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.space-icon > svg {
+  display: block;
+}
+
+.segment {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* --- The sheet --- */
+
+.space-editor-layer {
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--z-feedback) - 1);
+  display: grid;
+  place-items: center;
+  background: rgb(0 0 0 / var(--palette-scrim-opacity));
+}
+
+.space-editor {
+  display: flex;
+  flex-direction: column;
+  width: min(var(--space-editor-width), calc(100vw - 32px));
+  max-height: var(--space-editor-max-height);
+  overflow: hidden;
+  border-radius: var(--space-editor-radius);
+  background: var(--menu-background);
+  box-shadow: inset 0 0 0 0.5px var(--menu-border), var(--menu-shadow);
+  color: var(--crest-primary);
+  font: var(--crest-text-body) var(--crest-font-ui);
+}
+
+.space-editor-header {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--crest-space-s);
+  height: var(--space-editor-header-height);
+  padding: 0 var(--crest-space-m) 0 var(--space-editor-padding);
+  border-bottom: 1px solid var(--menu-separator);
+}
+
+.space-editor-header-icon {
+  display: inline-flex;
+  flex: none;
+  width: var(--space-editor-header-icon-size);
+  height: var(--space-editor-header-icon-size);
+}
+
+.space-editor-name {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  padding: 0 6px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: inherit;
+  font: 600 var(--crest-text-title3) var(--crest-font-ui);
+  user-select: text;
+}
+
+.space-editor-name:hover {
+  background: var(--crest-hover);
+}
+
+.space-editor-name:focus {
+  border-color: var(--crest-subtle-border);
+  background: var(--studio-field);
+  outline: none;
+}
+
+.space-editor-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--crest-min-hit-target);
+  height: var(--crest-min-hit-target);
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--crest-secondary);
+}
+
+.space-editor-actions:hover,
+.space-editor-actions[aria-expanded="true"] {
+  background: var(--crest-hover);
+  color: var(--crest-primary);
+}
+
+.space-editor-done {
+  height: 28px;
+  padding: 0 14px;
+  border: none;
+  border-radius: 7px;
+  background: var(--crest-accent);
+  color: white;
+  font: 600 13px var(--crest-font-ui);
+}
+
+.space-editor-done:hover {
+  filter: brightness(1.06);
+}
+
+.space-editor-done:active,
+.studio-choice:active,
+.studio-symbol:active,
+.studio-segment:active {
+  transform: scale(var(--crest-button-pressed-scale));
+}
+
+.space-editor-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--crest-space-2xl);
+  padding: var(--space-editor-padding);
+  overflow-y: auto;
+}
+
+.space-editor-body > * {
+  flex: none;
+}
+
+.space-editor-title {
+  margin: 0;
+  font: 600 var(--crest-display-page-size) var(--crest-font-display);
+}
+
+/* --- Preview --- */
+
+.space-editor-preview {
+  position: relative;
+  height: var(--studio-preview-height);
+  overflow: hidden;
+  border-radius: var(--crest-radius-control);
+  box-shadow: inset 0 0 0 1px var(--crest-subtle-border);
+}
+
+.space-editor-preview > svg.banner {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.space-editor-preview-identity {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--crest-space-l);
+  height: 100%;
+  padding: 0 var(--crest-space-2xl);
+}
+
+.space-editor-preview-identity.reads-light {
+  color: white;
+}
+
+.space-editor-preview-identity.reads-dark {
+  color: rgb(0 0 0 / 0.85);
+}
+
+.space-editor-preview-name {
+  overflow: hidden;
+  font: 600 var(--crest-text-title) var(--crest-font-ui);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* --- Groups --- */
+
+.studio-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--studio-group-gap);
+}
+
+.studio-group-title {
+  margin: 0;
+  font: 600 var(--crest-display-section-size) var(--crest-font-display);
+}
+
+.studio-caption {
+  margin: 0;
+  color: var(--crest-secondary);
+  font-size: var(--crest-text-subheadline);
+}
+
+.studio-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(var(--studio-tile-width), 1fr));
+  gap: var(--crest-space-s);
+}
+
+.studio-choice {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--crest-space-xs);
+  padding: var(--crest-space-s) var(--crest-space-2xs) 6px;
+  border: none;
+  border-radius: var(--studio-tile-radius);
+  background: var(--crest-chrome-surface);
+  color: var(--crest-primary);
+}
+
+.studio-choice:hover {
+  background: var(--crest-hover);
+}
+
+.studio-choice.selected {
+  background: var(--crest-selection);
+  box-shadow: inset 0 0 0 1.5px var(--crest-accent);
+}
+
+.studio-choice-art {
+  display: grid;
+  place-items: center;
+  width: var(--studio-tile-art);
+  height: 52px;
+}
+
+.studio-choice-title {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: var(--crest-text-subheadline);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.studio-scheme {
+  display: block;
+  overflow: hidden;
+  border-radius: var(--crest-radius-compact);
+  box-shadow: inset 0 0 0 1px var(--crest-subtle-border);
+  line-height: 0;
+}
+
+/* --- Identity --- */
+
+.studio-segmented {
+  display: inline-flex;
+  align-self: flex-start;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--crest-chrome-surface);
+  box-shadow: inset 0 0 0 1px var(--crest-subtle-border);
+}
+
+.studio-segment {
+  min-width: 80px;
+  height: 24px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--crest-primary);
+  font: 13px var(--crest-font-ui);
+}
+
+.studio-segment:hover {
+  background: var(--crest-hover);
+}
+
+.studio-segment.selected {
+  background: var(--menu-background);
+  box-shadow: 0 1px 2px rgb(0 0 0 / var(--crest-opacity-control-shadow)), inset 0 0 0 0.5px var(--crest-subtle-border);
+  font-weight: 600;
+}
+
+.studio-symbols {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.studio-symbol {
+  display: grid;
+  place-items: center;
+  width: var(--studio-symbol-size);
+  height: var(--studio-symbol-size);
+  border: none;
+  border-radius: var(--crest-radius-compact);
+  background: var(--crest-chrome-surface);
+  color: var(--crest-primary);
+}
+
+.studio-symbol:hover {
+  background: var(--crest-hover);
+}
+
+.studio-symbol.selected {
+  background: var(--crest-selection);
+  box-shadow: inset 0 0 0 1.5px var(--crest-accent);
+}
+
+/* --- Rows: a title and its control --- */
+
+.studio-row {
+  display: flex;
+  align-items: center;
+  gap: var(--crest-space-m);
+  min-height: var(--studio-row-height);
+}
+
+.studio-row-title {
+  flex: none;
+  width: var(--studio-row-title-width);
+}
+
+.studio-emoji,
+.studio-select {
+  height: 26px;
+  padding: 0 6px;
+  border: 1px solid var(--crest-subtle-border);
+  border-radius: 6px;
+  background: var(--studio-field);
+  color: var(--crest-primary);
+  font: 13px var(--crest-font-ui);
+}
+
+.studio-emoji {
+  width: 64px;
+  text-align: center;
+  user-select: text;
+}
+
+.studio-select {
+  min-width: 140px;
+}
+
+.studio-slider {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--crest-accent);
+}
+
+.studio-readout {
+  flex: none;
+  width: 40px;
+  color: var(--crest-secondary);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.studio-switch {
+  margin: 0;
+  accent-color: var(--crest-accent);
+}
+
+/* --- Colours --- */
+
+.studio-well {
+  width: var(--studio-slot-size);
+  height: var(--studio-slot-size);
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  cursor: pointer;
+}
+
+.studio-well::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.studio-well::-webkit-color-swatch {
+  border: none;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px var(--crest-subtle-border);
+}
+
+.studio-well.small {
+  width: 24px;
+  height: 24px;
+}
+
+.studio-slots {
+  display: flex;
+  gap: var(--crest-space-l);
+}
+
+.studio-slot {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--crest-space-xs);
+}
+
+.studio-slot-title {
+  color: var(--crest-secondary);
+  font-size: var(--crest-text-subheadline);
+}
+
+.studio-slot-add {
+  display: grid;
+  place-items: center;
+  width: var(--studio-slot-size);
+  height: var(--studio-slot-size);
+  border: 1px dashed var(--crest-line);
+  border-radius: 50%;
+  background: none;
+  color: var(--crest-secondary);
+}
+
+.studio-slot-add:hover {
+  background: var(--crest-hover);
+  color: var(--crest-primary);
+}
+
+.studio-slot-remove {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--menu-background);
+  box-shadow: 0 0 0 1px var(--crest-subtle-border);
+  color: var(--crest-secondary);
+  opacity: 0;
+}
+
+.studio-slot:hover .studio-slot-remove,
+.studio-slot-remove:focus-visible {
+  opacity: 1;
+}
+
+.studio-slot-remove:hover {
+  color: var(--crest-primary);
+}
+
+/* --- Footer --- */
+
+.studio-footer {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.studio-link {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--crest-accent-text);
+  font: 13px var(--crest-font-ui);
+}
+
+.studio-link:hover {
+  text-decoration: underline;
+}

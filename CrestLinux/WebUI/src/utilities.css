@@ -1,0 +1,508 @@
+/* The sidebar's archive, history and downloads lists, the lists button and
+   its fan, with the Mac's metrics: Utilities/BrowserUtilityListContent
+   (rows, search toolbar), BrowserUtilitySwitcherLayout (buttons 44, fan step
+   64, gap 18, badge 16), BrowserRootMetrics (fan edge offset 12). */
+
+:root {
+  /* The platform colours the core's tints name (SystemTint+Color). */
+  --tint-red: rgb(255 59 48);
+  --tint-orange: rgb(255 149 0);
+  --tint-purple: rgb(175 82 222);
+  --tint-blue: rgb(0 122 255);
+  --tint-indigo: rgb(88 86 214);
+  --tint-teal: rgb(48 176 199);
+  --tint-pink: rgb(255 45 85);
+  --tint-green: rgb(52 199 89);
+  --utility-button: var(--crest-glass-icon-button);
+  --utility-badge: 16px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --tint-red: rgb(255 69 58);
+    --tint-orange: rgb(255 159 10);
+    --tint-purple: rgb(191 90 242);
+    --tint-blue: rgb(10 132 255);
+    --tint-indigo: rgb(94 92 230);
+    --tint-teal: rgb(64 200 224);
+    --tint-pink: rgb(255 55 95);
+    --tint-green: rgb(48 209 88);
+  }
+}
+
+.utility {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* --- Search and filter, in the address field's place --- */
+
+.address[hidden] {
+  display: none;
+}
+
+.utility-toolbar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  padding: 0 var(--sidebar-layer-inset) var(--crest-space-xs);
+}
+
+.utility-search {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: var(--address-content-spacing);
+  min-width: 0;
+  height: var(--address-height);
+  box-sizing: border-box;
+  padding: 0 var(--address-padding-x);
+  border-radius: var(--address-radius);
+  background: var(--crest-chrome-surface);
+  color: var(--muted);
+}
+
+.utility-search > svg {
+  flex: none;
+}
+
+.utility-search-field {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  outline: none;
+  background: none;
+  color: var(--text);
+  font: inherit;
+}
+
+.utility-search-field::-webkit-search-cancel-button {
+  display: none;
+}
+
+.utility-search-field::placeholder {
+  color: var(--muted);
+}
+
+.utility-search-clear {
+  display: inline-flex;
+  flex: none;
+  padding: 0;
+  border: none;
+  background: none;
+  color: rgb(var(--crest-primary-rgb) / 0.3);
+}
+
+.utility-search-clear[hidden] {
+  display: none;
+}
+
+.utility-filter {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--utility-button);
+  height: var(--address-height);
+  padding: 0;
+  border: none;
+  border-radius: var(--crest-radius-compact);
+  background: none;
+  color: var(--text);
+}
+
+.utility-filter:hover,
+.utility-filter[aria-expanded="true"] {
+  background: var(--crest-hover);
+}
+
+.utility-filter.filtered {
+  color: var(--space-tint);
+}
+
+/* --- The list, in time sections --- */
+
+.utility-list {
+  flex: 1;
+  min-height: 0;
+  padding: 0 var(--crest-space-s) var(--tab-section-end-band);
+  overflow-y: auto;
+  container-type: inline-size;
+}
+
+.utility-section-title {
+  margin: var(--crest-space-s) var(--crest-space-xs) var(--crest-space-2xs);
+  color: var(--muted);
+  font-size: var(--crest-text-caption);
+  font-weight: 600;
+}
+
+.utility-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  box-sizing: border-box;
+  margin: var(--crest-space-2xs) 0;
+  padding: var(--crest-space-s) var(--crest-space-xs);
+  border: none;
+  border-radius: var(--crest-sidebar-control-radius);
+  background: none;
+  font: inherit;
+  text-align: start;
+  transition: background var(--crest-dur-hover) var(--crest-ease-in-out);
+}
+
+.utility-row:hover {
+  background: var(--crest-hover);
+}
+
+.utility-row:active:not(.download) {
+  background: var(--crest-selection);
+}
+
+.utility-icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  color: var(--muted);
+}
+
+.utility-icon .favicon {
+  width: 18px;
+  height: 18px;
+}
+
+.utility-glyph {
+  display: inline-flex;
+  vertical-align: -1px;
+}
+
+.utility-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.utility-title,
+.utility-subtitle,
+.download-line {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.utility-title {
+  color: var(--text);
+}
+
+.utility-subtitle {
+  color: var(--muted);
+  font-size: var(--crest-text-caption);
+}
+
+.utility-trailing {
+  flex: none;
+  color: var(--muted);
+}
+
+.utility-trailing.tertiary {
+  color: rgb(var(--crest-primary-rgb) / 0.3);
+}
+
+/* --- Download rows --- */
+
+.utility-row.download {
+  gap: 0;
+  padding: 0;
+}
+
+.download-body {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: var(--crest-space-s) var(--crest-space-xs);
+  border: none;
+  border-radius: var(--crest-sidebar-control-radius);
+  background: none;
+  font: inherit;
+  text-align: start;
+}
+
+.download-body .utility-icon {
+  width: 28px;
+  height: 28px;
+}
+
+.download-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  color: var(--muted);
+}
+
+.download-status.warning {
+  color: var(--crest-warning);
+}
+
+.download-status.danger {
+  color: var(--crest-danger);
+}
+
+/* A ring of progress round the file's kind, as BrowserDownloadStatusIcon. */
+.download-status.progress {
+  position: relative;
+}
+
+.download-status.progress > svg:first-child {
+  position: absolute;
+  inset: 2px;
+  transform: rotate(-90deg);
+}
+
+.download-status.progress circle {
+  fill: none;
+  stroke-width: 2;
+}
+
+.download-status.progress .track {
+  stroke: rgb(var(--crest-primary-rgb) / 0.12);
+}
+
+.download-status.progress .value {
+  stroke: var(--space-tint);
+  stroke-linecap: round;
+}
+
+.download-status.spinner::after {
+  content: "";
+  width: 14px;
+  height: 14px;
+  box-sizing: border-box;
+  border: 2px solid rgb(var(--crest-primary-rgb) / 0.15);
+  border-top-color: var(--muted);
+  border-radius: 50%;
+  animation: download-spin 0.8s linear infinite;
+}
+
+@keyframes download-spin {
+  to { transform: rotate(360deg); }
+}
+
+.download-details {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: var(--crest-text-caption);
+}
+
+.download-line.danger {
+  color: var(--crest-danger);
+  white-space: normal;
+}
+
+.download-separator {
+  display: none;
+  color: rgb(var(--crest-primary-rgb) / 0.3);
+}
+
+/* The status and transfer share a line once the row is 360 wide. */
+@container (min-width: 360px) {
+  .download-details.adaptive {
+    flex-direction: row;
+    gap: 6px;
+  }
+
+  .download-details.adaptive .download-separator {
+    display: inline;
+  }
+}
+
+.utility-action {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--utility-button);
+  height: var(--utility-button);
+  padding: 0;
+  border: none;
+  border-radius: var(--crest-radius-compact);
+  background: none;
+  color: var(--crest-accent-text);
+}
+
+.utility-action:hover {
+  background: var(--crest-hover);
+}
+
+.utility-action:active {
+  background: var(--crest-selection);
+}
+
+.utility-action.destructive {
+  color: var(--crest-danger);
+}
+
+/* --- Empty and no results --- */
+
+.utility-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: 160px;
+  padding: 0 var(--crest-space-l);
+  text-align: center;
+}
+
+.utility-empty-icon {
+  color: var(--muted);
+}
+
+.utility-empty-title {
+  margin: var(--crest-space-s) 0 var(--crest-space-xs);
+  font-size: var(--crest-text-title3);
+  font-weight: 600;
+}
+
+.utility-empty-description {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--crest-text-callout);
+}
+
+/* --- Lists button and its badge, at the switcher's page side --- */
+
+.switcher {
+  position: relative;
+}
+
+.lists-button {
+  position: absolute;
+  top: 50%;
+  right: var(--switcher-padding-x);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--switcher-utility-button);
+  height: var(--switcher-utility-button);
+  padding: 0;
+  border: none;
+  border-radius: var(--crest-radius-compact);
+  background: none;
+  color: var(--text);
+  transform: translateY(-50%);
+}
+
+.lists-button:hover {
+  background: var(--crest-hover);
+}
+
+.lists-button.expanded svg,
+.fan-button.selected svg {
+  fill: currentColor;
+  fill-opacity: 0.22;
+}
+
+.lists-badge {
+  position: absolute;
+  top: calc(var(--crest-space-xs) * -1);
+  right: calc(var(--crest-space-xs) * -1);
+  min-width: var(--utility-badge);
+  height: var(--utility-badge);
+  box-sizing: border-box;
+  padding: 0 4px;
+  border-radius: calc(var(--utility-badge) / 2);
+  background: var(--space-tint);
+  color: white;
+  font: var(--crest-badge-weight) var(--crest-text-caption2)/var(--utility-badge) var(--crest-font-ui);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.lists-badge.danger {
+  background: var(--crest-danger);
+}
+
+/* The newest live download's progress, drawn round the badge. */
+.lists-badge.progress {
+  box-shadow: 0 0 0 1.5px rgb(var(--crest-primary-rgb) / 0.72);
+  background-image: conic-gradient(transparent calc(var(--progress) * 360deg), rgb(0 0 0 / 0.18) 0);
+}
+
+/* --- The fan beside the sidebar, over the page --- */
+
+.utility-fan {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-utility-fan);
+  pointer-events: none;
+}
+
+.utility-fan[hidden] {
+  display: none;
+}
+
+.fan-button {
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--utility-button);
+  height: var(--utility-button);
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--crest-window-background) 88%, transparent);
+  box-shadow: 0 0 0 0.5px var(--crest-subtle-border), 0 4px 12px rgb(0 0 0 / 0.16);
+  backdrop-filter: var(--crest-material-regular);
+  color: var(--text);
+  pointer-events: auto;
+  animation: fan-reveal var(--crest-dur-utility-fan-reveal) var(--crest-ease-smooth) both;
+}
+
+.fan-button:nth-child(2) { animation-delay: 45ms; }
+.fan-button:nth-child(3) { animation-delay: 90ms; }
+
+.fan-button:hover {
+  background: color-mix(in srgb, var(--crest-window-background) 70%, var(--text) 8%);
+}
+
+.fan-button.selected {
+  background: var(--space-tint);
+  color: white;
+}
+
+.fan-button .lists-badge {
+  top: -4px;
+  right: -4px;
+}
+
+.utility-fan.settled .fan-button {
+  animation: none;
+}
+
+@keyframes fan-reveal {
+  from { opacity: 0; transform: scale(0.08); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fan-button { animation: none; }
+}

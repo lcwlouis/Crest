@@ -2,16 +2,38 @@
 // it, as the Mac app does at launch, then draws the shown Space's tabs and
 // shows the selected tab's page beside the sidebar.
 
-import { connect, dispatch, pageRequest, query, Refused, registerShortcuts, setPageBounds, showPage } from "./bridge.js";
+import {
+    connect,
+    decodePresentation,
+    dispatch,
+    listenToFloat,
+    pageRequest,
+    query,
+    Refused,
+    registerShortcuts,
+    setPageBounds,
+    showPage,
+} from "./bridge.js";
 import { Commands, shortcutTable } from "./commands.js";
+import { FindBar } from "./find.js";
+import type { FloatEvent } from "./float.js";
 import { NavigationError, ShortcutCommand } from "../generated/crest_contracts.js";
 import { Palette } from "./palette.js";
+import { Prompts } from "./prompts.js";
+import { FloatSurfaces } from "./surfaces.js";
 import { TabIcons } from "./icons.js";
-import type { Guid, LaunchEnvironment, PageState, TabState } from "../generated/crest_contracts.js";
+import type { Guid, Intent, LaunchEnvironment, PageState, TabState } from "../generated/crest_contracts.js";
 import { Model } from "./model.js";
 import { PageMenu } from "./pagemenu.js";
+import { PageStates } from "./page-states.js";
 import type { Space, Workspace } from "./model.js";
+import { InlineRename } from "./rename.js";
 import { element, Sidebar, symbol } from "./sidebar.js";
+import { SidebarMenus } from "./sidebar-menus.js";
+import { SpaceActions } from "./space-actions.js";
+import { SpaceEditor } from "./space-editor.js";
+import { DownloadDestinations } from "./download-destinations.js";
+import { Utilities } from "./utilities.js";
 
 const model = new Model();
 const icons = new TabIcons(() => render());
@@ -100,6 +122,29 @@ navigation.append(back, forward, reload);
 const address = element("button", "address");
 address.addEventListener("click", () => palette.open("current", address.dataset.url ?? ""));
 root.append(navigation, address);
+const rename = new InlineRename(() => render());
+const sendChecked = (intent: Intent): Promise<boolean> =>
+    dispatch(intent).then(
+        () => true,
+        (error: unknown) => (report(error), false),
+    );
+const utilities = new Utilities({
+    model,
+    imageOf: (tabId) => icons.imageOf(tabId),
+    windowId: () => windowId,
+    space: shownSpace,
+    workspace: () => model.workspace,
+    send: sendChecked,
+    redraw: () => render(),
+});
+const spaces = new SpaceActions({
+    model,
+    windowId: () => windowId,
+    send: sendChecked,
+    edit: (spaceId, intent) => spaceEditor.open(spaceId, intent),
+});
+const spaceEditor = new SpaceEditor({ model, actions: spaces });
+const downloadDestinations = new DownloadDestinations((intent) => dispatch(intent).catch((error: unknown) => console.error(error)));
 const sidebar = new Sidebar(
     {
         model,
@@ -108,6 +153,19 @@ const sidebar = new Sidebar(
         shownTabId,
         send: (intent) => void dispatch(intent).catch(report),
         openNewTab: () => palette.open("newTab"),
+        menus: new SidebarMenus({
+            model,
+            icons,
+            rename,
+            windowId: () => windowId,
+            shownTabId,
+            send: sendChecked,
+            report,
+            perform: (command) => void commands.perform(command),
+        }),
+        rename,
+        utilities,
+        spaces,
     },
     root,
 );
@@ -122,6 +180,8 @@ const commands = new Commands({
     send: (intent) => void dispatch(intent).catch(report),
     report,
     openPalette: (mode) => palette.open(mode, mode === "current" ? (address.dataset.url ?? "") : ""),
+    find: (action) => (action === "open" ? findBar.open() : findBar.step(action === "previous")),
+    toggleUtility: (surface) => utilities.toggleSurface(surface),
 });
 
 // The rows Crest adds to the context menu Chromium shows over a page.
@@ -131,6 +191,20 @@ const pageMenu = new PageMenu({
     send: (intent) => void dispatch(intent).catch(report),
     report,
 });
+// The surfaces floating over the page.
+const surfaces = new FloatSurfaces();
+const findBar = new FindBar(shownPage, report, surfaces);
+const prompts = new Prompts({ model, page: shownPage }, surfaces);
+const pageStates = new PageStates({ model, tab: shownTab, page: shownPage, report }, surfaces);
+listenToFloat(
+    (event) => {
+        const floatEvent = event as FloatEvent;
+        // A key the floating view passed on is the window's, as one the page left.
+        if (floatEvent.kind === "key") commands.handleKey(floatEvent);
+        else surfaces.handle(floatEvent);
+    },
+    () => surfaces.restore(),
+);
 
 const palette = new Palette({
     icons,
@@ -268,6 +342,8 @@ function render(): void {
     }
     showAddress(page);
     pageMenu.follow(page);
+    // The list's search field stands in the address field's place, as on the Mac.
+    address.hidden = utilities.isOpen;
     sidebar.render();
 }
 
@@ -384,8 +460,22 @@ async function start(): Promise<void> {
             icons.apply(changes);
             render();
             followShownPage();
+            findBar.follow();
+            prompts.apply(changes);
+            pageStates.apply(changes);
+            downloadDestinations.apply(changes);
+            spaces.apply(changes);
+            spaceEditor.follow();
         },
-        () => {},
+        (bytes) => {
+            try {
+                const presentation = decodePresentation(bytes);
+                if (presentation.kind === "FindFinished") findBar.finished(presentation.value);
+                pageStates.present(presentation);
+            } catch (error) {
+                console.error(error);
+            }
+        },
     );
     const workspaceId = await openSession();
     // The launch reopens the window the person left, with the Space and tabs

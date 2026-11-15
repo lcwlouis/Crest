@@ -49,6 +49,10 @@ class LinuxWindow final {
   // command bar, a menu, Peek), and lowers it again after. Raised, the WebUI
   // is transparent where the page shows through and takes the input.
   void SetOverlay(bool raised);
+  // Places the floating surface the WebUI draws over the page (the find bar,
+  // a notice), in the window contents' coordinates; empty hides it. `focus`
+  // gives it the keyboard.
+  void SetFloat(const gfx::Rect& bounds, bool focus);
 
  private:
   explicit LinuxWindow(Profile* profile);
@@ -80,8 +84,10 @@ class LinuxWindow final {
   std::unique_ptr<views::Widget> widget_;
   raw_ptr<views::WebView> ui_ = nullptr;
   raw_ptr<views::WebView> page_ = nullptr;
+  raw_ptr<views::WebView> float_ = nullptr;
   std::string shown_page_;
   bool overlay_raised_ = false;
+  bool float_focused_ = false;
 };
 
 }  // namespace crest

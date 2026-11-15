@@ -7,9 +7,15 @@
 
 import type { BrandColor, FolderState, Guid, Intent, SidebarRow, TabPlacement, TabState } from "../generated/crest_contracts.js";
 import { SpaceAccent } from "../generated/crest_contracts.js";
+import { spaceIcon } from "./crest.js";
 import type { TabIcons } from "./icons.js";
 import { listKey } from "./model.js";
 import type { Model, Space, Workspace } from "./model.js";
+import type { InlineRename } from "./rename.js";
+import type { SidebarMenus } from "./sidebar-menus.js";
+import type { SpaceActions } from "./space-actions.js";
+import { SpaceGroups } from "./space-groups.js";
+import type { Utilities } from "./utilities.js";
 
 /** What the sidebar asks of the window it sits in. */
 export interface SidebarHost {
@@ -20,6 +26,14 @@ export interface SidebarHost {
     readonly send: (intent: Intent) => void;
     /** Opens a new tab, as the Mac's new-tab row opens the command bar. */
     readonly openNewTab: () => void;
+    /** The menus rows, tiles and the Space open (sidebar-menus.ts). */
+    readonly menus: SidebarMenus;
+    /** The Space menus: the empty sidebar's and the switcher's (space-actions.ts). */
+    readonly spaces: SpaceActions;
+    /** The field a row shows in place of its title while it is being named. */
+    readonly rename: InlineRename;
+    /** The archive, history and downloads lists, which take the tabs' place while one is open. */
+    readonly utilities: Utilities;
 }
 
 export function element<K extends keyof HTMLElementTagNameMap>(
@@ -40,20 +54,30 @@ const glyph = {
     folder: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
     archive: '<rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9"/><path d="M10 13h4"/>',
     split: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M12 5v14"/>',
+    ellipsis: '<g fill="currentColor" stroke="none"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></g>',
 };
+
+/** Opens a menu where the pointer pressed, in place of the page's own. */
+function onContextMenu(node: HTMLElement, open: (at: { x: number; y: number }) => void): void {
+    node.addEventListener("contextmenu", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        open({ x: event.clientX, y: event.clientY });
+    });
+}
 
 export function symbol(paths: string, size = 16): string {
     return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
 }
 
-function css(color: BrandColor, alpha = color.alpha): string {
+export function css(color: BrandColor, alpha = color.alpha): string {
     const channel = (value: number): number => Math.round(value * 255);
     return `rgb(${channel(color.red)} ${channel(color.green)} ${channel(color.blue)} / ${alpha})`;
 }
 
-/** A Space's mark: its emoji when it has one, else its name's first letter. */
-function spaceMark(name: string, mark: string): string {
-    return /\p{Extended_Pictographic}/u.test(mark) ? mark : (name.trim().slice(0, 1) || "?").toUpperCase();
+/** A length the design tokens give, in CSS pixels. */
+function cssPixels(token: string, fallback: number): number {
+    return parseFloat(getComputedStyle(document.documentElement).getPropertyValue(token)) || fallback;
 }
 
 /**
@@ -79,9 +103,26 @@ export class Sidebar {
         this.host = host;
         root.append(this.page, this.switcher);
         new ResizeObserver(() => this.render()).observe(root);
+        // The sidebar's empty stretches open the Space's own menu.
+        this.page.addEventListener("contextmenu", (event) => {
+            event.preventDefault();
+            const space = this.shownSpace();
+            const target = event.target as Element;
+            if (!space || target.closest("button, .row, .space-header-bar, .seam, input, .utility")) return;
+            void this.host.spaces.background(space, { x: event.clientX, y: event.clientY });
+        });
+    }
+
+    private shownSpace(): Space | undefined {
+        const window = this.host.model.windows.get(this.host.windowId());
+        return window ? this.host.model.workspace?.spaces.get(window.shownSpaceId) : undefined;
     }
 
     render(): void {
+        this.host.rename.whileRedrawing(() => this.draw());
+    }
+
+    private draw(): void {
         const { model } = this.host;
         const workspace = model.workspace;
         const window = model.windows.get(this.host.windowId());
@@ -90,6 +131,14 @@ export class Sidebar {
         const scroll = this.page.querySelector(".tabs")?.scrollTop ?? 0;
         const tint = css(SpaceAccent.facts[space.state.settings.accent].swatch);
         document.documentElement.style.setProperty("--space-tint", tint);
+        this.drawSwitcher(workspace, space);
+        const utility = this.host.utilities;
+        if (utility.isOpen) {
+            // Moved only when it is not there yet, so its search field keeps the keyboard.
+            if (this.page.childNodes.length !== 1 || this.page.firstChild !== utility.element) this.page.replaceChildren(utility.element);
+            utility.render();
+            return;
+        }
 
         const pinned = this.pinnedGrid(space);
         const header = this.spaceHeader(workspace, space);
@@ -101,8 +150,6 @@ export class Sidebar {
         this.appendList(tabs, space, "Current", null);
         this.page.replaceChildren(...(pinned ? [pinned] : []), header, tabs);
         tabs.scrollTop = scroll;
-
-        this.drawSwitcher(workspace, space);
     }
 
     private pinnedGrid(space: Space): HTMLElement | null {
@@ -123,6 +170,7 @@ export class Sidebar {
             tile.setAttribute("aria-label", tile.title);
             if (!this.host.model.pageFor(tab.id) && tab.id !== selected) tile.classList.add("unloaded");
             tile.addEventListener("click", () => this.show(space, tab.id));
+            onContextMenu(tile, (at) => void this.host.menus.tab(space, tab, at, true));
             grid.append(tile);
         }
         return grid;
@@ -133,7 +181,7 @@ export class Sidebar {
         const header = element("button", "space-header");
         header.setAttribute("aria-expanded", String(settings.isSavedTabsExpanded));
         header.title = settings.isSavedTabsExpanded ? "Hide saved tabs" : "Show saved tabs";
-        const mark = element("span", "space-mark", spaceMark(settings.name, settings.symbol));
+        const mark = spaceIcon(settings, cssPixels("--space-header-icon-size", 20));
         const name = element("span", "space-title", settings.name);
         const disclosure = element("span", "disclosure");
         disclosure.innerHTML = symbol(glyph.chevron, 9);
@@ -144,7 +192,16 @@ export class Sidebar {
                 value: { workspaceId: workspace.id, spaceId: space.state.id, isExpanded: !settings.isSavedTabsExpanded },
             }),
         );
-        return header;
+        // The Space's actions, behind the "…" at the header's end.
+        const actions = element("button", "space-actions");
+        actions.innerHTML = symbol(glyph.ellipsis, 16);
+        actions.title = "Space Actions";
+        actions.setAttribute("aria-label", "Space actions");
+        actions.setAttribute("aria-haspopup", "menu");
+        actions.addEventListener("click", () => this.host.menus.spaceActions(space, actions.getBoundingClientRect()));
+        const bar = element("div", "space-header-bar");
+        bar.append(header, actions);
+        return bar;
     }
 
     /** The seam between the saved run and the current one, with Clear on hover. */
@@ -214,7 +271,8 @@ export class Sidebar {
         const icon = element("span", "favicon folder-icon");
         icon.innerHTML = symbol(glyph.folder, 16);
         icon.style.color = css(folder.displayColor);
-        header.append(icon, element("span", "title", folder.title));
+        header.append(icon, this.title("folder", folder.id, folder.title));
+        onContextMenu(header, (at) => void this.host.menus.folder(space, folder, at));
         header.addEventListener("click", () =>
             this.host.send({
                 kind: "CollapseFolder",
@@ -258,6 +316,7 @@ export class Sidebar {
             card.append(this.favicon(tab), element("span", "title", tab.displayTitle || tab.url || "New Tab"));
             card.title = group?.displayTitle ?? tab.displayTitle;
             card.addEventListener("click", () => this.show(space, tab.id));
+            onContextMenu(card, (at) => void this.host.menus.tab(space, tab, at, false));
             element_.append(card);
         }
         return element_;
@@ -270,8 +329,9 @@ export class Sidebar {
         row.tabIndex = 0;
         row.setAttribute("role", "button");
         if (!this.host.model.pageFor(tab.id) && !selected) row.classList.add("unloaded");
-        row.append(this.favicon(tab), element("span", "title", tab.displayTitle || tab.url || "New Tab"));
+        row.append(this.favicon(tab), this.title("tab", tab.id, tab.displayTitle || tab.url || "New Tab"));
         row.title = tab.url ?? tab.displayTitle;
+        onContextMenu(row, (at) => void this.host.menus.tab(space, tab, at, false));
         const close = element("button", "close");
         close.innerHTML = symbol(glyph.close, 12);
         close.title = "Close Tab";
@@ -300,6 +360,11 @@ export class Sidebar {
         return row;
     }
 
+    /** A row's title, or the field that names it while the person renames it. */
+    private title(kind: "tab" | "folder", id: Guid, text: string): HTMLElement {
+        return this.host.rename.isNaming(kind, id) ? this.host.rename.field : element("span", "title", text);
+    }
+
     private favicon(tab: TabState): HTMLElement {
         const icon = element("span", "favicon");
         const image = this.host.icons.imageOf(tab.id);
@@ -319,20 +384,25 @@ export class Sidebar {
 
     private drawSwitcher(workspace: Workspace, space: Space): void {
         const track = element("div", "switcher-track");
-        for (const id of workspace.order) {
-            const other = workspace.spaces.get(id);
-            if (!other) continue;
+        const size = cssPixels("--switcher-icon-size", 24);
+        for (const other of new SpaceGroups(workspace).available) {
+            const id = other.state.id;
             const shown = id === space.state.id;
             const segment = element("button", shown ? "segment shown" : "segment");
-            segment.textContent = spaceMark(other.state.settings.name, other.state.settings.symbol);
+            segment.append(spaceIcon(other.state.settings, size));
             segment.title = other.state.settings.name;
+            segment.setAttribute("aria-label", other.state.settings.name);
             segment.setAttribute("aria-pressed", String(shown));
             segment.addEventListener("click", () =>
                 this.host.send({ kind: "ShowSpace", value: { windowId: this.host.windowId(), spaceId: id } }),
             );
+            onContextMenu(segment, (at) => this.host.spaces.switcher(other, at));
             track.append(segment);
         }
-        this.switcher.replaceChildren(track);
+        // The lists button stays where it is, so a press on it is not cut short.
+        const lists = this.host.utilities.listsButton(space);
+        if (this.switcher.lastChild === lists && this.switcher.childNodes.length === 2) this.switcher.firstChild!.replaceWith(track);
+        else this.switcher.replaceChildren(track, lists);
     }
 
     private tab(space: Space, id: Guid): TabState | undefined {
