@@ -239,3 +239,13 @@ export async function pageRequest<K extends PageRequest["kind"] & keyof PageRequ
     reader.finish();
     return result;
 }
+
+/** Opens a finished download's file, given as its `file:` address, in the desktop's default app. */
+export function openDownload(fileUrl: string): void {
+    chrome.send("openDownload", [fileUrl]);
+}
+
+/** Shows a finished download's file, given as its `file:` address, in the desktop's file manager. */
+export function showDownloadInFolder(fileUrl: string): void {
+    chrome.send("showDownloadInFolder", [fileUrl]);
+}

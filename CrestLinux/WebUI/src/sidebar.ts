@@ -12,6 +12,7 @@ import { listKey } from "./model.js";
 import type { Model, Space, Workspace } from "./model.js";
 import type { InlineRename } from "./rename.js";
 import type { SidebarMenus } from "./sidebar-menus.js";
+import type { Utilities } from "./utilities.js";
 
 /** What the sidebar asks of the window it sits in. */
 export interface SidebarHost {
@@ -26,6 +27,8 @@ export interface SidebarHost {
     readonly menus: SidebarMenus;
     /** The field a row shows in place of its title while it is being named. */
     readonly rename: InlineRename;
+    /** The archive, history and downloads lists, which take the tabs' place while one is open. */
+    readonly utilities: Utilities;
 }
 
 export function element<K extends keyof HTMLElementTagNameMap>(
@@ -100,7 +103,7 @@ export class Sidebar {
             event.preventDefault();
             const space = this.shownSpace();
             const target = event.target as Element;
-            if (!space || target.closest("button, .row, .space-header-bar, .seam, input")) return;
+            if (!space || target.closest("button, .row, .space-header-bar, .seam, input, .utility")) return;
             this.host.menus.background(space, { x: event.clientX, y: event.clientY });
         });
     }
@@ -123,6 +126,14 @@ export class Sidebar {
         const scroll = this.page.querySelector(".tabs")?.scrollTop ?? 0;
         const tint = css(SpaceAccent.facts[space.state.settings.accent].swatch);
         document.documentElement.style.setProperty("--space-tint", tint);
+        this.drawSwitcher(workspace, space);
+        const utility = this.host.utilities;
+        if (utility.isOpen) {
+            // Moved only when it is not there yet, so its search field keeps the keyboard.
+            if (this.page.childNodes.length !== 1 || this.page.firstChild !== utility.element) this.page.replaceChildren(utility.element);
+            utility.render();
+            return;
+        }
 
         const pinned = this.pinnedGrid(space);
         const header = this.spaceHeader(workspace, space);
@@ -134,8 +145,6 @@ export class Sidebar {
         this.appendList(tabs, space, "Current", null);
         this.page.replaceChildren(...(pinned ? [pinned] : []), header, tabs);
         tabs.scrollTop = scroll;
-
-        this.drawSwitcher(workspace, space);
     }
 
     private pinnedGrid(space: Space): HTMLElement | null {
@@ -383,7 +392,7 @@ export class Sidebar {
             );
             track.append(segment);
         }
-        this.switcher.replaceChildren(track);
+        this.switcher.replaceChildren(track, this.host.utilities.listsButton(space));
     }
 
     private tab(space: Space, id: Guid): TabState | undefined {
