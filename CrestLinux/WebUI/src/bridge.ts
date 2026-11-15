@@ -283,6 +283,18 @@ export function showCertificate(pageId: string): void {
     chrome.send("showCertificate", [pageId]);
 }
 
+/** How the person chose Crest to look (Settings > Appearance): the desktop's light or dark, or one of them always. */
+export type AppearanceMode = "system" | "light" | "dark";
+
+/**
+ * Draws all of Crest light or dark, as the Mac's NSApp.appearance does: its
+ * own pages, the floating surfaces and every web page's prefers-color-scheme.
+ * "system" follows the desktop again.
+ */
+export function setAppearance(mode: AppearanceMode): void {
+    chrome.send("setAppearance", [mode]);
+}
+
 /** Opens a finished download's file, given as its `file:` address, in the desktop's default app. */
 export function openDownload(fileUrl: string): void {
     chrome.send("openDownload", [fileUrl]);

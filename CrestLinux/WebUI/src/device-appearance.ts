@@ -4,6 +4,9 @@
 // The ones the Linux window already draws take effect at once; the rest are
 // kept for when it draws them.
 
+import { setAppearance } from "./bridge.js";
+import type { AppearanceMode } from "./bridge.js";
+
 /** What a Reset reads and does, whatever a choice holds. */
 export interface Resettable {
     readonly isDefault: boolean;
@@ -78,7 +81,7 @@ const address = "crest.appearance.address";
 /** The choices, by the Mac's keys and defaults (BrowserLookAndFeelDefaults). */
 export const DeviceAppearance = {
     sidebarOnRight: new DeviceSetting("crest.appearance.sidebar-on-right", false),
-    mode: new DeviceSetting<"system" | "light" | "dark">("crest.appearance.mode", "system"),
+    mode: new DeviceSetting<AppearanceMode>("crest.appearance.mode", "system"),
     darkSpaceDimming: new DeviceSetting("crest.appearance.darkSpaceDimming", 0),
     spaceIcons: new DeviceSetting<"icons" | "dots">("crest.appearance.space-icons", "icons"),
     spaceIconScale: new DeviceSetting("crest.appearance.spaceIconScale", 1),
@@ -137,11 +140,18 @@ export function pinColumnRequest(): { readonly columns: number; readonly balance
 }
 
 let switcherIconSize: number | null = null;
+let appliedMode: AppearanceMode | null = null;
 
 /** Draws the choices the Linux window already draws. */
 export function applyDeviceAppearance(): void {
     const root = document.documentElement;
     const style = root.style;
+    // The window draws light or dark as chosen, and so do its pages.
+    const mode = DeviceAppearance.mode.value;
+    if (mode !== appliedMode) {
+        appliedMode = mode;
+        setAppearance(mode);
+    }
     document.body.classList.toggle("sidebar-on-right", DeviceAppearance.sidebarOnRight.value);
     document.body.classList.toggle("keeps-unloaded-bright", !DeviceAppearance.dimsUnloadedTabs.value);
     document.body.classList.toggle("space-dots", DeviceAppearance.spaceIcons.value === "dots");
