@@ -3,8 +3,7 @@
 // (BrowserSpaceSettingsSections, BrowserPrivacySpaceSection). Its
 // Appearance section is the Space editor (space-editor.ts).
 //
-// Left out on Linux: the access policy (locking a Space), passwords,
-// extensions, the downloads section, website data and clearing browsing
+// Left out on Linux: the access policy (locking a Space), extensions, the downloads section, website data and clearing browsing
 // data, which need the engine's profile tools Linux does not drive yet.
 
 import { CurrentTabCleanup, DataRetention, SitePermission, SitePermissionDecision } from "../generated/crest_contracts.js";
