@@ -19,6 +19,8 @@ export class DownloadDestinations {
     private readonly waiting = new Map<Guid, DownloadDestinationAsked>();
     /** Questions being asked now, whose dialog a settling closes. */
     private readonly asking = new Set<Guid>();
+    /** Questions the core settled while they were asked, which need no answer. */
+    private readonly settled = new Set<Guid>();
 
     constructor(send: (intent: Intent) => Promise<unknown>) {
         this.send = send;
@@ -38,7 +40,10 @@ export class DownloadDestinations {
                 this.waiting.delete(change.value.promptId);
                 // The download was cancelled or its page closed while the
                 // person was choosing: the dialog goes, as on the Mac.
-                if (this.asking.has(change.value.promptId)) void closeDownloadDialog(change.value.promptId).catch(console.error);
+                if (this.asking.has(change.value.promptId)) {
+                    this.settled.add(change.value.promptId);
+                    void closeDownloadDialog(change.value.promptId).catch(console.error);
+                }
             }
         }
         if (!asked) return;
@@ -60,6 +65,7 @@ export class DownloadDestinations {
         } finally {
             this.asking.delete(asked.promptId);
         }
+        if (this.settled.delete(asked.promptId)) return;
         if (answer.unavailable) {
             await this.send({ kind: "FailDownload", value: { downloadId: asked.downloadId, reason: "FolderUnavailable", message: null } });
         }
