@@ -35,9 +35,12 @@
 #include "ui/shell_dialogs/selected_file_info.h"
 #include "url/gurl.h"
 #include "chrome/browser/ui/crest/crest_core_host_linux.h"
+#include "chrome/browser/ui/crest/crest_credentials_linux.h"
 #include "chrome/browser/ui/crest/crest_engine_binding.h"
 #include "chrome/browser/ui/crest/crest_linux_ui.h"
 #include "chrome/browser/ui/crest/crest_linux_window.h"
+#include "chrome/browser/ui/crest/crest_password_import_linux.h"
+#include "chrome/browser/ui/crest/crest_secret_service_linux.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_data_source.h"
@@ -270,6 +273,70 @@ base::ListValue ExistingFolders(std::vector<std::string> folders) {
 
 // --- End of setup -----------------------------------------------------------
 
+// --- Passwords (Linux shell) ------------------------------------------------
+// Crest's saved passwords live in the Secret Service (crest_credentials_linux),
+// and setup reads other browsers' (crest_password_import_linux); the WebUI
+// keeps the vault's rules over both, as the Mac's Swift keeps them over its
+// Keychain store. Every call into the Secret Service runs on its sequence.
+
+base::ListValue CredentialItemsValue(const std::vector<CredentialItem>& items) {
+  base::ListValue list;
+  for (const CredentialItem& item : items) {
+    base::DictValue entry;
+    entry.Set("account", item.account);
+    entry.Set("metadata", item.metadata);
+    entry.Set("synchronizable", item.synchronizable);
+    if (item.secret) entry.Set("secret", *item.secret);
+    list.Append(std::move(entry));
+  }
+  return list;
+}
+
+// The password stores the WebUI names, as the core found them; none when one
+// is not {id, profileName, path}.
+std::optional<std::vector<PasswordImportStore>> PasswordStores(const base::Value& value) {
+  if (!value.is_list()) return std::nullopt;
+  std::vector<PasswordImportStore> stores;
+  for (const base::Value& entry : value.GetList()) {
+    const base::DictValue* fields = entry.GetIfDict();
+    const std::string* id = fields ? fields->FindString("id") : nullptr;
+    const std::string* profile = fields ? fields->FindString("profileName") : nullptr;
+    const std::string* path = fields ? fields->FindString("path") : nullptr;
+    if (!id || !profile || !path) return std::nullopt;
+    PasswordImportStore store;
+    store.id = *id;
+    store.profile_name = *profile;
+    store.path = *path;
+    stores.push_back(std::move(store));
+  }
+  return stores;
+}
+
+// What the WebUI reads of an import's logins: {logins: [...]} or {failure}.
+base::DictValue PasswordImportValue(const PasswordImportResult& result) {
+  base::DictValue answer;
+  if (result.failure) {
+    answer.Set("failure", PasswordImportFailureName(*result.failure));
+    return answer;
+  }
+  base::ListValue logins;
+  for (const ImportedLogin& login : result.logins) {
+    base::DictValue entry;
+    entry.Set("profileId", login.profile_id);
+    entry.Set("profileName", login.profile_name);
+    entry.Set("url", login.origin_url);
+    if (login.password) {
+      entry.Set("username", login.username);
+      entry.Set("password", *login.password);
+    }
+    logins.Append(std::move(entry));
+  }
+  answer.Set("logins", std::move(logins));
+  return answer;
+}
+
+// --- End of passwords -------------------------------------------------------
+
 class CrestUIHandler;
 
 // Every page of chrome://crest open now. Each window has two: its main WebUI,
@@ -367,6 +434,20 @@ class CrestUIHandler final : public content::WebUIMessageHandler, public CoreHos
         "chooseImportFolder", base::BindRepeating(&CrestUIHandler::HandleChooseImportFolder, base::Unretained(this)));
     web_ui()->RegisterMessageCallback(
         "existingFolders", base::BindRepeating(&CrestUIHandler::HandleExistingFolders, base::Unretained(this)));
+    // Passwords (Linux shell).
+    web_ui()->RegisterMessageCallback(
+        "credentialItems", base::BindRepeating(&CrestUIHandler::HandleCredentialItems, base::Unretained(this)));
+    web_ui()->RegisterMessageCallback(
+        "upsertCredential", base::BindRepeating(&CrestUIHandler::HandleUpsertCredential, base::Unretained(this)));
+    web_ui()->RegisterMessageCallback(
+        "deleteCredential", base::BindRepeating(&CrestUIHandler::HandleDeleteCredential, base::Unretained(this)));
+    web_ui()->RegisterMessageCallback(
+        "copyPassword", base::BindRepeating(&CrestUIHandler::HandleCopyPassword, base::Unretained(this)));
+    web_ui()->RegisterMessageCallback(
+        "passwordImportCandidates",
+        base::BindRepeating(&CrestUIHandler::HandlePasswordImportCandidates, base::Unretained(this)));
+    web_ui()->RegisterMessageCallback(
+        "readImportPasswords", base::BindRepeating(&CrestUIHandler::HandleReadImportPasswords, base::Unretained(this)));
   }
 
   void OnJavascriptDisallowed() override { observation_.Reset(); }
@@ -768,6 +849,130 @@ class CrestUIHandler final : public content::WebUIMessageHandler, public CoreHos
   }
 
   // --- End of setup ---------------------------------------------------------
+
+  // --- Passwords (Linux shell) ----------------------------------------------
+
+  // args: callback id, a Space's service, an account (empty for all of the
+  // service's), whether to read the passwords. Answers the items, each
+  // {account, metadata, synchronizable, secret when read}; rejects when the
+  // Secret Service cannot be asked or refuses.
+  void HandleCredentialItems(const base::ListValue& args) {
+    AllowJavascript();
+    if (args.size() != 4 || !args[1].is_string() || !args[2].is_string() || !args[3].is_bool()) {
+      RejectJavascriptCallback(args[0], base::Value("credentialItems takes a service, an account and whether to read."));
+      return;
+    }
+    SecretServiceSequence()->PostTaskAndReplyWithResult(
+        FROM_HERE,
+        base::BindOnce(&CredentialStore::Items, args[1].GetString(), args[2].GetString(), args[3].GetBool()),
+        base::BindOnce(&CrestUIHandler::AnswerCredentialItems, weak_factory_.GetWeakPtr(), args[0].Clone()));
+  }
+
+  void AnswerCredentialItems(base::Value callback, std::optional<std::vector<CredentialItem>> items) {
+    if (!IsJavascriptAllowed()) return;
+    if (!items) {
+      RejectJavascriptCallback(callback, base::Value("The Secret Service could not be read."));
+      return;
+    }
+    ResolveJavascriptCallback(callback, base::Value(CredentialItemsValue(*items)));
+  }
+
+  // args: callback id, a Space's service, the item {account, metadata,
+  // synchronizable, secret}. Answers true once it is stored.
+  void HandleUpsertCredential(const base::ListValue& args) {
+    AllowJavascript();
+    const base::DictValue* fields = args.size() == 3 && args[1].is_string() ? args[2].GetIfDict() : nullptr;
+    const std::string* account = fields ? fields->FindString("account") : nullptr;
+    const std::string* metadata = fields ? fields->FindString("metadata") : nullptr;
+    const std::string* secret = fields ? fields->FindString("secret") : nullptr;
+    const std::optional<bool> synchronizable = fields ? fields->FindBool("synchronizable") : std::nullopt;
+    if (!account || !metadata || !secret || !synchronizable) {
+      RejectJavascriptCallback(args[0], base::Value("upsertCredential takes a service and an item."));
+      return;
+    }
+    CredentialItem item;
+    item.account = *account;
+    item.metadata = *metadata;
+    item.secret = *secret;
+    item.synchronizable = *synchronizable;
+    SecretServiceSequence()->PostTaskAndReplyWithResult(
+        FROM_HERE, base::BindOnce(&CredentialStore::Upsert, args[1].GetString(), std::move(item)),
+        base::BindOnce(&CrestUIHandler::AnswerCredentialWrite, weak_factory_.GetWeakPtr(), args[0].Clone()));
+  }
+
+  // args: callback id, a Space's service, an account, or empty for every
+  // item of the service. Answers true once they are gone.
+  void HandleDeleteCredential(const base::ListValue& args) {
+    AllowJavascript();
+    if (args.size() != 3 || !args[1].is_string() || !args[2].is_string()) {
+      RejectJavascriptCallback(args[0], base::Value("deleteCredential takes a service and an account."));
+      return;
+    }
+    SecretServiceSequence()->PostTaskAndReplyWithResult(
+        FROM_HERE, base::BindOnce(&CredentialStore::Delete, args[1].GetString(), args[2].GetString()),
+        base::BindOnce(&CrestUIHandler::AnswerCredentialWrite, weak_factory_.GetWeakPtr(), args[0].Clone()));
+  }
+
+  void AnswerCredentialWrite(base::Value callback, bool written) {
+    if (!IsJavascriptAllowed()) return;
+    if (!written) {
+      RejectJavascriptCallback(callback, base::Value("The Secret Service did not take the change."));
+      return;
+    }
+    ResolveJavascriptCallback(callback, base::Value(true));
+  }
+
+  // args: callback id, a password, the seconds it stays on the clipboard.
+  // Answers whether it was copied.
+  void HandleCopyPassword(const base::ListValue& args) {
+    AllowJavascript();
+    if (args.size() != 3 || !args[1].is_string() || (!args[2].is_int() && !args[2].is_double())) {
+      RejectJavascriptCallback(args[0], base::Value("copyPassword takes a password and a lifetime."));
+      return;
+    }
+    const bool copied = CopyPasswordForAWhile(args[1].GetString(), base::Seconds(args[2].GetDouble()));
+    ResolveJavascriptCallback(args[0], base::Value(copied));
+  }
+
+  // args: callback id, the password stores the core found. Answers
+  // {logins: [{profileId, profileName, url}]} or {failure}.
+  void HandlePasswordImportCandidates(const base::ListValue& args) {
+    AllowJavascript();
+    std::optional<std::vector<PasswordImportStore>> stores =
+        args.size() == 2 ? PasswordStores(args[1]) : std::nullopt;
+    if (!stores) {
+      RejectJavascriptCallback(args[0], base::Value("passwordImportCandidates takes the password stores."));
+      return;
+    }
+    base::ThreadPool::PostTaskAndReplyWithResult(
+        FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
+        base::BindOnce(&ReadImportCandidates, std::move(*stores)),
+        base::BindOnce(&CrestUIHandler::AnswerPasswordImport, weak_factory_.GetWeakPtr(), args[0].Clone()));
+  }
+
+  // args: callback id, the browser's Safe Storage name (ImportSource's
+  // safeStorageService), the password stores the core found. Answers
+  // {logins: [{profileId, profileName, url, username, password}]} or
+  // {failure}.
+  void HandleReadImportPasswords(const base::ListValue& args) {
+    AllowJavascript();
+    std::optional<std::vector<PasswordImportStore>> stores =
+        args.size() == 3 && args[1].is_string() ? PasswordStores(args[2]) : std::nullopt;
+    if (!stores) {
+      RejectJavascriptCallback(args[0], base::Value("readImportPasswords takes a Safe Storage name and the stores."));
+      return;
+    }
+    SecretServiceSequence()->PostTaskAndReplyWithResult(
+        FROM_HERE, base::BindOnce(&ReadImportPasswords, std::move(*stores), args[1].GetString()),
+        base::BindOnce(&CrestUIHandler::AnswerPasswordImport, weak_factory_.GetWeakPtr(), args[0].Clone()));
+  }
+
+  void AnswerPasswordImport(base::Value callback, PasswordImportResult result) {
+    if (!IsJavascriptAllowed()) return;
+    ResolveJavascriptCallback(callback, base::Value(PasswordImportValue(result)));
+  }
+
+  // --- End of passwords -----------------------------------------------------
 
   // The keys this page's window takes for Crest, as the page registered them.
   std::vector<Shortcut> shortcuts_;
