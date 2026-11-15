@@ -26,6 +26,7 @@ import { FloatSurfaces } from "./surfaces.js";
 import { TabIcons } from "./icons.js";
 import type { Change, Guid, Intent, LaunchEnvironment, PageState, TabState } from "../generated/crest_contracts.js";
 import { Model } from "./model.js";
+import { Onboarding } from "./onboarding.js";
 import { PageStates } from "./page-states.js";
 import type { Space, Workspace } from "./model.js";
 import { InlineRename } from "./rename.js";
@@ -58,6 +59,10 @@ const windows = new Windows({
     pageLeft: (pageId) => pageStates.pageLeft(pageId),
 });
 
+/** Setup, which the launch shows over this window before it opens, when the core says it is due. */
+const onboarding = new Onboarding({ model });
+/** Whether this launch found no session stored, as a first launch does. */
+let isFirstLaunch = false;
 const root = document.getElementById("sidebar")!;
 const status = document.getElementById("status")!;
 
@@ -74,6 +79,7 @@ async function openSession(): Promise<Guid> {
         await dispatch({ kind: "OpenWorkspace", value: { kind: "Persistent", seed: null } });
     } catch (error) {
         if (!(error instanceof Refused) || error.rejection.kind !== "NoStoredSession") throw error;
+        isFirstLaunch = true;
         // The file holds no session yet: the core gives it the one a first
         // launch starts with, as the Mac's first launch does with nothing to
         // carry over, and the workspace opens from the file, which keeps it.
@@ -365,7 +371,7 @@ function showStartPage(shown: boolean): void {
 // Crest's keys, while the window's own UI has the focus. The page's view
 // hands Crest the keys it reserves from pages through the host.
 document.addEventListener("keydown", (event) => {
-    if (palette.isOpen || event.defaultPrevented) return;
+    if (onboarding.isOpen || palette.isOpen || event.defaultPrevented) return;
     if (isSettingsKey(event)) {
         event.preventDefault();
         settings.open();
@@ -374,11 +380,13 @@ document.addEventListener("keydown", (event) => {
 registerShortcuts(
     windowShortcuts(),
     (key) => {
+        if (onboarding.isOpen) return;
         if (palette.isOpen) palette.close();
         if (isSettingsKey(key)) settings.open();
         else if (!peek.handleKey(key)) commands.handleKey(key);
     },
     (command) => {
+        if (onboarding.isOpen) return;
         if (ShortcutCommand.all.includes(command as ShortcutCommand)) commands.perform(command as ShortcutCommand);
     },
 );
@@ -520,6 +528,7 @@ async function start(): Promise<void> {
             spaceEditor.follow();
             settings.follow();
             windows.follow(changes);
+            onboarding.follow(changes);
             if (live) openPopups(changes);
         },
         (bytes) => {
@@ -539,8 +548,26 @@ async function start(): Promise<void> {
     // The launch reopens the windows the person left, each with the Space and
     // tabs it showed, as the Mac's launch does; a window opened later opens
     // as its address says.
-    // TODO(linux): run the setup the plan names once Linux draws onboarding.
-    await windows.open(workspaceId, () => query("LaunchWindows", { environment: launchEnvironment }));
+    if (!windows.launches) {
+        await windows.open(workspaceId, () => query("LaunchWindows", { environment: launchEnvironment }));
+        say("");
+        return;
+    }
+    // Setup shows first where the core says it is due, as the Mac's launch
+    // shows its onboarding window: on a first launch, until setup completes.
+    // Whether an earlier run completed it comes in once, as the Mac's
+    // BrowserMacApplication adopts it: here, a run that left a session did.
+    await dispatch({ kind: "AdoptSetupCompletion", value: { completed: !isFirstLaunch } });
+    const plan = await query("LaunchWindows", { environment: launchEnvironment });
+    let guideSpaceId: Guid | null = null;
+    if (plan.setup) {
+        say("");
+        guideSpaceId = await onboarding.run(workspaceId, plan.startupWindowId, plan.setup);
+    }
+    await windows.open(workspaceId, () => Promise.resolve(plan));
+    // TODO(linux): the Mac opens Getting Started in the guide Space after
+    // setup; Linux shows the Space until it draws the guide.
+    if (guideSpaceId) await dispatch({ kind: "ShowSpace", value: { windowId: windows.windowId, spaceId: guideSpaceId } });
     say("");
 }
 
