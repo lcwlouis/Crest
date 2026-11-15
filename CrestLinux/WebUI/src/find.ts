@@ -16,6 +16,7 @@ const inset = 6;
 
 export class FindBar implements FloatSurface {
     readonly rank = FloatRank.find;
+    readonly exclusive = true;
     private readonly page: () => PageState | undefined;
     private readonly report: (error: unknown) => void;
     private readonly surfaces: FloatSurfaces;
@@ -99,7 +100,12 @@ export class FindBar implements FloatSurface {
         if (!this.pageId) return;
         const card = document.getElementById("page")!.getBoundingClientRect();
         const state: FloatState = { kind: "find", query, matches: this.matches, activeMatch: this.activeMatch };
-        this.surfaces.post(this, { bounds: { x: card.right - width - inset, y: card.top + inset, width, height }, focus, state });
+        this.surfaces.post(this, {
+            bounds: { x: card.right - width - inset, y: card.top + inset, width, height },
+            focus,
+            state,
+            band: "top",
+        });
     }
 
     restore(): void {

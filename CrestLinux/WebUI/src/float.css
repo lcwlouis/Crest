@@ -14,8 +14,23 @@ html, body {
 }
 
 #surface {
-  box-sizing: border-box;
+  position: relative;
   height: 100%;
+}
+
+/* Each surface of the scene in its own layer, placed by the main WebUI. A
+   layer holds what it draws, fixed parts included. */
+.float-slot {
+  position: absolute;
+  box-sizing: border-box;
+  contain: layout;
+}
+
+.float-slot[hidden] {
+  display: none;
+}
+
+.float-slot.padded {
   padding: 8px;
 }
 
