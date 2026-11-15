@@ -128,6 +128,8 @@ export class Onboarding {
     private generation = 0;
 
     selectedManualSpaceId: Guid | null = null;
+    /** The draft's Spaces when the person last pressed Add Space, until the one it added shows. */
+    private addingFrom: Set<Guid> | null = null;
     customizationSpaceId: Guid | null = null;
     private welcomeHouse = 0;
     private welcomeTimer: number | null = null;
@@ -195,6 +197,15 @@ export class Onboarding {
             overflowTabIds: new Set(review?.overflowTabIds ?? []),
             matchedTabIds: (id) => matched.get(id) ?? new Set(),
         };
+    }
+
+    /**
+     * The Spaces an imported Space can join: those the person already has,
+     * in order, but none while the workspace holds only a first launch's
+     * Spaces, which the import replaces (SessionState.ImportDestinations).
+     */
+    get importDestinations(): SpaceState[] {
+        return this.host.model.workspace?.isDisposableSeed === false ? this.destinationSpaces : [];
     }
 
     /** The Spaces the person already has, in order. */
@@ -524,7 +535,7 @@ export class Onboarding {
     }
 
     customizeImport(sourceSpaceId: Guid, customization: SpaceCustomization): void {
-        void this.send({ kind: "CustomizeImportSpace", value: { sourceSpaceId, customization } });
+        void this.send({ kind: "CustomizeImportSpace", value: { sourceSpaceId, customization } }).then(() => this.render(true));
     }
 
     /** Imports the reviewed Spaces, then reads the next browser the person chose. */
@@ -582,13 +593,32 @@ export class Onboarding {
 
     // MARK: - Actions - Manual setup
 
+    /** Adds a Space to the manual setup and shows it, as the Mac's Add Space does. */
     addSetupSpace(): void {
-        void this.sendReporting({ kind: "AddSetupSpace", value: {} }).then((sent) => {
-            if (!sent) return;
-            const added = this.draftSpaces[this.draftSpaces.length - 1];
-            if (added) this.selectedManualSpaceId = added.spaceId;
+        // The Space added is the one the setup did not hold before, wherever
+        // the core places it and whenever its draft reaches the page.
+        this.addingFrom = new Set(this.draftSpaces.map((space) => space.spaceId));
+        void this.sendReporting({ kind: "AddSetupSpace", value: {} }).then((changes) => {
+            if (!changes) {
+                this.addingFrom = null;
+                return;
+            }
+            for (const change of changes) {
+                if (change.kind === "SetupDraftChanged") this.selectAdded(change.value.draft?.spaces ?? []);
+            }
+            this.selectAdded(this.draftSpaces);
             this.render(true);
         });
+    }
+
+    /** Selects the Space `spaces` holds that the setup held not before Add Space, once it is there. */
+    private selectAdded(spaces: readonly SetupDraftSpace[]): void {
+        const before = this.addingFrom;
+        if (!before) return;
+        const added = spaces.find((space) => !before.has(space.spaceId));
+        if (!added) return;
+        this.selectedManualSpaceId = added.spaceId;
+        this.addingFrom = null;
     }
 
     removeSetupSpace(spaceId: Guid): void {
@@ -604,7 +634,7 @@ export class Onboarding {
     }
 
     customizeSetupSpace(spaceId: Guid, customization: SpaceCustomization): void {
-        void this.sendReporting({ kind: "CustomizeSetupSpace", value: { spaceId, customization } });
+        void this.sendReporting({ kind: "CustomizeSetupSpace", value: { spaceId, customization } }).then(() => this.render(true));
     }
 
     private repairManualSelection(): void {
@@ -670,6 +700,13 @@ export class Onboarding {
                 ? this.reviewSpaces.find((space) => space.id === this.customizationSpaceId)
                 : undefined;
         if (this.customizationSpaceId && !review) this.customizationSpaceId = null;
+        // The manual setup shows a Space of the draft whenever it holds one,
+        // as the Mac repairs its selection when the step comes to it: the
+        // import the step follows may have replaced the Spaces it showed.
+        if (this.step === "ManualSetup") {
+            this.selectAdded(this.draftSpaces);
+            this.repairManualSelection();
+        }
         page.append(review ? customizationPage(this, review) : this.page());
         const content: HTMLElement[] = [stageHeader(this.step), page];
         if (this.completionFailure) content.push(el("p", "onboarding-completion-failure", this.completionFailure));
@@ -749,15 +786,15 @@ export class Onboarding {
     }
 
     /** Sends a manual setup intent, keeping why the core refused it to show (BrowserManualSetupModel). */
-    private async sendReporting(intent: Intent): Promise<boolean> {
+    private async sendReporting(intent: Intent): Promise<readonly Change[] | null> {
         try {
-            await dispatch(intent);
+            const changes = await dispatch(intent);
             this.manualError = null;
-            return true;
+            return changes;
         } catch (error) {
             this.manualError = explanation(error);
             this.render(true);
-            return false;
+            return null;
         }
     }
 
