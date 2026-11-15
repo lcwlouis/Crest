@@ -17,6 +17,7 @@
 #include "components/permissions/request_type.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/common/constants.h"
 #include "net/base/auth.h"
 #include "url/gurl.h"
 #include "url/origin.h"
@@ -81,6 +82,21 @@ std::vector<ContentSettingsType> CaptureDevicesFor(permissions::PermissionPrompt
     }
   }
   return devices;
+}
+
+// The address a script dialog names as its source: its frame's. The PDF viewer
+// is Chromium's own extension, shown in a frame of the page that has the PDF,
+// so a dialog it opens (the beforeunload an unsaved edit arms) names that page
+// rather than the viewer's extension.
+GURL DialogSource(content::WebContents* contents, content::RenderFrameHost* frame) {
+  if (!frame) {
+    return contents->GetLastCommittedURL();
+  }
+  const url::Origin& origin = frame->GetLastCommittedOrigin();
+  if (origin.scheme() == extensions::kExtensionScheme && origin.host() == extension_misc::kPdfExtensionId) {
+    return frame->GetOutermostMainFrame()->GetLastCommittedURL();
+  }
+  return frame->GetLastCommittedURL();
 }
 
 // The origin a permission belongs to, as Crest's choices name it.
@@ -240,7 +256,7 @@ void EnginePrompts::Open(content::WebContents* contents,
   }
   const engine::Guid id = RandomGuid();
   dialogs_[contents] = Dialog{.page = page->id(), .id = id, .callback = std::move(callback)};
-  const GURL source = frame ? frame->GetLastCommittedURL() : contents->GetLastCommittedURL();
+  const GURL source = DialogSource(contents, frame);
   report_.Run(engine::ScriptDialogOpened{.prompt_id = id,
                                          .page_id = page->id(),
                                          .question = {.kind = kind,
