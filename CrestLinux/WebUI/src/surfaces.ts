@@ -33,6 +33,12 @@ export interface FloatSurface {
     restore(): void;
     /** Hears what the person did on the surface; ignores what is not its own. */
     handle(event: FloatEvent): void;
+    /**
+     * The scene left it out for a surface it does not fit with. One that
+     * should not come back on its own when that surface ends puts itself
+     * away here.
+     */
+    displaced?(): void;
 }
 
 /**
@@ -165,6 +171,8 @@ export class FloatSurfaces {
             state: placement.state,
         }));
         this.send({ x: left, y: top, width: right - left, height: bottom - top }, focus, { layers });
+        const displaced = [...this.wanted.keys()].filter((surface) => !surface.exclusive && !shown.includes(surface));
+        for (const surface of displaced) surface.displaced?.();
     }
 
     private send(bounds: FloatPlacement["bounds"], focus: boolean, scene: FloatScene): void {
