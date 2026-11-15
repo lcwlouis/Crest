@@ -67,9 +67,11 @@ class Contents final : public views::View {
   }
 };
 
+}  // namespace
+
 // Tells the window when the person clicks into a page it shows, as the Mac's
 // split surface hears a mouse-down in one of its cards.
-class FocusObserver final : public content::WebContentsObserver {
+class LinuxWindow::FocusObserver final : public content::WebContentsObserver {
  public:
   FocusObserver(content::WebContents* contents, base::RepeatingClosure focused)
       : content::WebContentsObserver(contents), focused_(std::move(focused)) {}
@@ -80,8 +82,6 @@ class FocusObserver final : public content::WebContentsObserver {
  private:
   base::RepeatingClosure focused_;
 };
-
-}  // namespace
 
 // static
 LinuxWindow* LinuxWindow::Open(Profile* profile) {

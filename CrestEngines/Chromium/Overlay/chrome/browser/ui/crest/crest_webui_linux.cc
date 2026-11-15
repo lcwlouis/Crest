@@ -116,7 +116,6 @@ std::string KeyName(int code) {
     case ui::VKEY_DOWN: return "ArrowDown";
     case ui::VKEY_TAB: return "Tab";
     case ui::VKEY_RETURN: return "Enter";
-    case ui::VKEY_ESCAPE: return "Escape";
     case ui::VKEY_OEM_4: return "[";
     case ui::VKEY_OEM_6: return "]";
     case ui::VKEY_OEM_PLUS: return "=";
