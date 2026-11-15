@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "base/functional/callback_forward.h"
+#include "base/functional/function_ref.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/raw_ptr_exclusion.h"
 #include "base/memory/weak_ptr.h"
@@ -177,9 +178,20 @@ class EngineBinding {
   // `url`, as the core answers them; empty for none or when it cannot answer.
   std::string InjectedScript(const engine::Guid& page, const GURL& url);
   // The page that opened `contents`: its opener's, or for a window a link
-  // opened without one, as target="_blank" does, the page the link was in.
+  // opened without one, as target="_blank" does, the page the link was in,
+  // and for a pop-up the engine held back, the page whose pop-up it was.
   // nullptr when no page Crest follows opened it.
   EnginePage* SourceOf(content::WebContents* contents);
+  // Opens the pop-ups `page`'s blocker held back, which `open` asks Chromium
+  // for, as windows `page` opened. Chromium opens a held pop-up without an
+  // opener, in a Browser of its own or in the tabbed Browser it last saw in
+  // use, so `page`'s Browser becomes that one, and each tab the engine opens
+  // meanwhile counts as `page`'s window: the core places it beside `page`, as
+  // it does the page's own window.open. Answers how many tabs it opened in
+  // Browsers the binding keeps.
+  size_t OpenBlockedPopups(EnginePage& page, base::FunctionRef<void()> open);
+  // The engine inserted `contents` into a Browser the binding keeps.
+  void TabInserted(content::WebContents* contents);
   // The page the platform names `page`, or nullptr.
   EnginePage* Find(const std::string& page);
   // Every page the binding follows that has its WebContents.
@@ -409,6 +421,10 @@ class EngineBinding {
   // The windows links opened without an opener, with the pages the links
   // were in, until the core is offered them.
   std::vector<std::pair<base::WeakPtr<content::WebContents>, std::string>> link_sources_;
+  // The page whose blocked pop-ups are opening, and how many tabs they have
+  // opened, while OpenBlockedPopups runs.
+  std::string opening_popups_of_;
+  size_t opened_popups_ = 0;
   // The windows links opened, held until the core decides, and the links of
   // windows it refused, with when, for the next load of the page each was in.
   std::vector<std::unique_ptr<HeldWindow>> held_windows_;

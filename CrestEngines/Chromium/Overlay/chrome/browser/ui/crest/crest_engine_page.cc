@@ -16,6 +16,7 @@
 
 #include "base/containers/span.h"
 #include "base/functional/bind.h"
+#include "base/logging.h"
 #include "base/memory/ref_counted_memory.h"
 #include "base/pickle.h"
 #include "base/strings/string_util.h"
@@ -1586,10 +1587,15 @@ bool EnginePage::Answer(const engine::RefreshPageIcon&) {
 bool EnginePage::Answer(const engine::ShowBlockedPopups&) {
   auto* blocker =
       web_contents() ? blocked_content::PopupBlockerTabHelper::FromWebContents(web_contents()) : nullptr;
-  if (!blocker || !blocker->GetBlockedPopupsCount()) {
+  const size_t held = blocker ? blocker->GetBlockedPopupsCount() : 0;
+  VLOG(1) << "Crest pop-ups: page " << key() << " shows " << held << " held pop-up(s)";
+  if (!held) {
     return false;
   }
-  blocker->ShowAllBlockedPopups();
+  // Each opens as a window this page opened, as its own window.open would.
+  const size_t opened = binding_->OpenBlockedPopups(*this, [blocker] { blocker->ShowAllBlockedPopups(); });
+  VLOG(1) << "Crest pop-ups: page " << key() << " opened " << opened << " tab(s) in Crest's Browsers, "
+          << blocker->GetBlockedPopupsCount() << " still held";
   presented_blocked_popups_ = 0;
   return true;
 }
@@ -1699,6 +1705,11 @@ bool EnginePage::Answer(const engine::SetSitePermission& request) {
                                                     : CONTENT_SETTING_BLOCK;
   HostContentSettingsMapFactory::GetForProfile(Profile::FromBrowserContext(web_contents()->GetBrowserContext()))
       ->SetContentSettingDefaultScope(origin, GURL(), type, setting);
+  if (type == ContentSettingsType::POPUPS) {
+    auto* blocker = blocked_content::PopupBlockerTabHelper::FromWebContents(web_contents());
+    VLOG(1) << "Crest pop-ups: page " << key() << " set pop-ups to " << static_cast<int>(setting) << " for "
+            << origin.spec() << ", " << (blocker ? blocker->GetBlockedPopupsCount() : 0) << " held";
+  }
   return true;
 }
 
@@ -1743,6 +1754,7 @@ void EnginePage::SiteIndicatorsChanged() {
     return;
   }
   presented_blocked_popups_ = count;
+  VLOG(1) << "Crest pop-ups: page " << key() << " holds " << count << " pop-up(s)";
   Present(engine::PopupBlocked{.page_id = id_, .page_url = PresentedURL(web_contents()->GetLastCommittedURL())});
 }
 
