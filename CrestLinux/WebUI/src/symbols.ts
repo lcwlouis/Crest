@@ -143,9 +143,20 @@ Object.assign(paths, {
     "square.and.arrow.down": '<path d="M12 3v11"/><path d="M8 10l4 4 4-4"/><path d="M8 8H6a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-9a2 2 0 0 0-2-2h-2"/>',
     "rectangle.portrait.and.arrow.right": '<path d="M13 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h7"/><path d="M10 12h11"/><path d="M17.5 8.5L21 12l-3.5 3.5"/>',
 });
+// Setup's glyphs (onboarding).
+Object.assign(paths, {
+    "chevron.up.chevron.down": '<path d="M8 9l4-4 4 4"/><path d="M8 15l4 4 4-4"/>',
+    "minus.circle.fill": '<circle cx="12" cy="12" r="9"/><path d="M8 12h8"/>',
+    "equal.circle.fill": '<circle cx="12" cy="12" r="9"/><path d="M8 10h8M8 14h8"/>',
+    "exclamationmark.circle.fill": '<circle cx="12" cy="12" r="9"/><path d="M12 7v6"/><circle cx="12" cy="16.5" r="0.5"/>',
+    "square.stack.3d.up.slash": '<path d="M12 4l8 4-8 4-8-4z"/><path d="M4 12l8 4 8-4"/><path d="M4 16l8 4 8-4"/><path d="M3 3l18 18"/>',
+    "checklist.unchecked": '<rect x="3" y="5" width="4" height="4" rx="1"/><rect x="3" y="15" width="4" height="4" rx="1"/><path d="M11 7h10M11 17h10"/>',
+    "rectangle.stack.badge.minus": '<rect x="3" y="9" width="14" height="11" rx="2"/><path d="M5 6h12"/><path d="M7 3h8"/><path d="M18 5h4"/>',
+    "book.fill": '<path d="M4 5a2 2 0 0 1 2-2h14v15H6a2 2 0 0 0-2 2z"/><path d="M4 20a2 2 0 0 0 2 1h14"/>',
+});
 for (const name of [
     "gearshape", "briefcase", "person", "house", "graduationcap", "paintbrush", "gamecontroller", "sun.max", "sun.horizon", "moon", "star",
-    "bolt", "flame", "drop", "key", "crown", "leaf", "mountain.2", "heart",
+    "bolt", "flame", "drop", "key", "crown", "leaf", "mountain.2", "heart", "pin", "bookmark", "rectangle.stack",
 ]) {
     paths[`${name}.fill`] = paths[name]!;
 }
