@@ -11,6 +11,8 @@ import type {
     HistoryEntryState,
     LinkPreferences,
     PageState,
+    SetupDraft,
+    SetupFlowState,
     SidebarList,
     SpaceDeletionState,
     SpaceState,
@@ -62,6 +64,8 @@ export interface Workspace {
     order: Guid[];
     /** The Spaces this workspace is deleting, which stay until their data is erased. */
     deletions: readonly SpaceDeletionState[];
+    /** Whether the workspace still holds a first launch's disposable Spaces. */
+    isDisposableSeed: boolean;
 }
 
 export class Model {
@@ -72,6 +76,12 @@ export class Model {
     downloads: DownloadState[] = [];
     /** How links open, Peek's included, once the core said. */
     linkPreferences: LinkPreferences | null = null;
+    /** Setup on this device, or null while none is open. */
+    setupFlow: SetupFlowState | null = null;
+    /** The manual setup this device holds, or null while none is in progress. */
+    setupDraft: SetupDraft | null = null;
+    /** Whether this device has completed setup, once the core said. */
+    setupCompleted: boolean | null = null;
 
     apply(changes: readonly Change[]): void {
         for (const change of changes) this.applyOne(change);
@@ -99,14 +109,26 @@ export class Model {
                     spaces,
                     order: session.spaces.map((space) => space.id),
                     deletions: session.spaceDeletions,
+                    isDisposableSeed: session.disposableSeedMarker !== null,
                 });
                 break;
             }
             case "WorkspaceChanged": {
                 const workspace = this.workspaces.get(change.value.workspaceId);
-                if (workspace) workspace.deletions = change.value.spaceDeletions;
+                if (!workspace) break;
+                workspace.deletions = change.value.spaceDeletions;
+                workspace.isDisposableSeed = change.value.isDisposableSeed;
                 break;
             }
+            case "SetupFlowChanged":
+                this.setupFlow = change.value.flow;
+                break;
+            case "SetupDraftChanged":
+                this.setupDraft = change.value.draft;
+                break;
+            case "SetupCompletedChanged":
+                this.setupCompleted = change.value.completed;
+                break;
             case "WorkspaceClosed":
                 this.workspaces.delete(change.value.workspaceId);
                 break;
