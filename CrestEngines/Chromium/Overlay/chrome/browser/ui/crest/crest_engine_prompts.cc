@@ -73,6 +73,7 @@ std::optional<engine::SitePermission> PermissionFor(permissions::PermissionPromp
   return several ? std::nullopt : single;
 }
 
+#if BUILDFLAG(IS_MAC)
 // The capture devices a batch of engine requests asks for. Chromium keeps the
 // system's answer for each, and reads it again only when it asks the system
 // itself.
@@ -92,6 +93,7 @@ std::vector<ContentSettingsType> CaptureDevicesFor(permissions::PermissionPrompt
   }
   return devices;
 }
+#endif  // BUILDFLAG(IS_MAC)
 
 // The address a script dialog names as its source: its frame's. The PDF viewer
 // is Chromium's own extension, shown in a frame of the page that has the PDF,
@@ -150,9 +152,13 @@ class EnginePrompts::PermissionPrompt final : public permissions::PermissionProm
       return;
     }
     std::vector<ContentSettingsType> devices;
+#if BUILDFLAG(IS_MAC)
+    // Only the Mac has a system answer for each device; elsewhere Chromium's
+    // system permission settings have nothing to ask and must not be asked.
     if (grants) {
       devices = CaptureDevicesFor(*delegate_);
     }
+#endif
     if (devices.empty()) {
       AnswerPermissionRequests(*delegate_, grants, remembers);
       return;
