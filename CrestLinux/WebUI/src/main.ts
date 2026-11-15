@@ -461,8 +461,10 @@ function followShownPage(): void {
     const tab = shownTab();
     const page = shownPage();
     // A tab with no page of its own, or no tab: the card shows Crest's own
-    // view, and the window shows no page over it.
-    showStartPage(!tab || (!page && tab.surface === "StartPage"));
+    // view, and the window shows no page over it. Not before the window is
+    // open: the Start Page's bar asks the core for suggestions for it.
+    const open = model.windows.has(windowId);
+    showStartPage(open && (!tab || (!page && tab.surface === "StartPage")));
     showFailure(page?.live.failure != null ? page : undefined);
     pageCards.follow();
 }
