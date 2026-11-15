@@ -8,12 +8,16 @@
 // on both platforms. Crest's Chromium-drawn shell attaches it when it starts;
 // before that every call has a quiet default.
 
+#include <memory>
 #include <string>
 
 #include "ui/gfx/geometry/rect.h"
 
 class Browser;
+class RenderViewContextMenuObserver;
+namespace content { struct ContextMenuParams; class WebContents; }
 namespace input { struct NativeWebKeyboardEvent; }
+namespace ui { class SimpleMenuModel; }
 namespace views { class Widget; }
 
 namespace crest {
@@ -77,6 +81,16 @@ views::Widget* WindowForBrowser(const Browser* browser);
 // The person closed Crest's window: Crest lets its pages go, closes its core
 // and quits, as a quit from the Mac's application menu does.
 void CrestWindowClosed();
+
+// The context menu Chromium shows over `contents`, as the Mac's
+// AppendLinkMenuItem and its menu patch shape it: the engine's rows that need
+// Chrome's own windows, profiles or search come out, and Crest's rows for the
+// selection go ahead of the rest. The rows it answers are Crest's, and the
+// engine's rows that copy an address, which copy the core's clean copy of it.
+// Null when Crest is not hosting, which leaves the menu as Chromium made it.
+std::unique_ptr<RenderViewContextMenuObserver> AdaptPageMenu(content::WebContents& contents,
+                                                             const content::ContextMenuParams& params,
+                                                             ui::SimpleMenuModel& menu);
 
 }  // namespace crest
 

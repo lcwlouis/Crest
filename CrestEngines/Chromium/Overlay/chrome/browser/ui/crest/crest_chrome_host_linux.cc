@@ -11,6 +11,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 
 #include "base/auto_reset.h"
 #include "base/check.h"
@@ -19,6 +20,8 @@
 #include "base/logging.h"
 #include "base/memory/raw_ptr.h"
 #include "base/no_destructor.h"
+#include "base/strings/string_util.h"
+#include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
@@ -35,12 +38,16 @@
 #include "chrome/browser/ui/crest/crest_webui_linux.h"
 #include "chrome/browser/ui/toasts/api/toast_id.h"
 #include "components/permissions/permission_request.h"
+#include "components/renderer_context_menu/render_view_context_menu_observer.h"
+#include "content/public/browser/context_menu_params.h"
 #include "content/public/browser/navigation_throttle.h"
 #include "content/public/browser/navigation_throttle_registry.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/drop_data.h"
 #include "extensions/common/extension.h"
+#include "ui/menus/simple_menu_model.h"
 #include "ui/views/widget/widget.h"
+#include "url/gurl.h"
 
 namespace {
 
@@ -89,6 +96,65 @@ base::FilePath StorageDirectory(Profile* profile) {
   // Beside Chromium's profiles, in the user data directory the launch names.
   return profile->GetPath().DirName().Append("Crest");
 }
+
+// The rows Crest puts in a context menu over one of its pages, and the
+// engine's rows that copy an address, which Crest runs itself: every address
+// that leaves Crest is the core's clean copy (Super Copy). The WebUI holds the
+// core's codec, so each row runs there.
+class PageMenuRows final : public RenderViewContextMenuObserver {
+ public:
+  // `page` is the page's binding key; `selection` is empty when the menu
+  // offers no search.
+  PageMenuRows(std::string page, std::u16string selection, GURL link, GURL source)
+      : page_(std::move(page)), selection_(std::move(selection)), link_(std::move(link)), source_(std::move(source)) {}
+
+  // RenderViewContextMenuObserver:
+  bool IsCommandIdSupported(int command_id) override {
+    switch (command_id) {
+      case IDC_CONTENT_CONTEXT_SEARCHWEBFOR:
+        return !selection_.empty();
+      case IDC_CONTENT_CONTEXT_COPYLINKLOCATION:
+      case IDC_CONTENT_CONTEXT_COPYIMAGELOCATION:
+      case IDC_CONTENT_CONTEXT_COPYAVLOCATION:
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  bool IsCommandIdEnabled(int command_id) override {
+    switch (command_id) {
+      case IDC_CONTENT_CONTEXT_COPYLINKLOCATION:
+        return link_.is_valid();
+      case IDC_CONTENT_CONTEXT_COPYIMAGELOCATION:
+      case IDC_CONTENT_CONTEXT_COPYAVLOCATION:
+        return source_.is_valid();
+      default:
+        return true;
+    }
+  }
+
+  void ExecuteCommand(int command_id) override {
+    switch (command_id) {
+      case IDC_CONTENT_CONTEXT_SEARCHWEBFOR:
+        crest::SearchSelection(page_, selection_);
+        break;
+      case IDC_CONTENT_CONTEXT_COPYLINKLOCATION:
+        crest::CopyLink(link_);
+        break;
+      case IDC_CONTENT_CONTEXT_COPYIMAGELOCATION:
+      case IDC_CONTENT_CONTEXT_COPYAVLOCATION:
+        crest::CopyLink(source_);
+        break;
+    }
+  }
+
+ private:
+  const std::string page_;
+  const std::u16string selection_;
+  const GURL link_;
+  const GURL source_;
+};
 
 }  // namespace
 
@@ -173,6 +239,54 @@ void SnapPictureInPictureWindow(views::Widget* window) {}
 // tab) follows once the sidebar takes drops. Chromium's drag goes on.
 bool BeginLinkDrag(content::WebContents* contents, const content::DropData& data) {
   return false;
+}
+
+std::unique_ptr<RenderViewContextMenuObserver> AdaptPageMenu(content::WebContents& contents,
+                                                             const content::ContextMenuParams& params,
+                                                             ui::SimpleMenuModel& menu) {
+  if (!IsEnabled()) return nullptr;
+  // These destinations require Chrome profile/Views UI. Crest owns Space and
+  // window routing; never expose an engine-only window or profile here.
+  for (size_t i = menu.GetItemCount(); i > 0; --i) {
+    switch (menu.GetCommandIdAt(i - 1)) {
+      case IDC_CONTENT_CONTEXT_OPENLINKNEWWINDOW:
+      case IDC_CONTENT_CONTEXT_OPENLINKOFFTHERECORD:
+      case IDC_CONTENT_CONTEXT_OPENLINKINPROFILE:
+      case IDC_CONTENT_CONTEXT_OPENLINKBOOKMARKAPP:
+      case IDC_CONTENT_CONTEXT_OPENLINKSPLITVIEW:
+      // These open Views surfaces this build never creates, or depend on a
+      // default search engine and sync the product does not have.
+      case IDC_CONTENT_CONTEXT_GENERATE_QR_CODE:
+      case IDC_CONTENT_CONTEXT_OPEN_IN_READING_MODE:
+      case IDC_CONTENT_CONTEXT_LISTEN_TO_THIS_PAGE:
+      case IDC_CONTENT_CONTEXT_SEARCHWEBFOR:
+      case IDC_SEND_TAB_TO_SELF:
+        menu.RemoveItemAt(i - 1);
+        break;
+    }
+  }
+  // Removing items can leave separators doubled or at either end.
+  for (size_t i = menu.GetItemCount(); i > 0; --i) {
+    const size_t index = i - 1;
+    if (menu.GetTypeAt(index) != ui::MenuModel::TYPE_SEPARATOR) continue;
+    const bool at_edge = index == 0 || index + 1 == menu.GetItemCount();
+    const bool doubled = index + 1 < menu.GetItemCount() && menu.GetTypeAt(index + 1) == ui::MenuModel::TYPE_SEPARATOR;
+    if (at_edge || doubled) menu.RemoveItemAt(index);
+  }
+
+  // Crest's rows for the selection go ahead of the engine's, with a separator
+  // between. A page Crest does not show, or one that is going, has none.
+  EnginePage* page = State().disposing ? nullptr : EngineBinding::Get().PageFor(&contents);
+  const std::string key = page ? page->key() : std::string();
+  const std::u16string selection(base::TrimWhitespace(params.selection_text, base::TRIM_ALL));
+  const std::u16string engine = selection.empty() ? std::u16string() : SelectionSearchEngine(key);
+  if (!engine.empty()) {
+    menu.InsertItemAt(0, IDC_CONTENT_CONTEXT_SEARCHWEBFOR, u"Search with " + engine);
+    if (menu.GetItemCount() > 1) menu.InsertSeparatorAt(1, ui::NORMAL_SEPARATOR);
+  }
+  VLOG(1) << "Crest's rows join a context menu of " << menu.GetItemCount() << " rows over page " << key;
+  return std::make_unique<PageMenuRows>(key, engine.empty() ? std::u16string() : selection,
+                                        params.unfiltered_link_url, params.src_url);
 }
 
 void AddNavigationThrottle(content::NavigationThrottleRegistry& registry) {
