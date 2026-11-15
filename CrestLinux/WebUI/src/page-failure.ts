@@ -26,7 +26,7 @@ export class ProcessFailureView {
         this.page = page;
         this.report = report;
         this.view = document.createElement("div");
-        this.view.className = "failure";
+        this.view.className = "failure card-content";
         this.view.hidden = true;
         document.getElementById("page")!.append(this.view);
     }

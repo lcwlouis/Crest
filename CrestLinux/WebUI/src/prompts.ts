@@ -23,6 +23,7 @@ import type {
     ScriptDialogQuestion,
 } from "../generated/crest_contracts.js";
 import { dispatch, query } from "./bridge.js";
+import { shownCard } from "./page-cards.js";
 import type { FloatEvent } from "./float.js";
 import type { Model } from "./model.js";
 import type { DialogButton, DialogField, PromptFloatState } from "./prompt-float.js";
@@ -471,7 +472,7 @@ export class Prompts {
         }
         const focus = restoring || this.placedModal !== question.promptId;
         this.placedModal = question.promptId;
-        const card = document.getElementById("page")!.getBoundingClientRect();
+        const card = shownCard().getBoundingClientRect();
         const state: DialogState = { kind: "dialog", promptId: question.promptId, ...question.dialog((id) => this.spaceName(id)) };
         this.surfaces.post(this.modal, {
             bounds: { x: card.left, y: card.top, width: card.width, height: card.height },
@@ -508,7 +509,7 @@ export class Prompts {
         };
         const focus = restoring || this.placedPermission !== asked.promptId;
         this.placedPermission = asked.promptId;
-        const card = document.getElementById("page")!.getBoundingClientRect();
+        const card = shownCard().getBoundingClientRect();
         const height = (this.heights.get(asked.promptId) ?? permissionEstimate) + 2 * permissionMargin;
         this.surfaces.post(this.permission, {
             bounds: { x: card.left + permissionInset, y: card.top + permissionInset, width: permissionWidth + 2 * permissionMargin, height },

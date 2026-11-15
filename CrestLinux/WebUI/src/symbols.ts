@@ -12,6 +12,7 @@ const paths: Record<string, string> = {
     checkmark: '<path d="M5 12.5l4.5 4.5L19 7"/>',
     "checkmark.circle.fill":
         '<circle cx="12" cy="12" r="10" fill="currentColor" stroke="none"/><path class="symbol-knockout" d="M7.5 12.5l3 3 6-6.5"/>',
+    "chevron.down": '<path d="M6 9l6 6 6-6"/>',
     "chevron.right": '<path d="M9 6l6 6-6 6"/>',
     "chevron.up": '<path d="M6 15l6-6 6 6"/>',
     ellipsis:

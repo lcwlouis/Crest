@@ -66,6 +66,10 @@ bool SearchSelection(const std::string& page, const std::u16string& text);
 // WebUI hands back to go on the clipboard. False when no WebUI listens.
 bool CopyLink(const GURL& url);
 
+// Tells the WebUI the person clicked into the view of `page`, a core page id
+// the window shows, so it can make that split card the one in use.
+void ReportPageFocused(const std::string& page);
+
 }  // namespace crest
 
 #endif  // CHROME_BROWSER_UI_CREST_CREST_WEBUI_LINUX_H_
