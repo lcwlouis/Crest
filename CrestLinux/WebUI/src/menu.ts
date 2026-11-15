@@ -376,6 +376,8 @@ export class Menu {
                 break;
             case "ArrowRight":
                 if (panel.highlighted >= 0) this.openSubmenu(panel, panel.highlighted, true);
+                // A submenu the pointer opened takes the keyboard on its first item.
+                else if (parent) this.highlight(panel, this.next(panel, -1, 1));
                 break;
             case "ArrowLeft":
                 if (parent) this.closeChild(parent);
