@@ -254,8 +254,9 @@ std::unique_ptr<RenderViewContextMenuObserver> AdaptPageMenu(content::WebContent
   // window routing; never expose an engine-only window or profile here.
   for (size_t i = menu.GetItemCount(); i > 0; --i) {
     const int command = menu.GetCommandIdAt(i - 1);
-    // "Open link as <profile>" rows, one per other Chromium profile.
-    if (command >= IDC_OPEN_LINK_IN_PROFILE_FIRST && command <= IDC_OPEN_LINK_IN_PROFILE_LAST) {
+    // "Open link as <profile>" rows, one per other Chromium profile, take the
+    // IDs from IDC_OPEN_LINK_IN_PROFILE_FIRST up to the next block's.
+    if (command >= IDC_OPEN_LINK_IN_PROFILE_FIRST && command < IDC_CONTENT_CONTEXT_START_SMART_SELECTION_ACTION1) {
       menu.RemoveItemAt(i - 1);
       continue;
     }
