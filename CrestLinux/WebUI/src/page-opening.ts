@@ -8,6 +8,7 @@
 import type { Change, Guid, PageState } from "../generated/crest_contracts.js";
 import type { FloatEvent } from "./float.js";
 import type { PageLayerState } from "./page-layers.js";
+import { shownCard } from "./page-cards.js";
 import { FloatRank } from "./surfaces.js";
 import type { FloatSurface, FloatSurfaces } from "./surfaces.js";
 
@@ -82,7 +83,7 @@ export class PageOpening implements FloatSurface {
         }
         const navigating = page.live.isLoading || page.live.pendingUrl !== null;
         this.wait(navigating ? page.id : null);
-        const card = document.getElementById("page")!.getBoundingClientRect();
+        const card = shownCard().getBoundingClientRect();
         const state: PageLayerState = {
             kind: "opening",
             background: cardColour(),

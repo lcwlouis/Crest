@@ -9,6 +9,7 @@ import type {
     FolderState,
     Guid,
     HistoryEntryState,
+    LinkPreferences,
     PageState,
     SidebarList,
     SpaceDeletionState,
@@ -69,6 +70,8 @@ export class Model {
     readonly pages = new Map<Guid, PageState>();
     /** Every download the core's ledger records, in its order, as the Mac's CoreState keeps them. */
     downloads: DownloadState[] = [];
+    /** How links open, Peek's included, once the core said. */
+    linkPreferences: LinkPreferences | null = null;
 
     apply(changes: readonly Change[]): void {
         for (const change of changes) this.applyOne(change);
@@ -201,6 +204,9 @@ export class Model {
                 else this.downloads.splice(Math.min(Math.max(position, 0), this.downloads.length), 0, download);
                 break;
             }
+            case "LinkPreferencesChanged":
+                this.linkPreferences = change.value.preferences;
+                break;
             case "DownloadsRemoved": {
                 const removed = new Set(change.value.downloadIds);
                 this.downloads = this.downloads.filter((download) => !removed.has(download.id));

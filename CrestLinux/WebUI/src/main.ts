@@ -1,6 +1,7 @@
 // Crest's sidebar on Linux. It opens the person's session and a window over
 // it, as the Mac app does at launch, then draws the shown Space's tabs and
-// shows the selected tab's page beside the sidebar.
+// shows the selected tab's page beside the sidebar, the cards of the split it
+// belongs to beside it, and a Peek over them.
 
 import {
     connect,
@@ -11,8 +12,7 @@ import {
     query,
     Refused,
     registerShortcuts,
-    setPageBounds,
-    showPage,
+    updateShortcuts,
 } from "./bridge.js";
 import { Commands, shortcutTable } from "./commands.js";
 import { FindBar } from "./find.js";
@@ -32,13 +32,14 @@ import { SidebarMenus } from "./sidebar-menus.js";
 import { SpaceActions } from "./space-actions.js";
 import { SpaceEditor } from "./space-editor.js";
 import { DownloadDestinations } from "./download-destinations.js";
+import { PageCards } from "./page-cards.js";
+import { Peek } from "./peek.js";
 import { Utilities } from "./utilities.js";
 
 const model = new Model();
 const icons = new TabIcons(() => render());
 /** The window this sidebar draws: the saved window the launch reopens, once known. */
 let windowId: Guid = crypto.randomUUID();
-let shownPageId: Guid | null = null;
 
 const root = document.getElementById("sidebar")!;
 const status = document.getElementById("status")!;
@@ -181,7 +182,47 @@ const commands = new Commands({
     openPalette: (mode) => palette.open(mode, mode === "current" ? (address.dataset.url ?? "") : ""),
     find: (action) => (action === "open" ? findBar.open() : findBar.step(action === "previous")),
     toggleUtility: (surface) => utilities.toggleSurface(surface),
+    cards: () => pageCards.shownCards(),
+    peek: {
+        get isOpen() {
+            return peek.isOpen;
+        },
+        close: () => peek.close(),
+    },
 });
+
+// The page cards: the shown tab's, or its split's side by side, with a Peek
+// over them.
+const pageCards: PageCards = new PageCards({
+    model,
+    windowId: () => windowId,
+    workspace: () => model.workspace,
+    space: shownSpace,
+    shownTabId,
+    send: sendChecked,
+    report,
+    peek: () => peek.placement(),
+});
+const peek: Peek = new Peek({
+    model,
+    windowId: () => windowId,
+    workspace: () => model.workspace,
+    shownCards: () => pageCards.shownCards(),
+    report,
+    relayout: () => pageCards.layout(),
+    shortcutsChanged: () => updateShortcuts(windowShortcuts()),
+});
+
+/**
+ * The keys the window takes for Crest while a page has the keyboard: the
+ * commands', and while a Peek shows, Escape and Ctrl+O, which close and keep
+ * it before its page sees them.
+ */
+function windowShortcuts(): [string, boolean, boolean, boolean, number, boolean][] {
+    const table = shortcutTable(commands);
+    if (peek.isOpen) table.push(["Escape", false, false, false, -1, true], ["o", true, false, false, 0, true]);
+    return table;
+}
 
 // The surfaces floating over the page.
 const surfaces = new FloatSurfaces();
@@ -213,7 +254,7 @@ const palette = new Palette({
 // The Start Page, which Crest draws in the page's card for a tab that shows
 // it (and when the window shows no tab), as the Mac's BrowserStartPage: the
 // mark, its title and a command bar embedded in the page.
-const startPage = element("div", "start-page");
+const startPage = element("div", "start-page card-content");
 const startMark = element("div", "start-mark");
 startMark.innerHTML =
     '<svg viewBox="0 0 64 64" aria-hidden="true"><path d="M32 4l24 9v17c0 15-10 26-24 30C18 56 8 45 8 30V13z" fill="var(--space-tint)"/><path d="M32 16l4 9 9 1-7 6 2 9-8-5-8 5 2-9-7-6 9-1z" fill="white" opacity="0.9"/></svg>';
@@ -239,7 +280,7 @@ const startPalette = new Palette(
 
 // A page that failed to load shows Crest's own explanation in the card, as
 // the Mac's BrowserNavigationFailureView, over the page it hides.
-const failureView = element("div", "failure");
+const failureView = element("div", "failure card-content");
 failureView.hidden = true;
 document.getElementById("page")!.append(failureView);
 
@@ -288,13 +329,13 @@ function showStartPage(shown: boolean): void {
 // hands Crest the keys it reserves from pages through the host.
 document.addEventListener("keydown", (event) => {
     if (palette.isOpen || event.defaultPrevented) return;
-    if (commands.handleKey(event)) event.preventDefault();
+    if (peek.handleKey(event) || commands.handleKey(event)) event.preventDefault();
 });
 registerShortcuts(
-    shortcutTable(commands),
+    windowShortcuts(),
     (key) => {
         if (palette.isOpen) palette.close();
-        commands.handleKey(key);
+        if (!peek.handleKey(key)) commands.handleKey(key);
     },
     (command) => {
         if (ShortcutCommand.all.includes(command as ShortcutCommand)) commands.perform(command as ShortcutCommand);
@@ -357,70 +398,19 @@ function showAddress(page: PageState | undefined): void {
     address.title = url ?? "";
 }
 
-/** Tabs this window asked the core to open a page for, until the page appears. */
-const opening = new Set<Guid>();
-
 /**
- * Gives the selected tab a page and shows it once the engine made it live.
- * The window asks the core for the page, as the Mac's window does when it
- * shows a tab that has none; the core asks the engine to create it.
+ * Shows what the shown tab's card holds besides its page, the Start Page or
+ * the failure, and lays the cards out: each card's tab gets a page, which the
+ * window shows once the engine made it live.
  */
 function followShownPage(): void {
-    followShownPageView();
-    // The card is see-through only while the window shows a page under it.
-    document.body.classList.toggle("has-page", shownPageId !== null);
-}
-
-function followShownPageView(): void {
-    const workspace = model.workspace;
-    const space = shownSpace();
-    const tabId = shownTabId();
-    const tab = tabId ? space?.tabs.find((held) => held.id === tabId) : undefined;
-    if (!workspace || !space) return;
-    const page = tab ? model.pageFor(tab.id) : undefined;
+    const tab = shownTab();
+    const page = shownPage();
     // A tab with no page of its own, or no tab: the card shows Crest's own
     // view, and the window shows no page over it.
-    const showsNoPage = !tab || (!page && tab.surface === "StartPage");
-    showStartPage(showsNoPage && (!tab || tab.surface === "StartPage"));
-    const failed = page?.live.failure != null;
-    showFailure(failed ? page : undefined);
-    if (!page || page.phase !== "Live" || failed) {
-        if (shownPageId !== null && (showsNoPage || failed || model.pages.get(shownPageId)?.tabId !== tab?.id)) {
-            shownPageId = null;
-            showPage("");
-        }
-    }
-    if (!tab) return;
-    if (!page) {
-        // TODO(linux): other native views (settings, history) are drawn
-        // with the surfaces they belong to.
-        if (tab.nativeContent || opening.has(tab.id)) return;
-        opening.add(tab.id);
-        const pageId = crypto.randomUUID();
-        void dispatch({
-            kind: "OpenPage",
-            value: {
-                pageId,
-                workspaceId: workspace.id,
-                spaceId: space.state.id,
-                tabId: tab.id,
-                windowId,
-                transient: null,
-                openerPageId: null,
-            },
-        })
-            // A new page starts at its tab's address, which the window asks
-            // the core to load, as the Mac's page pool does.
-            // TODO(linux): restore the tab's archived history first, as the
-            // Mac does, when the tab has one.
-            .then(() => (tab.url ? dispatch({ kind: "LoadAddress", value: { pageId, url: tab.url } }) : undefined))
-            .catch(report)
-            .finally(() => opening.delete(tab.id));
-        return;
-    }
-    if (page.phase !== "Live" || failed || page.id === shownPageId) return;
-    shownPageId = page.id;
-    showPage(page.id);
+    showStartPage(!tab || (!page && tab.surface === "StartPage"));
+    showFailure(page?.live.failure != null ? page : undefined);
+    pageCards.follow();
 }
 
 function report(error: unknown): void {
@@ -450,6 +440,7 @@ async function start(): Promise<void> {
             model.apply(changes);
             icons.apply(changes);
             render();
+            peek.apply(changes);
             followShownPage();
             findBar.follow();
             prompts.apply(changes);
@@ -462,6 +453,7 @@ async function start(): Promise<void> {
             try {
                 const presentation = decodePresentation(bytes);
                 if (presentation.kind === "FindFinished") findBar.finished(presentation.value);
+                if (presentation.kind === "PeekRequested") peek.requested(presentation.value);
                 pageStates.present(presentation);
             } catch (error) {
                 console.error(error);
@@ -490,20 +482,4 @@ async function start(): Promise<void> {
     say("");
 }
 
-/**
- * Tells the window where the page goes: over the page's card, which the
- * WebUI lays out. The window places the page's own view there.
- */
-function followPageCard(): void {
-    const card = document.getElementById("page")!;
-    const send = (): void => {
-        const box = card.getBoundingClientRect();
-        setPageBounds(Math.round(box.left), Math.round(box.top), Math.round(box.width), Math.round(box.height));
-    };
-    new ResizeObserver(send).observe(card);
-    window.addEventListener("resize", send);
-    send();
-}
-
-followPageCard();
 start().catch(report);
