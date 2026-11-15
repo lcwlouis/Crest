@@ -2,11 +2,13 @@
    (prompt-float.ts). */
 
 /* --- Buttons both prompts share: a plain choice and the prominent one in
-   Crest's accent, whose label takes the ink that reads on it. --- */
+   Crest's accent, whose label takes the ink that reads on it. A row shares
+   its width among its buttons, never narrower than a label unless the card
+   is. --- */
 
 .prompt-button {
   flex: 1;
-  min-width: 0;
+  min-width: fit-content;
   height: 30px;
   padding: 0 var(--crest-space-m);
   border: var(--crest-button-stroke) solid var(--crest-subtle-border);
@@ -220,8 +222,11 @@
   box-shadow: 0 0 0 var(--crest-field-focus-ring) color-mix(in srgb, var(--crest-accent) 32%, transparent);
 }
 
+/* Side by side while the labels fit, and otherwise one above the other with
+   the default on top, as an NSAlert stacks its buttons. */
 .dialog-buttons {
   display: flex;
+  flex-wrap: wrap-reverse;
   gap: var(--crest-space-s);
   margin-top: var(--crest-space-s);
 }
