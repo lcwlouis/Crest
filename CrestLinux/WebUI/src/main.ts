@@ -19,6 +19,8 @@ import { FindBar } from "./find.js";
 import type { FloatEvent } from "./float.js";
 import { NavigationError, ShortcutCommand } from "../generated/crest_contracts.js";
 import { Palette } from "./palette.js";
+import { Prompts } from "./prompts.js";
+import { FloatSurfaces } from "./surfaces.js";
 import { TabIcons } from "./icons.js";
 import type { Guid, LaunchEnvironment, PageState, TabState } from "../generated/crest_contracts.js";
 import { Model } from "./model.js";
@@ -137,10 +139,13 @@ const commands = new Commands({
     find: (action) => (action === "open" ? findBar.open() : findBar.step(action === "previous")),
 });
 
-const findBar = new FindBar(shownPage, report);
+// The surface floating over the page shows one of these at a time.
+const surfaces = new FloatSurfaces();
+const findBar = new FindBar(shownPage, report, surfaces);
+const prompts = new Prompts({ model, page: shownPage }, surfaces);
 listenToFloat(
-    (event) => findBar.handle(event as FloatEvent),
-    () => findBar.place(false, null),
+    (event) => surfaces.handle(event as FloatEvent),
+    () => surfaces.restore(),
 );
 
 const palette = new Palette({
@@ -395,6 +400,7 @@ async function start(): Promise<void> {
             render();
             followShownPage();
             findBar.follow();
+            prompts.apply(changes);
         },
         (bytes) => {
             try {
