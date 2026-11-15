@@ -63,9 +63,9 @@ base::FilePath UIDirectory() {
 
 // The file `path` names in the UI directory, never outside it.
 scoped_refptr<base::RefCountedMemory> ReadUIFile(const base::FilePath& directory, const std::string& path) {
-  std::string relative = path.empty() ? "index.html" : path;
-  const size_t query = relative.find_first_of("?#");
-  if (query != std::string::npos) relative.resize(query);
+  // The query and fragment name no file: chrome://crest/?window=… is the page.
+  std::string relative = path.substr(0, path.find_first_of("?#"));
+  if (relative.empty()) relative = "index.html";
   const base::FilePath file = directory.AppendASCII(relative);
   if (file.ReferencesParent() || !directory.IsParent(file)) return nullptr;
   std::string contents;
