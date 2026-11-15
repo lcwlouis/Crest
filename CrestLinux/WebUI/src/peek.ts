@@ -116,6 +116,7 @@ export class Peek {
         // A Peek opens over a page this window shows, as the Mac's does over a
         // page in its window.
         if (!workspace || !source?.tabId || !this.context.shownCards().includes(source.tabId)) {
+            if (source?.tabId) console.info("A Peek's link came from a page this window does not show as a card.");
             discard();
             return;
         }

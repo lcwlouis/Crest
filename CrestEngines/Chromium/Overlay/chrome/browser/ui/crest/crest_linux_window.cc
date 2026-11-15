@@ -219,6 +219,12 @@ LinuxWindow* LinuxWindow::Open(Profile* profile, const Kind& kind, const std::st
   gfx::Rect bounds(gfx::Point(80, 80), kind.size);
   if (in_use) bounds.set_origin(in_use->widget()->GetWindowBoundsInScreen().origin() +
                                 gfx::Vector2d(kCascadeStep, kCascadeStep));
+  // A browser window takes the size of the browser window it cascades from,
+  // as the Mac's new window takes its source's frame; one in fullscreen
+  // leaves it the kind's own.
+  if (in_use && kind.browses && in_use->kind_.browses && !in_use->widget()->IsFullscreen()) {
+    bounds.set_size(in_use->widget()->GetRestoredBounds().size());
+  }
   // A window the launch reopens opens where it was.
   std::optional<Frame> saved;
   if (kind.browses && !id.empty() && Frames().read) {
@@ -458,6 +464,7 @@ void LinuxWindow::Present() {
   // A window manager that keeps the focus where it is still leaves this the
   // window in use, as the Mac's window Crest orders front is key.
   TakeUse();
+  FocusInUse();
 }
 
 void LinuxWindow::TakeUse() {
@@ -717,9 +724,11 @@ void LinuxWindow::Restack() {
 
 // A window in the background moves no focus, since focusing a view there
 // would take activation from the window in use: it focuses its page in use
-// once it comes into use.
+// once it comes into use. The window in use focuses it whether or not the
+// window manager activated it, as a split's pages and Peek take their clicks
+// from the page with the keyboard.
 void LinuxWindow::FocusInUse() {
-  if (!widget_->IsActive()) return;
+  if (!in_use_) return;
   Slot* slot = SlotShowing(focused_page_);
   if (overlay_raised_ && !(slot && slot->above)) {
     ui_->RequestFocus();
