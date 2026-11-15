@@ -76,6 +76,9 @@ class LinuxWindow final {
  private:
   explicit LinuxWindow(Profile* profile);
 
+  // Hears the person click into a page the window shows.
+  class FocusObserver;
+
   // One view that shows a page, or none while it waits for one.
   struct Slot {
     raw_ptr<views::WebView> view;
@@ -83,7 +86,7 @@ class LinuxWindow final {
     bool above = false;
     float corner_radius = 0;
     // Hears the person click into the page.
-    std::unique_ptr<content::WebContentsObserver> focus;
+    std::unique_ptr<FocusObserver> focus;
   };
 
   // The person closed the window.
