@@ -12,8 +12,9 @@
 // Items whose surface Linux does not draw yet are left out rather than
 // offered dead: tab sharing, the icon picker (Change Icon…, Folder Icon…),
 // the folder colour popover, Pull New Icon (it needs the page's image
-// bytes), multi-selection, the Space editor (Edit Space…, New Space…),
-// history, passwords, settings, private browsing and new windows.
+// bytes), multi-selection, history, passwords, settings, private browsing
+// and new windows. The empty sidebar's menu and the Space switcher's are the
+// Space actions' (space-actions.ts).
 
 import type {
     FolderState,
@@ -24,16 +25,18 @@ import type {
     TabPlacement,
     TabState,
 } from "../generated/crest_contracts.js";
-import { ShortcutCommand as Commands, SpaceAccent, TabIconMode, TabPlacement as Placements } from "../generated/crest_contracts.js";
+import { ShortcutCommand as Commands, TabIconMode, TabPlacement as Placements } from "../generated/crest_contracts.js";
 import { showAlert } from "./alert.js";
 import { query } from "./bridge.js";
 import type { TabIcons } from "./icons.js";
 import { Menu } from "./menu.js";
 import type { MenuEntry, MenuIcon, MenuItem, MenuPlacement } from "./menu.js";
 import { listKey } from "./model.js";
+import { SpaceGroups } from "./space-groups.js";
 import type { Model, Space, Workspace } from "./model.js";
 import type { InlineRename } from "./rename.js";
-import { css, spaceMark } from "./sidebar.js";
+import { css } from "./sidebar.js";
+import { spaceMenuIcon } from "./space-actions.js";
 
 /** What the menus act through. */
 export interface SidebarMenuHost {
@@ -626,34 +629,11 @@ export class SidebarMenus {
         );
     }
 
-    /** The empty sidebar's menu. */
-    background(space: Space, at: MenuPlacement): void {
-        const workspaceId = this.host.model.workspace?.id;
-        if (!workspaceId) return;
-        Menu.open(
-            [
-                {
-                    title: "New Sub-Space",
-                    icon: symbol("plus.square.on.square"),
-                    action: () =>
-                        void this.host.send({
-                            kind: "AddSubSpace",
-                            value: { workspaceId, windowId: this.host.windowId(), spaceId: crypto.randomUUID(), fromSpaceId: space.state.id },
-                        }),
-                },
-            ],
-            at,
-        );
-    }
-
     // --- Shared ---
 
-    /** The other Spaces a tab or folder may move to, in the window's order. */
+    /** The other Spaces a tab or folder may move to, in the window's order, leaving out those being deleted. */
     private destinationSpaces(workspace: Workspace, space: Space): Space[] {
-        return workspace.order
-            .filter((id) => id !== space.state.id)
-            .map((id) => workspace.spaces.get(id))
-            .filter((other): other is Space => other !== undefined);
+        return new SpaceGroups(workspace).available.filter((other) => other.state.id !== space.state.id);
     }
 
     /** The Move to Space items, each group of Spaces set apart, as the Mac's grouped(_:). */
@@ -667,7 +647,7 @@ export class SidebarMenus {
             const settings = other.state.settings;
             entries.push({
                 title: settings.name,
-                icon: { kind: "mark", text: spaceMark(settings.name, settings.symbol), color: css(SpaceAccent.facts[settings.accent].swatch) },
+                icon: spaceMenuIcon(settings),
                 disabled: !allowed[index],
                 action: () => move(other),
             });

@@ -245,20 +245,6 @@ body.has-page #page {
   color: var(--text);
 }
 
-.space-mark {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  justify-content: center;
-  width: var(--space-header-icon-size);
-  height: var(--space-header-icon-size);
-  border-radius: 50%;
-  background: var(--space-tint);
-  color: white;
-  font-size: 11px;
-  font-weight: 700;
-}
-
 .space-title {
   overflow: hidden;
   font-size: var(--crest-text-callout);

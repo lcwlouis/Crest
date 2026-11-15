@@ -8,6 +8,8 @@
 // and typing an item's first letters, as the Mac's menus do) and closes on a
 // click outside it, when the window loses focus or changes size.
 
+import type { SpaceSettings } from "../generated/crest_contracts.js";
+import { spaceIcon } from "./crest.js";
 import { holdOverlay } from "./overlay.js";
 import { sfSymbol } from "./symbols.js";
 
@@ -16,8 +18,8 @@ export type MenuIcon =
     | { readonly kind: "symbol"; readonly name: string; readonly color?: string }
     /** A folder's own icon: its emoji, or the folder glyph filled in its colour. */
     | { readonly kind: "folder"; readonly color: string; readonly emoji?: string }
-    /** A Space's mark: its emoji or letter on its colour. */
-    | { readonly kind: "mark"; readonly text: string; readonly color: string };
+    /** A Space's own icon, its crest or symbol, as BrowserSpaceIdentityLabel shows it. */
+    | { readonly kind: "space"; readonly settings: SpaceSettings };
 
 export interface MenuItem {
     readonly title: string;
@@ -77,14 +79,10 @@ function iconElement(icon: MenuIcon): HTMLElement {
                 slot.classList.add("tinted", "filled");
             }
             break;
-        case "mark": {
-            const mark = element("span", "menu-mark");
-            mark.textContent = icon.text;
-            mark.style.background = icon.color;
-            slot.append(mark);
+        case "space":
+            slot.append(spaceIcon(icon.settings, 16));
             slot.classList.add("tinted");
             break;
-        }
     }
     return slot;
 }

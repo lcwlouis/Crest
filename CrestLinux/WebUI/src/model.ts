@@ -11,6 +11,7 @@ import type {
     HistoryEntryState,
     PageState,
     SidebarList,
+    SpaceDeletionState,
     SpaceState,
     SplitGroupState,
     TabPlacement,
@@ -58,6 +59,8 @@ export interface Workspace {
     readonly id: Guid;
     spaces: Map<Guid, Space>;
     order: Guid[];
+    /** The Spaces this workspace is deleting, which stay until their data is erased. */
+    deletions: readonly SpaceDeletionState[];
 }
 
 export class Model {
@@ -92,7 +95,13 @@ export class Model {
                     id: workspaceId,
                     spaces,
                     order: session.spaces.map((space) => space.id),
+                    deletions: session.spaceDeletions,
                 });
+                break;
+            }
+            case "WorkspaceChanged": {
+                const workspace = this.workspaces.get(change.value.workspaceId);
+                if (workspace) workspace.deletions = change.value.spaceDeletions;
                 break;
             }
             case "WorkspaceClosed":

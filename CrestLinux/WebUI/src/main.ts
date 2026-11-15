@@ -29,6 +29,8 @@ import type { Space, Workspace } from "./model.js";
 import { InlineRename } from "./rename.js";
 import { element, Sidebar, symbol } from "./sidebar.js";
 import { SidebarMenus } from "./sidebar-menus.js";
+import { SpaceActions } from "./space-actions.js";
+import { SpaceEditor } from "./space-editor.js";
 import { DownloadDestinations } from "./download-destinations.js";
 import { Utilities } from "./utilities.js";
 
@@ -134,6 +136,13 @@ const utilities = new Utilities({
     send: sendChecked,
     redraw: () => render(),
 });
+const spaces = new SpaceActions({
+    model,
+    windowId: () => windowId,
+    send: sendChecked,
+    edit: (spaceId, intent) => spaceEditor.open(spaceId, intent),
+});
+const spaceEditor = new SpaceEditor({ model, actions: spaces });
 const downloadDestinations = new DownloadDestinations((intent) => dispatch(intent).catch((error: unknown) => console.error(error)));
 const sidebar = new Sidebar(
     {
@@ -155,6 +164,7 @@ const sidebar = new Sidebar(
         }),
         rename,
         utilities,
+        spaces,
     },
     root,
 );
@@ -445,6 +455,8 @@ async function start(): Promise<void> {
             prompts.apply(changes);
             pageStates.apply(changes);
             downloadDestinations.apply(changes);
+            spaces.apply(changes);
+            spaceEditor.follow();
         },
         (bytes) => {
             try {

@@ -26,7 +26,6 @@
   --menu-shadow: 0 10px 28px rgb(0 0 0 / 0.2), 0 1px 3px rgb(0 0 0 / 0.12);
   --menu-highlight: var(--crest-accent);
   --menu-highlight-text: white;
-  --menu-mark-size: 16px;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -109,18 +108,6 @@
 .menu-icon.filled svg {
   fill: currentColor;
   fill-opacity: 0.85;
-}
-
-.menu-mark {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: var(--menu-mark-size);
-  height: var(--menu-mark-size);
-  border-radius: 50%;
-  color: white;
-  font-size: 9px;
-  font-weight: 700;
 }
 
 .menu-title {

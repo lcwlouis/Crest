@@ -7,11 +7,14 @@
 
 import type { BrandColor, FolderState, Guid, Intent, SidebarRow, TabPlacement, TabState } from "../generated/crest_contracts.js";
 import { SpaceAccent } from "../generated/crest_contracts.js";
+import { spaceIcon } from "./crest.js";
 import type { TabIcons } from "./icons.js";
 import { listKey } from "./model.js";
 import type { Model, Space, Workspace } from "./model.js";
 import type { InlineRename } from "./rename.js";
 import type { SidebarMenus } from "./sidebar-menus.js";
+import type { SpaceActions } from "./space-actions.js";
+import { SpaceGroups } from "./space-groups.js";
 import type { Utilities } from "./utilities.js";
 
 /** What the sidebar asks of the window it sits in. */
@@ -25,6 +28,8 @@ export interface SidebarHost {
     readonly openNewTab: () => void;
     /** The menus rows, tiles and the Space open (sidebar-menus.ts). */
     readonly menus: SidebarMenus;
+    /** The Space menus: the empty sidebar's and the switcher's (space-actions.ts). */
+    readonly spaces: SpaceActions;
     /** The field a row shows in place of its title while it is being named. */
     readonly rename: InlineRename;
     /** The archive, history and downloads lists, which take the tabs' place while one is open. */
@@ -70,9 +75,9 @@ export function css(color: BrandColor, alpha = color.alpha): string {
     return `rgb(${channel(color.red)} ${channel(color.green)} ${channel(color.blue)} / ${alpha})`;
 }
 
-/** A Space's mark: its emoji when it has one, else its name's first letter. */
-export function spaceMark(name: string, mark: string): string {
-    return /\p{Extended_Pictographic}/u.test(mark) ? mark : (name.trim().slice(0, 1) || "?").toUpperCase();
+/** A length the design tokens give, in CSS pixels. */
+function cssPixels(token: string, fallback: number): number {
+    return parseFloat(getComputedStyle(document.documentElement).getPropertyValue(token)) || fallback;
 }
 
 /**
@@ -104,7 +109,7 @@ export class Sidebar {
             const space = this.shownSpace();
             const target = event.target as Element;
             if (!space || target.closest("button, .row, .space-header-bar, .seam, input, .utility")) return;
-            this.host.menus.background(space, { x: event.clientX, y: event.clientY });
+            void this.host.spaces.background(space, { x: event.clientX, y: event.clientY });
         });
     }
 
@@ -176,7 +181,7 @@ export class Sidebar {
         const header = element("button", "space-header");
         header.setAttribute("aria-expanded", String(settings.isSavedTabsExpanded));
         header.title = settings.isSavedTabsExpanded ? "Hide saved tabs" : "Show saved tabs";
-        const mark = element("span", "space-mark", spaceMark(settings.name, settings.symbol));
+        const mark = spaceIcon(settings, cssPixels("--space-header-icon-size", 20));
         const name = element("span", "space-title", settings.name);
         const disclosure = element("span", "disclosure");
         disclosure.innerHTML = symbol(glyph.chevron, 9);
@@ -379,17 +384,19 @@ export class Sidebar {
 
     private drawSwitcher(workspace: Workspace, space: Space): void {
         const track = element("div", "switcher-track");
-        for (const id of workspace.order) {
-            const other = workspace.spaces.get(id);
-            if (!other) continue;
+        const size = cssPixels("--switcher-icon-size", 24);
+        for (const other of new SpaceGroups(workspace).available) {
+            const id = other.state.id;
             const shown = id === space.state.id;
             const segment = element("button", shown ? "segment shown" : "segment");
-            segment.textContent = spaceMark(other.state.settings.name, other.state.settings.symbol);
+            segment.append(spaceIcon(other.state.settings, size));
             segment.title = other.state.settings.name;
+            segment.setAttribute("aria-label", other.state.settings.name);
             segment.setAttribute("aria-pressed", String(shown));
             segment.addEventListener("click", () =>
                 this.host.send({ kind: "ShowSpace", value: { windowId: this.host.windowId(), spaceId: id } }),
             );
+            onContextMenu(segment, (at) => this.host.spaces.switcher(other, at));
             track.append(segment);
         }
         // The lists button stays where it is, so a press on it is not cut short.

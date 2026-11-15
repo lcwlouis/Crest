@@ -33,4 +33,14 @@ for (const folder of ["src", "generated"]) {
         }
     }
 }
+// The heraldic charges a Space's crest wears, the Mac's own artwork from its
+// asset catalog, each served under the asset's name, and who drew them.
+const resources = join(here, "..", "..", "CrestShared", "Resources");
+const heraldry = join(resources, "CrestHeraldry.xcassets");
+mkdirSync(join(destination, "heraldry"), { recursive: true });
+for (const name of readdirSync(heraldry)) {
+    if (!name.endsWith(".imageset")) continue;
+    copyFileSync(join(heraldry, name, "charge.svg"), join(destination, "heraldry", name.replace(/\.imageset$/, ".svg")));
+}
+copyFileSync(join(resources, "HeraldicArtworkCredits.txt"), join(destination, "heraldry", "credits.txt"));
 console.log(`Crest's WebUI is in ${destination}`);
