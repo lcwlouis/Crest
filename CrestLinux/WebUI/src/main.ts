@@ -9,6 +9,7 @@ import { Palette } from "./palette.js";
 import { TabIcons } from "./icons.js";
 import type { Guid, LaunchEnvironment, PageState, TabState } from "../generated/crest_contracts.js";
 import { Model } from "./model.js";
+import { PageMenu } from "./pagemenu.js";
 import type { Space, Workspace } from "./model.js";
 import { element, Sidebar, symbol } from "./sidebar.js";
 
@@ -121,6 +122,14 @@ const commands = new Commands({
     send: (intent) => void dispatch(intent).catch(report),
     report,
     openPalette: (mode) => palette.open(mode, mode === "current" ? (address.dataset.url ?? "") : ""),
+});
+
+// The rows Crest adds to the context menu Chromium shows over a page.
+const pageMenu = new PageMenu({
+    model,
+    windowId: () => windowId,
+    send: (intent) => void dispatch(intent).catch(report),
+    report,
 });
 
 const palette = new Palette({
@@ -258,6 +267,7 @@ function render(): void {
         reload.title = loading ? "Stop" : "Reload";
     }
     showAddress(page);
+    pageMenu.follow(page);
     sidebar.render();
 }
 

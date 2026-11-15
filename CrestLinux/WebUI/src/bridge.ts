@@ -190,6 +190,35 @@ export function registerShortcuts(
     chrome.send("setShortcuts", shortcuts.map((shortcut) => [...shortcut]));
 }
 
+/**
+ * Names the engine a selection on the page the window shows searches with,
+ * which the page's context menu offers; an empty page offers none.
+ */
+export function setSelectionSearch(pageId: string, engineTitle: string): void {
+    chrome.send("setSelectionSearch", [pageId, engineTitle]);
+}
+
+/** Puts the core's clean copy of an address the page's context menu copied on the clipboard. */
+export function copyLink(url: string): void {
+    chrome.send("copyLink", [url]);
+}
+
+/**
+ * Hears the rows of a page's context menu that the WebUI runs: a search for
+ * the selection, and an address to copy, which still needs the core's clean
+ * copy.
+ */
+export function registerPageMenu(
+    onSearch: (pageId: string, text: string) => void,
+    onCopyLink: (url: string) => void,
+): void {
+    listen("crest-search-selection", (search) => {
+        const { pageId, text } = search as { pageId: string; text: string };
+        onSearch(pageId, text);
+    });
+    listen("crest-copy-link", (url) => onCopyLink(url as string));
+}
+
 /** Asks the engine about one of its pages directly, as the Mac's views do. */
 export async function pageRequest<K extends PageRequest["kind"] & keyof PageRequestAnswers>(
     kind: K,
