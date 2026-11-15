@@ -42,6 +42,7 @@
 #include "content/public/common/url_constants.h"
 #include "services/network/public/mojom/content_security_policy.mojom.h"
 #include "ui/gfx/geometry/rect.h"
+#include "ui/native_theme/native_theme.h"
 
 namespace crest {
 
@@ -130,6 +131,25 @@ std::vector<Shortcut>& Shortcuts() {
   static base::NoDestructor<std::vector<Shortcut>> shortcuts;
   return *shortcuts;
 }
+
+// --- Appearance (Linux shell) -----------------------------------------------
+// Settings' Appearance choice, which the Mac applies to the whole application
+// (NSApp.appearance in BrowserMacAppearance): every window, menu and page
+// draws light or dark with it. Here it is Chromium's process-wide preferred
+// color scheme, which takes precedence over the desktop's, so Crest's WebUIs,
+// the floating surfaces and every page's prefers-color-scheme follow it.
+
+// The scheme a choice (DeviceAppearance.mode) names: none for "system", which
+// follows the desktop again. Unset when `name` is no choice.
+std::optional<std::optional<ui::NativeTheme::PreferredColorScheme>> ColorSchemeNamed(const std::string& name) {
+  using Scheme = ui::NativeTheme::PreferredColorScheme;
+  if (name == "system") return std::optional<Scheme>();
+  if (name == "light") return std::optional<Scheme>(Scheme::kLight);
+  if (name == "dark") return std::optional<Scheme>(Scheme::kDark);
+  return std::nullopt;
+}
+
+// --- End of appearance ------------------------------------------------------
 
 // --- Downloads (Linux shell) ------------------------------------------------
 // The sidebar's Downloads list opens a finished file and shows it in its
@@ -243,6 +263,9 @@ class CrestUIHandler final : public content::WebUIMessageHandler, public CoreHos
         "setShortcuts", base::BindRepeating(&CrestUIHandler::HandleSetShortcuts, base::Unretained(this)));
     web_ui()->RegisterMessageCallback(
         "setOverlay", base::BindRepeating(&CrestUIHandler::HandleSetOverlay, base::Unretained(this)));
+    // Appearance (Linux shell).
+    web_ui()->RegisterMessageCallback(
+        "setAppearance", base::BindRepeating(&CrestUIHandler::HandleSetAppearance, base::Unretained(this)));
     // Downloads (Linux shell).
     web_ui()->RegisterMessageCallback(
         "openDownload", base::BindRepeating(&CrestUIHandler::HandleOpenDownload, base::Unretained(this)));
@@ -418,6 +441,17 @@ class CrestUIHandler final : public content::WebUIMessageHandler, public CoreHos
   void HandleSetOverlay(const base::ListValue& args) {
     if (args.size() != 1 || !args[0].is_bool()) return;
     if (LinuxWindow* window = LinuxWindow::Current()) window->SetOverlay(args[0].GetBool());
+  }
+
+  // --- Appearance (Linux shell) ---------------------------------------------
+
+  // args: the person's appearance choice, "system", "light" or "dark". Every
+  // instance of the native theme hears the change and redraws with it.
+  void HandleSetAppearance(const base::ListValue& args) {
+    if (args.size() != 1 || !args[0].is_string()) return;
+    const auto scheme = ColorSchemeNamed(args[0].GetString());
+    if (!scheme) return;
+    ui::NativeTheme::SetPreferredColorSchemeOverride(*scheme);
   }
 
   // --- Downloads (Linux shell) ----------------------------------------------
