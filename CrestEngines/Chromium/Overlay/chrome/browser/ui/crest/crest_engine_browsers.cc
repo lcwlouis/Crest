@@ -6,7 +6,6 @@
 
 #include "base/functional/bind.h"
 #include "base/location.h"
-#include "base/logging.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/time/time.h"
 #include "chrome/browser/platform_util.h"
@@ -347,8 +346,6 @@ void EngineBrowsers::Created(Browser* browser) {
   if (Place(browser)) {
     return;
   }
-  VLOG(1) << "Crest has no window for a Browser of type " << static_cast<int>(browser->GetType())
-          << " the engine created; its tabs are offered without one";
   // `MayCreate` refuses these before they are created, so this is only
   // reached by a creation path that does not ask it. The Browser is still
   // kept, so its tabs are offered and then refused rather than left running
