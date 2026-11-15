@@ -81,6 +81,7 @@ struct EngineBrowsers::KeptBrowser final : TabStripModelObserver {
       return;
     }
     for (const auto& inserted : change.GetInsert()->contents) {
+      owner->binding_->TabInserted(inserted.contents);
       owner->OfferSoon(inserted.contents, selection.new_contents == inserted.contents);
     }
   }
@@ -198,6 +199,16 @@ bool EngineBrowsers::Activate(content::WebContents* contents) {
   if (platform_util::IsWindowActive(contents->GetTopLevelNativeWindow())) {
     Use(*kept);
   }
+  return true;
+}
+
+bool EngineBrowsers::UseHolding(content::WebContents* contents) {
+  KeptBrowser* kept = HoldingKept(contents);
+  if (!kept) {
+    return false;
+  }
+  kept->activated = ++activations_;
+  Use(*kept);
   return true;
 }
 

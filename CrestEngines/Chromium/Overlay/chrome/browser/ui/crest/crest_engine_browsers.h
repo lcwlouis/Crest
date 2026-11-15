@@ -67,6 +67,10 @@ class EngineBrowsers final {
   // moves between Spaces or windows. False when no Browser the binding keeps
   // holds it.
   bool Activate(content::WebContents* contents);
+  // Makes the Browser that holds `contents` the one Chromium last saw in use,
+  // whether or not its window is, so a tab Chromium opens for that page lands
+  // in that Browser. False when no Browser the binding keeps holds it.
+  bool UseHolding(content::WebContents* contents);
   // Deletes `contents` from the Browser that holds it.
   void Destroy(content::WebContents* contents);
   // Deletes `contents` once its document has run its beforeunload handlers,

@@ -9,6 +9,7 @@
 #include <utility>
 #include <variant>
 
+#include "base/auto_reset.h"
 #include "base/check.h"
 #include "base/functional/bind.h"
 #include "base/location.h"
@@ -1063,6 +1064,32 @@ EnginePage* EngineBinding::SourceOf(content::WebContents* contents) {
   const auto recorded = std::find_if(link_sources_.begin(), link_sources_.end(),
                                      [contents](const auto& entry) { return entry.first.get() == contents; });
   return recorded == link_sources_.end() ? nullptr : Find(recorded->second);
+}
+
+// Chromium navigates a held pop-up afresh, from parameters that name the page
+// as their source but give the new WebContents no opener, and with no Browser,
+// so a tab goes to the tabbed Browser it last saw in use. The pop-ups open in
+// this same turn.
+size_t EngineBinding::OpenBlockedPopups(EnginePage& page, base::FunctionRef<void()> open) {
+  if (disposing_ || !page.web_contents()) {
+    return 0;
+  }
+  Browsers().UseHolding(page.web_contents());
+  base::AutoReset<std::string> opening(&opening_popups_of_, page.key());
+  base::AutoReset<size_t> opened(&opened_popups_, 0);
+  open();
+  return opened_popups_;
+}
+
+void EngineBinding::TabInserted(content::WebContents* contents) {
+  if (opening_popups_of_.empty() || !contents || PageFor(contents)) {
+    return;
+  }
+  ++opened_popups_;
+  if (!contents->GetOpener()) {
+    std::erase_if(link_sources_, [](const auto& entry) { return !entry.first; });
+    link_sources_.emplace_back(contents->GetWeakPtr(), opening_popups_of_);
+  }
 }
 
 std::vector<EnginePage*> EngineBinding::LivePages() {
