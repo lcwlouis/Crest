@@ -64,6 +64,10 @@ void ReportPageFocused(LinuxWindow& window, const std::string& page);
 // Tells the WebUI another window shows `page` now, so this one no longer can.
 void ReportPageLeft(LinuxWindow& window, const std::string& page);
 
+// Tells the WebUI no window shows `page` now, which it may show again where
+// its card shows the page's tab.
+void ReportPageFree(LinuxWindow& window, const std::string& page);
+
 // Tells the WebUI the window shows `page`, which the engine keeps for another
 // window, so it moves the page to its own.
 void ReportPageArrived(LinuxWindow& window, const std::string& page);
