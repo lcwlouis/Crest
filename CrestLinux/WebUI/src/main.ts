@@ -1,13 +1,15 @@
 // Crest's sidebar on Linux. It opens the person's session and a window over
 // it, as the Mac app does at launch, then draws the shown Space's tabs and
 // shows the selected tab's page beside the sidebar, the cards of the split it
-// belongs to beside it, and a Peek over them.
+// belongs to beside it, and a Peek over them. Each browser window runs its
+// own copy of this page, as the core's window its address names.
 
 import {
     connect,
     decodePresentation,
     dispatch,
     listenToFloat,
+    openWindow,
     pageRequest,
     query,
     Refused,
@@ -22,7 +24,7 @@ import { Palette } from "./palette.js";
 import { Prompts } from "./prompts.js";
 import { FloatSurfaces } from "./surfaces.js";
 import { TabIcons } from "./icons.js";
-import type { Guid, Intent, LaunchEnvironment, PageState, TabState } from "../generated/crest_contracts.js";
+import type { Change, Guid, Intent, LaunchEnvironment, PageState, TabState } from "../generated/crest_contracts.js";
 import { Model } from "./model.js";
 import { PageStates } from "./page-states.js";
 import type { Space, Workspace } from "./model.js";
@@ -35,6 +37,7 @@ import { DownloadDestinations } from "./download-destinations.js";
 import { PageCards } from "./page-cards.js";
 import { Peek } from "./peek.js";
 import { Utilities } from "./utilities.js";
+import { Windows } from "./windows.js";
 import { applyDeviceAppearance } from "./device-appearance.js";
 import { Preferences } from "./preferences.js";
 import { isSettingsKey, Settings, settingsShortcut } from "./settings.js";
@@ -44,8 +47,15 @@ const model = new Model();
 const preferences = new Preferences();
 applyDeviceAppearance();
 const icons = new TabIcons(() => render());
-/** The window this sidebar draws: the saved window the launch reopens, once known. */
-let windowId: Guid = crypto.randomUUID();
+/** This browser window among Crest's: the core's window it draws, and the windows it opens. */
+const windows = new Windows({
+    model,
+    workspace: () => model.workspace,
+    space: shownSpace,
+    tab: shownTab,
+    report,
+    relayout: () => pageCards.layout(),
+});
 
 const root = document.getElementById("sidebar")!;
 const status = document.getElementById("status")!;
@@ -79,7 +89,7 @@ async function openSession(): Promise<Guid> {
 }
 
 function shownSpace(): Space | undefined {
-    const window = model.windows.get(windowId);
+    const window = model.windows.get(windows.windowId);
     return window ? model.workspace?.spaces.get(window.shownSpaceId) : undefined;
 }
 
@@ -89,7 +99,7 @@ function shownTab(): TabState | undefined {
 }
 
 function shownTabId(): Guid | null {
-    const window = model.windows.get(windowId);
+    const window = model.windows.get(windows.windowId);
     return window?.shownTabs.find((shown) => shown.spaceId === window.shownSpaceId)?.tabId ?? null;
 }
 
@@ -137,7 +147,7 @@ const sendChecked = (intent: Intent): Promise<boolean> =>
 const utilities = new Utilities({
     model,
     imageOf: (tabId) => icons.imageOf(tabId),
-    windowId: () => windowId,
+    windowId: () => windows.windowId,
     space: shownSpace,
     workspace: () => model.workspace,
     send: sendChecked,
@@ -145,7 +155,7 @@ const utilities = new Utilities({
 });
 const spaces = new SpaceActions({
     model,
-    windowId: () => windowId,
+    windowId: () => windows.windowId,
     send: sendChecked,
     edit: (spaceId, intent) => settings.openSpace(spaceId, intent),
 });
@@ -154,7 +164,7 @@ const settings = new Settings(
     {
         model,
         preferences,
-        windowId: () => windowId,
+        windowId: () => windows.windowId,
         space: shownSpace,
         tab: shownTab,
         spaces,
@@ -169,7 +179,7 @@ const sidebar = new Sidebar(
     {
         model,
         icons,
-        windowId: () => windowId,
+        windowId: () => windows.windowId,
         shownTabId,
         send: (intent) => void dispatch(intent).catch(report),
         openNewTab: () => palette.open("newTab"),
@@ -177,12 +187,13 @@ const sidebar = new Sidebar(
             model,
             icons,
             rename,
-            windowId: () => windowId,
+            windowId: () => windows.windowId,
             shownTabId,
             send: sendChecked,
             report,
             perform: (command) => void commands.perform(command),
             openSettings: () => settings.open(),
+            windows,
         }),
         rename,
         utilities,
@@ -193,7 +204,7 @@ const sidebar = new Sidebar(
 
 const commands = new Commands({
     model,
-    windowId: () => windowId,
+    windowId: () => windows.windowId,
     workspace: () => model.workspace,
     space: shownSpace,
     tab: shownTab,
@@ -210,23 +221,25 @@ const commands = new Commands({
         },
         close: () => peek.close(),
     },
+    windows,
 });
 
 // The page cards: the shown tab's, or its split's side by side, with a Peek
 // over them.
 const pageCards: PageCards = new PageCards({
     model,
-    windowId: () => windowId,
+    windowId: () => windows.windowId,
     workspace: () => model.workspace,
     space: shownSpace,
     shownTabId,
     send: sendChecked,
     report,
     peek: () => peek.placement(),
+    shows: (pageId) => windows.shows(pageId),
 });
 const peek: Peek = new Peek({
     model,
-    windowId: () => windowId,
+    windowId: () => windows.windowId,
     workspace: () => model.workspace,
     shownCards: () => pageCards.shownCards(),
     report,
@@ -263,7 +276,7 @@ listenToFloat(
 const palette = new Palette({
     icons,
     commands,
-    windowId: () => windowId,
+    windowId: () => windows.windowId,
     workspace: () => model.workspace,
     space: shownSpace,
     tab: shownTab,
@@ -289,7 +302,7 @@ const startPalette = new Palette(
     {
         icons,
         commands,
-        windowId: () => windowId,
+        windowId: () => windows.windowId,
         workspace: () => model.workspace,
         space: shownSpace,
         tab: shownTab,
@@ -446,10 +459,26 @@ function followShownPage(): void {
     // A tab with no page of its own, or no tab: the card shows Crest's own
     // view, and the window shows no page over it. Not before the window is
     // open: the Start Page's bar asks the core for suggestions for it.
-    const open = model.windows.has(windowId);
+    const open = model.windows.has(windows.windowId);
     showStartPage(open && (!tab || (!page && tab.surface === "StartPage")));
     showFailure(page?.live.failure != null ? page : undefined);
     pageCards.follow();
+}
+
+/** Whether the changes arriving are new, not the history a page that starts late replays. */
+let live = false;
+
+/**
+ * A page a page of this window opened as a window of its own shows as a
+ * Quick Window over this one, in the opener's Space, as the Mac's popups do:
+ * the person keeps it as a tab or lets it go.
+ */
+function openPopups(changes: readonly Change[]): void {
+    for (const change of changes) {
+        if (change.kind !== "OfferedWindowAdopted" || change.value.windowId !== windows.windowId) continue;
+        const { pageId, spaceId, url } = change.value;
+        openWindow("quick", null, { target: windows.windowId, space: spaceId, page: pageId, url }, true);
+    }
 }
 
 function report(error: unknown): void {
@@ -489,6 +518,8 @@ async function start(): Promise<void> {
             spaces.apply(changes);
             spaceEditor.follow();
             settings.follow();
+            windows.follow(changes);
+            if (live) openPopups(changes);
         },
         (bytes) => {
             try {
@@ -501,26 +532,14 @@ async function start(): Promise<void> {
             }
         },
     );
+    live = true;
     const workspaceId = await openSession();
     await preferences.adopt(report);
-    // The launch reopens the window the person left, with the Space and tabs
-    // it showed, as the Mac's launch does.
-    // TODO(linux): reopen every saved window, and run the setup the plan
-    // names, once the Linux shell draws more than one window and onboarding.
-    const plan = await query("LaunchWindows", { environment: launchEnvironment });
-    windowId = plan.startupWindowId;
-    await dispatch({
-        kind: "OpenWindow",
-        value: {
-            windowId,
-            workspaceId,
-            saved: true,
-            copyingWindowId: null,
-            showingSpaceId: null,
-            showingTabs: [],
-            restoresTabs: true,
-        },
-    });
+    // The launch reopens the windows the person left, each with the Space and
+    // tabs it showed, as the Mac's launch does; a window opened later opens
+    // as its address says.
+    // TODO(linux): run the setup the plan names once Linux draws onboarding.
+    await windows.open(workspaceId, () => query("LaunchWindows", { environment: launchEnvironment }));
     say("");
 }
 
