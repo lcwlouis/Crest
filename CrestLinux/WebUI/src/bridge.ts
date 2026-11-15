@@ -274,6 +274,15 @@ export async function pageRequest<K extends PageRequest["kind"] & keyof PageRequ
     return result;
 }
 
+/**
+ * Shows the certificate the engine verified for the page's visible entry in
+ * Chromium's certificate viewer, over the page, as the Mac's Review
+ * Certificate opens the system's certificate panel as a sheet.
+ */
+export function showCertificate(pageId: string): void {
+    chrome.send("showCertificate", [pageId]);
+}
+
 /** Opens a finished download's file, given as its `file:` address, in the desktop's default app. */
 export function openDownload(fileUrl: string): void {
     chrome.send("openDownload", [fileUrl]);

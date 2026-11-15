@@ -21,12 +21,12 @@ import type {
     PermissionAsked,
     ScriptDialogAsked,
     ScriptDialogQuestion,
-    SiteOrigin,
 } from "../generated/crest_contracts.js";
 import { dispatch, query } from "./bridge.js";
 import type { FloatEvent } from "./float.js";
 import type { Model } from "./model.js";
 import type { DialogButton, DialogField, PromptFloatState } from "./prompt-float.js";
+import { siteName } from "./site-origin.js";
 import { FloatRank } from "./surfaces.js";
 import type { FloatSurface, FloatSurfaces } from "./surfaces.js";
 
@@ -58,13 +58,6 @@ const productName = "Crest";
 
 const ok: DialogButton = { label: "OK", isDefault: true, isCancel: false };
 const cancel: DialogButton = { label: "Cancel", isDefault: false, isCancel: true };
-
-/** The origin as a person reads it: the port only when it is not the scheme's default. */
-function displayName(origin: SiteOrigin): string {
-    const scheme = WebScheme.all.find((member) => WebScheme.facts[member].name === origin.scheme);
-    const port = scheme && WebScheme.facts[scheme].defaultPort === origin.port ? "" : `:${origin.port}`;
-    return `${origin.scheme}://${origin.host}${port}`;
-}
 
 /**
  * The page's server as a dialog names it, which the core formats: its host,
@@ -508,9 +501,9 @@ export class Prompts {
             kind: "permission",
             promptId: asked.promptId,
             symbol: facts.symbol,
-            site: displayName(question.origin),
+            site: siteName(question.origin),
             request: facts.requestTitle.text,
-            inside: displayName(question.origin) !== displayName(question.topLevelOrigin) ? `Inside ${displayName(question.topLevelOrigin)}` : null,
+            inside: siteName(question.origin) !== siteName(question.topLevelOrigin) ? `Inside ${siteName(question.topLevelOrigin)}` : null,
             remember: `Remember in ${space}`,
         };
         const focus = restoring || this.placedPermission !== asked.promptId;

@@ -26,17 +26,23 @@
 #include "components/input/native_web_keyboard_event.h"
 #include "third_party/blink/public/common/input/web_input_event.h"
 #include "ui/events/keycodes/keyboard_codes.h"
+#include "chrome/browser/certificate_viewer.h"
 #include "chrome/browser/platform_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_paths.h"
 #include "net/base/filename_util.h"
+#include "net/cert/x509_certificate.h"
 #include "ui/shell_dialogs/select_file_dialog.h"
 #include "ui/shell_dialogs/select_file_policy.h"
 #include "ui/shell_dialogs/selected_file_info.h"
 #include "url/gurl.h"
 #include "chrome/browser/ui/crest/crest_core_host_linux.h"
 #include "chrome/browser/ui/crest/crest_engine_binding.h"
+#include "chrome/browser/ui/crest/crest_engine_page.h"
 #include "chrome/browser/ui/crest/crest_linux_window.h"
+#include "content/public/browser/navigation_controller.h"
+#include "content/public/browser/navigation_entry.h"
+#include "content/public/browser/ssl_status.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_data_source.h"
@@ -287,6 +293,8 @@ class CrestUIHandler final : public content::WebUIMessageHandler, public CoreHos
         "copyLink", base::BindRepeating(&CrestUIHandler::HandleCopyLink, base::Unretained(this)));
     web_ui()->RegisterMessageCallback(
         "setOverlay", base::BindRepeating(&CrestUIHandler::HandleSetOverlay, base::Unretained(this)));
+    web_ui()->RegisterMessageCallback(
+        "showCertificate", base::BindRepeating(&CrestUIHandler::HandleShowCertificate, base::Unretained(this)));
     // Downloads (Linux shell).
     web_ui()->RegisterMessageCallback(
         "openDownload", base::BindRepeating(&CrestUIHandler::HandleOpenDownload, base::Unretained(this)));
@@ -495,6 +503,20 @@ class CrestUIHandler final : public content::WebUIMessageHandler, public CoreHos
   void HandleSetOverlay(const base::ListValue& args) {
     if (args.size() != 1 || !args[0].is_bool()) return;
     if (LinuxWindow* window = LinuxWindow::Current()) window->SetOverlay(args[0].GetBool());
+  }
+
+  // args: the core's page id. Site Controls' Review Certificate: shows the
+  // certificate the engine verified for the page's visible entry in
+  // Chromium's certificate viewer, a dialog over the page, as the Mac's opens
+  // the system's certificate panel as a sheet on its window.
+  void HandleShowCertificate(const base::ListValue& args) {
+    if (args.size() != 1 || !args[0].is_string()) return;
+    const std::optional<engine::Guid> id = ParseGuid(args[0].GetString());
+    EnginePage* page = id ? EngineBinding::Get().Find(GuidText(*id)) : nullptr;
+    content::WebContents* contents = page ? page->web_contents() : nullptr;
+    content::NavigationEntry* entry = contents ? contents->GetController().GetVisibleEntry() : nullptr;
+    if (!entry || !entry->GetSSL().certificate) return;
+    ShowCertificateViewer(contents, contents->GetTopLevelNativeWindow(), entry->GetSSL().certificate.get());
   }
 
   // --- Downloads (Linux shell) ----------------------------------------------

@@ -6,6 +6,7 @@
 // notice layer shows it: over the page on the floating view, or in the
 // WebUI itself while that is raised over the page.
 
+import { BrowsingDataCategory } from "../generated/crest_contracts.js";
 import type { FloatEvent } from "./float.js";
 import { measure, noticeCapsule, noticeShadowRoom, noticeTop } from "./page-layers.js";
 import type { PageLayerState } from "./page-layers.js";
@@ -35,6 +36,15 @@ export const Notices = {
     copied: { message: "Copied", symbol: "checkmark.circle.fill", label: null } satisfies Notice,
     /** The page's zoom, as `label` names it, such as "125%". */
     pageZoom: (label: string): Notice => ({ message: label, symbol: "textformat.size", label: `Page zoom ${label}` }),
+    /** Clearing one site's `category` ended: cleared by every engine, or not. */
+    siteData: (category: BrowsingDataCategory, cleared: boolean): Notice => {
+        const facts = BrowsingDataCategory.facts[category];
+        return {
+            message: ((cleared ? facts.clearedTitle : facts.failedTitle) ?? facts.title).text,
+            symbol: cleared ? "checkmark.circle.fill" : "exclamationmark.triangle.fill",
+            label: null,
+        };
+    },
     /** An action that could not run, with `reason` saying why. */
     failure: (reason: string): Notice => ({ message: reason, symbol: "exclamationmark.triangle.fill", label: null }),
 } as const;
