@@ -1,0 +1,342 @@
+/* Site Controls: the trigger in the address field's trailing slot
+   (BrowserSiteControlTrigger) and its popover on Crest's flyout surface
+   (BrowserSiteControlPopover, BrowserSiteControlMetrics). */
+
+/* --- The trigger: CrestChromeButtonStyle at the tab trailing control's size --- */
+
+.site-control-trigger {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--tab-trailing-control-size);
+  height: var(--tab-trailing-control-size);
+  padding: 0;
+  border: none;
+  border-radius: var(--crest-radius-compact);
+  background: none;
+  color: var(--crest-secondary);
+  transition: background var(--crest-dur-hover), transform var(--crest-dur-press);
+}
+
+.site-control-trigger[hidden] {
+  display: none;
+}
+
+.site-control-trigger:hover,
+.site-control-trigger[aria-expanded="true"] {
+  background: var(--crest-hover);
+}
+
+.site-control-trigger:active {
+  background: var(--crest-selection);
+  transform: scale(var(--crest-button-pressed-scale));
+}
+
+.site-control-trigger.warning {
+  color: var(--crest-warning);
+}
+
+/* The page blocked a pop-up: a dot at the glyph's top trailing corner. */
+.site-control-badge {
+  position: absolute;
+  top: calc(50% - 7px);
+  left: calc(50% + 4px);
+  display: none;
+  width: 7px;
+  height: 7px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  background: var(--crest-warning);
+  box-shadow: 0 0 0 1px var(--crest-window-background);
+}
+
+.site-control-trigger.warning .site-control-badge {
+  display: block;
+}
+
+.site-control-trigger:focus-visible,
+.site-controls button:focus-visible {
+  outline: var(--crest-field-focus-ring) solid color-mix(in srgb, var(--crest-accent) 32%, transparent);
+  outline-offset: 1px;
+}
+
+/* --- The popover --- */
+
+.site-control-layer {
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--z-feedback) - 1);
+  outline: none;
+}
+
+.site-controls {
+  position: fixed;
+  width: var(--site-control-width);
+  box-sizing: border-box;
+  overflow-y: auto;
+  border-radius: var(--crest-radius-control);
+  background: var(--menu-background);
+  box-shadow: inset 0 0 0 0.5px var(--menu-border), var(--menu-shadow);
+  color: var(--crest-primary);
+  font: var(--crest-text-body) var(--crest-font-ui);
+  outline: none;
+  cursor: default;
+}
+
+.site-controls .symbol-knockout {
+  stroke: var(--menu-background);
+  fill: var(--menu-background);
+}
+
+.site-controls-content,
+.site-control-settings,
+.site-control-permissions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--crest-space-m);
+}
+
+.site-controls-content {
+  padding: var(--crest-space-m);
+}
+
+.site-control-divider {
+  flex: none;
+  height: 1px;
+  background: var(--menu-separator);
+}
+
+.site-control-spacer {
+  flex: 1;
+  min-width: var(--crest-space-s);
+}
+
+.site-control-glyph {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+}
+
+.site-control-chevron {
+  display: inline-flex;
+  flex: none;
+  color: var(--crest-secondary);
+  opacity: 0.7;
+}
+
+/* --- Header: BrowserSiteControlHeader --- */
+
+.site-control-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--crest-space-2xs);
+  min-width: 0;
+}
+
+.site-control-title {
+  overflow: hidden;
+  font-size: var(--crest-text-headline);
+  font-weight: 700;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.site-control-host,
+.site-control-detail,
+.site-control-notice-guidance {
+  margin: 0;
+  color: var(--crest-secondary);
+  font-size: var(--crest-text-caption);
+}
+
+.site-control-host {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* --- A blocked pop-up: BrowserBlockedPopupSiteControlNotice --- */
+
+.site-control-notice {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--crest-space-s);
+  padding: var(--crest-space-s);
+  border-radius: var(--crest-radius-control);
+  background: var(--crest-chrome-surface);
+}
+
+.site-control-notice-title {
+  display: flex;
+  align-items: center;
+  gap: var(--crest-space-xs);
+  font-size: var(--crest-text-caption);
+  font-weight: 600;
+}
+
+/* .crestPrimary at the small control size. */
+.site-control-primary {
+  height: 24px;
+  padding: 0 var(--crest-space-m);
+  border: none;
+  border-radius: var(--crest-radius-compact);
+  background: var(--crest-accent);
+  color: var(--crest-ink);
+  font: inherit;
+  font-size: var(--crest-text-callout);
+  font-weight: var(--crest-control-title-weight);
+  transition: background var(--crest-dur-hover), transform var(--crest-dur-press);
+}
+
+.site-control-primary:hover {
+  background: color-mix(in srgb, var(--crest-accent) 88%, var(--crest-ink));
+}
+
+.site-control-primary:active {
+  transform: scale(var(--crest-button-pressed-scale));
+  background: color-mix(in srgb, var(--crest-accent) 80%, var(--crest-ink));
+}
+
+/* --- Quick actions and site data: CrestChromeButtonStyle(showsRestingFill:) --- */
+
+.site-control-actions {
+  display: flex;
+  gap: var(--crest-space-s);
+}
+
+.site-control-action {
+  display: inline-flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: var(--crest-space-xs);
+  min-width: 0;
+  height: var(--site-control-action-height);
+  padding: 0 var(--crest-space-xs);
+  border: none;
+  border-radius: var(--crest-radius-compact);
+  background: var(--crest-chrome-surface);
+  color: inherit;
+  font: inherit;
+  transition: background var(--crest-dur-hover), transform var(--crest-dur-press);
+}
+
+.site-control-action:hover {
+  background: var(--crest-hover);
+}
+
+.site-control-action:active {
+  background: var(--crest-selection);
+  transform: scale(var(--crest-button-pressed-scale));
+}
+
+.site-control-action-title {
+  overflow: hidden;
+  font-size: var(--crest-text-caption);
+  font-weight: 500;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* --- Connection: BrowserSiteSecuritySection --- */
+
+.site-control-security {
+  display: flex;
+  flex-direction: column;
+  gap: var(--crest-space-s);
+}
+
+.site-control-origin {
+  overflow: hidden;
+  font: var(--crest-text-caption) ui-monospace, monospace;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.site-control-security-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--crest-space-xs);
+  font-size: var(--crest-text-caption);
+  font-weight: 600;
+}
+
+.site-control-security-label.success { color: var(--crest-success); }
+.site-control-security-label.warning { color: var(--crest-warning); }
+.site-control-security-label.danger { color: var(--crest-danger); }
+.site-control-security-label.secondary { color: var(--crest-secondary); }
+
+.site-control-certificate,
+.site-control-disclosure {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+}
+
+.site-control-certificate-word {
+  margin-right: var(--crest-space-s);
+  color: var(--crest-secondary);
+  font-size: var(--crest-text-caption);
+}
+
+/* --- Permissions: BrowserSitePermissionDisclosure, BrowserSitePermissionRow --- */
+
+.site-control-disclosure {
+  color: var(--crest-secondary);
+  font-size: var(--crest-text-caption);
+  font-weight: 600;
+}
+
+.site-control-permission {
+  display: flex;
+  align-items: center;
+  min-height: 20px;
+}
+
+.site-control-permission-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--crest-space-xs);
+  min-width: 0;
+  font-size: var(--crest-text-caption);
+}
+
+.site-control-permission-label .site-control-glyph {
+  width: 18px;
+}
+
+/* A borderless menu button: its choice and the menu's indicator. */
+.site-control-choice {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--crest-space-xs);
+  height: 20px;
+  padding: 0 var(--crest-space-xs);
+  border: none;
+  border-radius: var(--crest-radius-compact);
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: var(--crest-text-callout);
+  transition: background var(--crest-dur-hover);
+}
+
+.site-control-choice:hover,
+.site-control-choice[aria-expanded="true"] {
+  background: var(--crest-hover);
+}
+
+.site-control-choice:active {
+  background: var(--crest-selection);
+}
