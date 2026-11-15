@@ -1,6 +1,8 @@
 // An alert over the window, for the few decisions the Mac asks for in one:
-// confirming that a folder and what it holds go (its confirmationDialog), and
-// naming a pinned tab, whose tile has no title to edit in place (its alert).
+// confirming that a folder and what it holds go (its confirmationDialog),
+// naming a pinned tab, whose tile has no title to edit in place (its alert),
+// and confirming a Space's deletion or group change, with the Sub-Space that
+// takes over a deleted primary's group chosen from a popup.
 // Escape or Cancel dismisses it; Enter takes the default button.
 
 import { holdOverlay } from "./overlay.js";
@@ -17,6 +19,8 @@ export interface AlertContent {
     readonly title: string;
     readonly message?: string;
     readonly field?: { readonly value: string; readonly placeholder: string };
+    /** A choice among `options`, which a button's action is given as its text. */
+    readonly choice?: { readonly label: string; readonly options: readonly { readonly value: string; readonly title: string }[] };
     readonly buttons: readonly AlertButton[];
 }
 
@@ -37,14 +41,25 @@ export function showAlert(content: AlertContent): void {
     const title = element("h2", "alert-title", content.title);
     card.append(title);
     if (content.message) card.append(element("p", "alert-message", content.message));
-    const field = content.field ? element("input", "alert-field") : null;
-    if (field && content.field) {
-        field.value = content.field.value;
-        field.placeholder = content.field.placeholder;
-        field.spellcheck = false;
-        field.setAttribute("aria-label", content.field.placeholder);
-        card.append(field);
+    let field: HTMLInputElement | HTMLSelectElement | null = null;
+    if (content.field) {
+        const input = element("input", "alert-field");
+        input.value = content.field.value;
+        input.placeholder = content.field.placeholder;
+        input.spellcheck = false;
+        input.setAttribute("aria-label", content.field.placeholder);
+        field = input;
+    } else if (content.choice) {
+        const select = element("select", "alert-field alert-choice");
+        select.setAttribute("aria-label", content.choice.label);
+        for (const option of content.choice.options) {
+            const node = element("option", "", option.title);
+            node.value = option.value;
+            select.append(node);
+        }
+        field = select;
     }
+    if (field) card.append(field);
     const buttons = element("div", "alert-buttons");
     let done = false;
     const finish = (button: AlertButton | undefined): void => {
@@ -71,7 +86,7 @@ export function showAlert(content: AlertContent): void {
             finish(content.buttons.find((button) => button.role === "cancel"));
         } else if (event.key === "Enter") {
             const fallback = content.buttons.find((button) => button.role === "default");
-            if (!fallback && event.target === field) return;
+            if (!fallback && event.target === field && field instanceof HTMLInputElement) return;
             event.preventDefault();
             const focused = [...buttons.children].indexOf(document.activeElement as Element);
             finish(focused >= 0 ? content.buttons[focused] : fallback);
@@ -79,7 +94,7 @@ export function showAlert(content: AlertContent): void {
         event.stopPropagation();
     };
     window.addEventListener("keydown", onKey, true);
-    if (field) {
+    if (field instanceof HTMLInputElement) {
         field.focus();
         field.select();
     } else {
