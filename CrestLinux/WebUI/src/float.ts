@@ -3,7 +3,8 @@
 // while it stays in use (page-layers.ts). It keeps no state of its own: the
 // window's main WebUI sends the scene to draw (setFloat), each surface in a
 // layer of its own, and hears what the person did here (floatEvent); it
-// talks to the core itself.
+// talks to the core itself. Crest's keys pressed here go to the main WebUI,
+// which performs them as it does those the window takes from the page.
 
 import { infoBarStack, isPageLayerState, linkHoverLabel, noticeCapsule, openingCover } from "./page-layers.js";
 import type { PageLayerEvent, PageLayerState } from "./page-layers.js";
@@ -44,6 +45,16 @@ export type FloatEvent =
     | { readonly kind: "findNext" }
     | { readonly kind: "findPrevious" }
     | { readonly kind: "findClose" }
+    /** A key press with Ctrl, Alt or Meta that nothing here took, for the window's shortcuts. */
+    | {
+          readonly kind: "key";
+          readonly key: string;
+          readonly code: string;
+          readonly ctrlKey: boolean;
+          readonly altKey: boolean;
+          readonly metaKey: boolean;
+          readonly shiftKey: boolean;
+      }
     | PromptFloatEvent
     | PageLayerEvent;
 
@@ -111,6 +122,39 @@ field.addEventListener("keydown", (event) => {
         event.preventDefault();
         field.select();
     }
+});
+
+/**
+ * The keys a text field edits with, as Ctrl and the key: select all, copy,
+ * cut and paste (without Shift, which Copy Page Link adds to C), undo and redo
+ * (Shift too), and moving, selecting or deleting by word (Shift too).
+ */
+const editingKeys = new Set(["a", "c", "v", "x"]);
+const editingKeysWithShift = new Set(["z", "ArrowLeft", "ArrowRight", "Home", "End", "Backspace", "Delete"]);
+
+function edits(event: KeyboardEvent): boolean {
+    const target = event.target as HTMLElement | null;
+    const editable = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target?.isContentEditable === true;
+    if (!editable || !event.ctrlKey || event.altKey || event.metaKey) return false;
+    const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
+    return editingKeysWithShift.has(key) || (!event.shiftKey && editingKeys.has(key));
+}
+
+// Crest's shortcuts while this view has the keyboard, as while the page has
+// it: what a surface here did not take, and a field does not edit with, goes
+// to the main WebUI.
+document.addEventListener("keydown", (event) => {
+    if (event.defaultPrevented || event.isComposing || (!event.ctrlKey && !event.altKey && !event.metaKey)) return;
+    if (["Control", "Alt", "Meta", "Shift"].includes(event.key) || edits(event)) return;
+    send({
+        kind: "key",
+        key: event.key,
+        code: event.code,
+        ctrlKey: event.ctrlKey,
+        altKey: event.altKey,
+        metaKey: event.metaKey,
+        shiftKey: event.shiftKey,
+    });
 });
 
 /** The slots the layers draw in, one for each kind of surface. */
