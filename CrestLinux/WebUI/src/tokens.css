@@ -348,7 +348,6 @@
   --pin-tile-height: max(32px, calc(47px * var(--tab-scale)));
   --pin-tile-min-width: max(24px, calc(36px * var(--tab-scale)));
   --pin-spacing: max(2px, calc(8px * var(--tab-scale)));
-  --pin-max-columns: 4;                     /* automatic: round(4 / scale), clamped 1-6; user setting 1-6 overrides */
   --pin-selected-border: 2px;
   /* Columns (automatic): capacity = min(requested, floor((width + spacing) / (minWidth + spacing)));
      rows = ceil(count / capacity); columns = ceil(count / rows). So 5 pins make 3 + 2, not 4 + 1.
