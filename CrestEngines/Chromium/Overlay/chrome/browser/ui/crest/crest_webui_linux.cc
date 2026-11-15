@@ -4,6 +4,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "base/base64.h"
@@ -149,6 +150,14 @@ struct SelectionSearch {
   std::u16string engine;
 };
 
+// The engine each page the windows show searches a selection with, by the
+// page's binding key, as their WebUIs named them. Kept for the process, as
+// a page can show in any window, so the menu finds it whichever window asks.
+std::map<std::string, std::u16string>& SelectionSearches() {
+  static base::NoDestructor<std::map<std::string, std::u16string>> searches;
+  return *searches;
+}
+
 
 // --- Appearance (Linux shell) -----------------------------------------------
 // Settings' Appearance choice, which the Mac applies to the whole application
@@ -287,7 +296,10 @@ class CrestUIHandler final : public content::WebUIMessageHandler, public CoreHos
   CrestUIHandler() { Handlers().push_back(this); }
   CrestUIHandler(const CrestUIHandler&) = delete;
   CrestUIHandler& operator=(const CrestUIHandler&) = delete;
-  ~CrestUIHandler() override { std::erase(Handlers(), this); }
+  ~CrestUIHandler() override {
+    std::erase(Handlers(), this);
+    ForgetSelectionSearch();
+  }
 
   content::WebContents* contents() { return web_ui()->GetWebContents(); }
   const std::vector<Shortcut>& shortcuts() const { return shortcuts_; }
@@ -546,8 +558,27 @@ class CrestUIHandler final : public content::WebUIMessageHandler, public CoreHos
   void HandleSetSelectionSearch(const base::ListValue& args) {
     if (args.size() != 2 || !args[0].is_string() || !args[1].is_string()) return;
     const std::optional<engine::Guid> page = ParseGuid(args[0].GetString());
+    ForgetSelectionSearch();
     selection_search_ = SelectionSearch{.page = page ? GuidText(*page) : std::string(),
                                         .engine = base::UTF8ToUTF16(args[1].GetString())};
+    if (!selection_search_.page.empty() && !selection_search_.engine.empty()) {
+      SelectionSearches()[selection_search_.page] = selection_search_.engine;
+    }
+    VLOG(1) << "A window names the search for page " << selection_search_.page;
+  }
+
+  // The page this window showed no longer searches from here, unless another
+  // window shows it too.
+  void ForgetSelectionSearch() {
+    const std::string page = std::exchange(selection_search_.page, std::string());
+    if (page.empty()) return;
+    for (const CrestUIHandler* other : Handlers()) {
+      if (other != this && other->selection_search_.page == page) {
+        SelectionSearches()[page] = other->selection_search_.engine;
+        return;
+      }
+    }
+    SelectionSearches().erase(page);
   }
 
   // args: the core's clean copy of an address the page's menu copies.
@@ -816,10 +847,10 @@ void PerformCommand(LinuxWindow& window, const std::string& command) {
 }
 
 std::u16string SelectionSearchEngine(const std::string& page) {
-  // The window the search will go to names its engine.
-  const CrestUIHandler* handler = HandlerForPage(page);
-  if (!handler || page.empty() || handler->selection_search().page != page) return std::u16string();
-  return handler->selection_search().engine;
+  const auto& searches = SelectionSearches();
+  const auto found = page.empty() ? searches.end() : searches.find(page);
+  VLOG(1) << "The page menu over " << page << (found == searches.end() ? " offers no search" : " offers a search");
+  return found == searches.end() ? std::u16string() : found->second;
 }
 
 bool SearchSelection(const std::string& page, const std::u16string& text) {
