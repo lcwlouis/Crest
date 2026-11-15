@@ -68,13 +68,15 @@ class LinuxWindow final : public views::WidgetObserver {
   // `id` is the core's identity for a browser window, or empty until its
   // WebUI adopts one, as the launch's first window does. The window comes
   // forward when `activates`, and otherwise shows behind the window in use.
-  // It lives until it closes.
+  // It cascades from `over`, the window that asked for it, or else from the
+  // window in use. It lives until it closes.
   static LinuxWindow* Open(Profile* profile, const Kind& kind, const std::string& id, const std::string& query,
-                           bool activates);
+                           bool activates, LinuxWindow* over = nullptr);
   // The open window the core names `id`, or null.
   static LinuxWindow* Find(const std::string& id);
-  // The window the person is using: the active one, or else the one used
-  // last; null when none is open.
+  // The window the person is using: the one that came into use last, as
+  // the window manager activated it, Crest brought it forward or the person
+  // used its WebUI; null when none is open.
   static LinuxWindow* Active();
   // The window whose WebUI or floating surfaces `contents` draws, or null.
   static LinuxWindow* Drawing(const content::WebContents* contents);
@@ -114,8 +116,15 @@ class LinuxWindow final : public views::WidgetObserver {
   content::WebContents* ui_contents() const;
   content::WebContents* float_contents() const;
 
-  // Brings the window forward and gives it the keyboard.
+  // Brings the window forward and gives it the keyboard. It is the window
+  // in use at once, whether or not the window manager lets it come forward.
   void Present();
+  // The window is the one in use: Crest brought it forward, the window
+  // manager activated it, or the person used its WebUI. The window that was
+  // in use before hears it no longer is.
+  void TakeUse();
+  // Tells the WebUI whether the window is the one in use, as it opens.
+  void TellUse();
   // Closes the window without asking the WebUI again: it agreed, or the
   // window has nothing left to ask.
   void Close();
@@ -198,6 +207,12 @@ class LinuxWindow final : public views::WidgetObserver {
   void Closing();
   // Another window shows `page` now; this one stops showing it.
   void Surrender(const std::string& page);
+  // The window stopped showing `page`, which no window shows now: a window
+  // whose card shows its tab may show it again.
+  void LetGo(const std::string& page);
+  // The frames were read: a window with an id takes its own, and the
+  // launch's first window, held back until then, shows.
+  void FramesRead();
   // Shows `page` in the view of `slot`, which shows nothing.
   void Attach(Slot& slot, const std::string& page, content::WebContents* contents);
   // Lets the view of `slot` go of its page.
@@ -267,6 +282,11 @@ class LinuxWindow final : public views::WidgetObserver {
   bool float_focused_ = false;
   // When the person last used the window, in the order of every window's use.
   uint64_t used_ = 0;
+  // Whether the window is the one in use, as its WebUI last heard.
+  bool in_use_ = false;
+  // The launch's first window shows once the frames are read, at the frame
+  // the window it takes kept.
+  bool shows_when_framed_ = false;
   // Whether the window took the frame its id kept, or found none, so its own
   // frame is the one to keep.
   bool frame_restored_ = false;

@@ -62,6 +62,9 @@ constexpr float kPageCornerRadius = 13;
 // Mac's windows cascade. Wayland places windows itself and ignores it.
 constexpr int kCascadeStep = 22;
 
+// Whether every window is closing, as a quit closes them.
+bool g_closing_all = false;
+
 // --- Saved frames -------------------------------------------------------------
 // Each browser window keeps its frame under the core's id for it, as the
 // Mac's window keeps it under its autosave name, so a window the launch
@@ -77,6 +80,9 @@ struct SavedFrames {
   base::FilePath file;
   bool read = false;
   std::map<std::string, Frame> by_window;
+  // The browser window used last, which the next launch's first window
+  // takes, as the core's launch plan names it the startup window.
+  std::string frontmost;
   base::OneShotTimer save;
   scoped_refptr<base::SequencedTaskRunner> disk;
 };
@@ -98,8 +104,15 @@ std::string ReadFramesFile(const base::FilePath& file) {
 void WriteFrames() {
   SavedFrames& frames = Frames();
   frames.save.Stop();
-  if (frames.file.empty() || !frames.disk) return;
+  // Frames written before the file was read would lose the ones it keeps.
+  if (frames.file.empty() || !frames.disk || !frames.read) return;
+  // A quit keeps the window used last before its windows close one by one.
+  if (!g_closing_all) {
+    const std::vector<std::string> stacked = LinuxWindow::Stacked();
+    if (!stacked.empty()) frames.frontmost = stacked.front();
+  }
   base::DictValue saved;
+  if (!frames.frontmost.empty()) saved.Set("frontmost", frames.frontmost);
   for (const auto& [window, frame] : frames.by_window) {
     base::DictValue entry;
     entry.Set("x", frame.bounds.x());
@@ -198,9 +211,10 @@ class LinuxWindow::FocusObserver final : public content::WebContentsObserver {
 
 // static
 LinuxWindow* LinuxWindow::Open(Profile* profile, const Kind& kind, const std::string& id, const std::string& query,
-                               bool activates) {
-  // A window opening over one in use cascades from it.
-  LinuxWindow* in_use = Active();
+                               bool activates, LinuxWindow* over) {
+  // A window opening over the one that asked for it, or the one in use,
+  // cascades from it.
+  LinuxWindow* in_use = over ? over : Active();
   auto* window = new LinuxWindow(profile, kind, id);
   gfx::Rect bounds(gfx::Point(80, 80), kind.size);
   if (in_use) bounds.set_origin(in_use->widget()->GetWindowBoundsInScreen().origin() +
@@ -229,13 +243,20 @@ LinuxWindow* LinuxWindow::Open(Profile* profile, const Kind& kind, const std::st
   if (!query.empty()) address.SetQueryStr(query);
   window->ui_->LoadInitialURL(GURL(kCrestUIURL).ReplaceComponents(address));
   window->float_->LoadInitialURL(GURL(kCrestFloatURL));
-  // A window opened behind the one in use stays behind it in the order of
-  // use too, until the person comes to it.
-  if (activates || !GetLinuxUI()) {
+  // A window opened in front is the one in use at once; one opened behind
+  // the one in use stays behind it in the order of use too, until the person
+  // comes to it.
+  if (activates) {
+    window->TakeUse();
+  } else if (!GetLinuxUI()) {
     window->used_ = ++g_uses;
     SetLinuxUI(&window->ui_shell_);
   }
-  if (activates) {
+  // The launch's first window waits for the frames, which are read in a
+  // moment, so it does not show at the default frame and then move.
+  if (kind.browses && id.empty() && activates && Frames().disk && !Frames().read) {
+    window->shows_when_framed_ = true;
+  } else if (activates) {
     window->widget_->Show();
   } else {
     window->widget_->ShowInactive();
@@ -257,6 +278,7 @@ void LinuxWindow::LoadFrames(const base::FilePath& file) {
         SavedFrames& frames = Frames();
         frames.read = true;
         if (std::optional<base::DictValue> saved = base::JSONReader::ReadDict(json, base::JSON_PARSE_RFC)) {
+          if (const std::string* frontmost = saved->FindString("frontmost")) frames.frontmost = *frontmost;
           for (const auto [window, value] : *saved) {
             const base::DictValue* entry = value.GetIfDict();
             if (!entry) continue;
@@ -270,7 +292,7 @@ void LinuxWindow::LoadFrames(const base::FilePath& file) {
                                                        .maximized = entry->FindBool("maximized").value_or(false)});
           }
         }
-        for (LinuxWindow* window : Windows()) window->RestoreFrame();
+        for (LinuxWindow* window : std::vector<LinuxWindow*>(Windows())) window->FramesRead();
       }));
 }
 
@@ -294,7 +316,7 @@ gfx::Rect LinuxWindow::OnScreen(const gfx::Rect& bounds) {
 LinuxWindow* LinuxWindow::Active() {
   LinuxWindow* latest = nullptr;
   for (LinuxWindow* window : Windows()) {
-    if (window->widget_->IsActive()) return window;
+    if (window->in_use_) return window;
     if (!latest || window->used_ > latest->used_) latest = window;
   }
   return latest;
@@ -328,6 +350,9 @@ bool LinuxWindow::AnyBrowsing() {
 
 // static
 void LinuxWindow::CloseAll() {
+  // The window used last is the one the next launch opens first.
+  if (const std::vector<std::string> stacked = Stacked(); !stacked.empty()) Frames().frontmost = stacked.front();
+  g_closing_all = true;
   // Each closes later, once its widget unwinds; the list stays as it is
   // until then.
   for (LinuxWindow* window : std::vector<LinuxWindow*>(Windows())) window->Close();
@@ -376,6 +401,24 @@ void LinuxWindow::Adopt(const std::string& id) {
   RestoreFrame();
 }
 
+void LinuxWindow::FramesRead() {
+  if (!shows_when_framed_) {
+    RestoreFrame();
+    return;
+  }
+  shows_when_framed_ = false;
+  // The window it takes is the last launch's frontmost, until it has an id.
+  SavedFrames& frames = Frames();
+  const auto found = frames.by_window.find(id_.empty() ? frames.frontmost : id_);
+  const std::optional<Frame> frame =
+      found == frames.by_window.end() ? std::nullopt : std::optional<Frame>(found->second);
+  if (frame) widget_->SetBounds(OnScreen(frame->bounds));
+  frame_restored_ = !id_.empty();
+  widget_->Show();
+  if (frame && frame->maximized) widget_->Maximize();
+  if (frame_restored_ && !frame) RememberFrame();
+}
+
 void LinuxWindow::RestoreFrame() {
   SavedFrames& frames = Frames();
   if (!kind_.browses || id_.empty() || frame_restored_ || !frames.read) return;
@@ -386,6 +429,8 @@ void LinuxWindow::RestoreFrame() {
     return;
   }
   const Frame frame = found->second;
+  // Already there, as the launch's first window is when it opened at it.
+  if (frame.maximized == widget_->IsMaximized() && frame.bounds == widget_->GetRestoredBounds()) return;
   if (widget_->IsMaximized()) widget_->Restore();
   widget_->SetBounds(OnScreen(frame.bounds));
   if (frame.maximized) widget_->Maximize();
@@ -410,6 +455,30 @@ void LinuxWindow::Present() {
   if (widget_->IsMinimized()) widget_->Restore();
   widget_->Show();
   widget_->Activate();
+  // A window manager that keeps the focus where it is still leaves this the
+  // window in use, as the Mac's window Crest orders front is key.
+  TakeUse();
+}
+
+void LinuxWindow::TakeUse() {
+  used_ = ++g_uses;
+  SetLinuxUI(&ui_shell_);
+  // The window coming into use brings the page in use there with it, as
+  // the Mac's key window does.
+  EngineBinding::Get().Browsers().WindowInUse(
+      [this](content::WebContents* contents) { return Shows(contents); });
+  for (LinuxWindow* other : Windows()) {
+    if (other == this || !other->in_use_) continue;
+    other->in_use_ = false;
+    ReportWindowActive(*other, false);
+  }
+  if (in_use_) return;
+  in_use_ = true;
+  ReportWindowActive(*this, true);
+}
+
+void LinuxWindow::TellUse() {
+  ReportWindowActive(*this, in_use_);
 }
 
 void LinuxWindow::Close() {
@@ -450,15 +519,12 @@ void LinuxWindow::OnWidgetBoundsChanged(views::Widget* widget, const gfx::Rect& 
 
 void LinuxWindow::OnWidgetActivationChanged(views::Widget* widget, bool active) {
   if (active) {
-    used_ = ++g_uses;
-    SetLinuxUI(&ui_shell_);
-    // The window coming into use brings the page in use there with it, as
-    // the Mac's key window does.
-    EngineBinding::Get().Browsers().WindowInUse(
-        [this](content::WebContents* contents) { return Shows(contents); });
+    TakeUse();
     FocusInUse();
+    return;
   }
-  ReportWindowActive(*this, active);
+  in_use_ = false;
+  ReportWindowActive(*this, false);
 }
 
 // The pages are shown as the Mac shows them: the engine's ShowPage makes a
@@ -479,9 +545,11 @@ void LinuxWindow::SetPageLayout(const std::vector<PageSlot>& layout, const std::
   const auto is_wanted = [&](const std::string& page) {
     return std::ranges::any_of(wanted, [&](const PageSlot& place) { return place.page == page; });
   };
+  std::vector<std::string> freed;
   for (Slot& slot : slots_) {
     if (slot.page.empty() || is_wanted(slot.page)) continue;
     if (EnginePage* hidden = binding.Find(slot.page)) hidden->Answer(engine::HidePage{.page_id = hidden->id()});
+    freed.push_back(slot.page);
     Detach(slot);
   }
 
@@ -538,6 +606,7 @@ void LinuxWindow::SetPageLayout(const std::vector<PageSlot>& layout, const std::
     if (EnginePage* shown = binding.Find(in_use)) shown->Answer(engine::ShowPage{.page_id = shown->id()});
   }
   if (focus_moved || !attached.empty()) FocusInUse();
+  for (const std::string& page : freed) LetGo(page);
 }
 
 bool LinuxWindow::ShowPage(const std::string& page) {
@@ -578,6 +647,13 @@ void LinuxWindow::Surrender(const std::string& page) {
   if (!SlotShowing(page)) return;
   ReleasePage(page);
   ReportPageLeft(*this, page);
+}
+
+void LinuxWindow::LetGo(const std::string& page) {
+  if (g_closing_all) return;
+  for (LinuxWindow* other : Windows()) {
+    if (other != this) ReportPageFree(*other, page);
+  }
 }
 
 bool LinuxWindow::Shows(const content::WebContents* contents) const {
@@ -701,11 +777,22 @@ void LinuxWindow::Closing() {
         Windows(), [this](const LinuxWindow* other) { return other != this && other->kind_.browses; });
     if (last) WriteFrames();
   }
-  // The window does not own the pages it shows; it lets go before they go.
-  for (Slot& slot : slots_) Detach(slot);
+  // The window does not own the pages it shows; it lets go before they go,
+  // and a window whose card shows one shows it again.
+  std::vector<std::string> shown;
+  for (Slot& slot : slots_) {
+    if (!slot.page.empty()) shown.push_back(slot.page);
+    Detach(slot);
+  }
   focused_page_.clear();
   observation_.Reset();
   std::erase(Windows(), this);
+  for (const std::string& page : shown) LetGo(page);
+  // The window used before this one is the one in use, as the Mac's next
+  // window becomes key, whether or not the window manager activates it.
+  if (in_use_ && !g_closing_all) {
+    if (LinuxWindow* next = Active()) next->TakeUse();
+  }
   if (GetLinuxUI() == &ui_shell_) {
     LinuxWindow* next = Active();
     SetLinuxUI(next ? &next->ui_shell_ : nullptr);

@@ -60,6 +60,7 @@ const windows = new Windows({
     tab: shownTab,
     report,
     relayout: () => pageCards.layout(),
+    pageLeft: (pageId) => pageStates.pageLeft(pageId),
 });
 
 const root = document.getElementById("sidebar")!;

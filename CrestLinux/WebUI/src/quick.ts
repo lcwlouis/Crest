@@ -85,6 +85,7 @@ class QuickWindow {
                 if (active) this.recordActivity();
             },
             pageLeft: () => this.layout(),
+            pageFree: () => this.layout(),
             pageArrived: () => undefined,
             showSpace: () => undefined,
             openExternal: () => undefined,

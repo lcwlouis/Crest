@@ -386,6 +386,11 @@ export function presentThisWindow(): void {
     chrome.send("presentWindow");
 }
 
+/** Tells the shell the person used this page's window, which is the one in use, though the window manager may not have activated it. */
+export function useThisWindow(): void {
+    chrome.send("useWindow");
+}
+
 /** Tells the shell the core opened the window `windowId` for this page's window. */
 export function adoptWindow(windowId: Guid): void {
     chrome.send("adoptWindow", [windowId]);
@@ -419,6 +424,8 @@ export interface WindowEvents {
     activeChanged(active: boolean): void;
     /** Another window shows the page `pageId` now. */
     pageLeft(pageId: Guid): void;
+    /** No window shows the page `pageId` now. */
+    pageFree(pageId: Guid): void;
     /** The window shows the page `pageId`, which the engine keeps for another window. */
     pageArrived(pageId: Guid): void;
     /** A tab the engine opened for this window joins the Space `spaceId`. */
@@ -432,6 +439,7 @@ export function listenToWindow(events: WindowEvents): void {
     listen("crest-close-requested", (last) => events.closeRequested(last as boolean));
     listen("crest-window-active", (active) => events.activeChanged(active as boolean));
     listen("crest-page-left", (pageId) => events.pageLeft((pageId as string).toLowerCase()));
+    listen("crest-page-free", (pageId) => events.pageFree((pageId as string).toLowerCase()));
     listen("crest-page-arrived", (pageId) => events.pageArrived((pageId as string).toLowerCase()));
     listen("crest-show-space", (spaceId) => events.showSpace((spaceId as string).toLowerCase()));
     listen("crest-open-external", (urls) => events.openExternal(urls as string[]));

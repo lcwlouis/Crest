@@ -7,7 +7,8 @@
 // A tab's page is one live page, whichever window shows the tab, as the
 // Mac's windows share their pages: the window in use shows it, and moves it
 // into its own part of the engine; a window in the background that the page
-// left shows its card empty until the person comes back to it.
+// left shows its card empty until the person comes back to it, or until no
+// window shows the page.
 
 import type { Change, Guid, Intent, TabState } from "../generated/crest_contracts.js";
 import {
@@ -19,6 +20,7 @@ import {
     pageRequest,
     presentWindow,
     query,
+    useThisWindow,
     Refused,
     requestClose,
     setWindowTitle,
@@ -35,6 +37,8 @@ export interface WindowsContext {
     readonly report: (error: unknown) => void;
     /** The pages the window may show changed: it lays them out again. */
     readonly relayout: () => void;
+    /** Another window took the page `pageId`, which this one no longer shows. */
+    readonly pageLeft: (pageId: Guid) => void;
 }
 
 /** How this window's WebUI was opened, from the parameters in its address. */
@@ -88,12 +92,23 @@ export class Windows {
             activeChanged: (active) => this.activeChanged(active),
             pageLeft: (pageId) => {
                 this.left.add(pageId);
+                this.context.pageLeft(pageId);
                 this.context.relayout();
+            },
+            // The window that took the page let it go: this one shows it again where its card shows the tab.
+            pageFree: (pageId) => {
+                if (this.left.delete(pageId)) this.context.relayout();
             },
             pageArrived: (pageId) => void this.claim(pageId),
             showSpace: (spaceId) => void this.send({ kind: "ShowSpace", value: { windowId: this.id, spaceId } }),
             openExternal: (urls) => void this.openExternal(urls),
         });
+        // The person using the window's WebUI makes it the window in use,
+        // though the window manager may keep the focus elsewhere, so what it
+        // asks for opens over it and the pages it shows stay in it.
+        for (const event of ["pointerdown", "keydown"]) {
+            window.addEventListener(event, () => this.used(), { capture: true, passive: true });
+        }
     }
 
     /** The core's id for this window. */
@@ -211,6 +226,11 @@ export class Windows {
         if (moved) presentWindow(destination);
     }
 
+    /** The person used the window: the shell makes it the one in use, which it then hears. */
+    private used(): void {
+        if (!this.active) useThisWindow();
+    }
+
     /** The person came to the window, or left it: in use, it shows every page it shows a tab of. */
     private activeChanged(active: boolean): void {
         this.active = active;
@@ -238,6 +258,8 @@ export class Windows {
             this.context.report(error);
         } finally {
             this.claiming.delete(pageId);
+            // A page that moved between the engine's windows shows where its card is.
+            this.context.relayout();
         }
     }
 

@@ -358,6 +358,8 @@ class CrestUIHandler final : public content::WebUIMessageHandler, public CoreHos
     web_ui()->RegisterMessageCallback(
         "presentWindow", base::BindRepeating(&CrestUIHandler::HandlePresentWindow, base::Unretained(this)));
     web_ui()->RegisterMessageCallback(
+        "useWindow", base::BindRepeating(&CrestUIHandler::HandleUseWindow, base::Unretained(this)));
+    web_ui()->RegisterMessageCallback(
         "setWindowTitle", base::BindRepeating(&CrestUIHandler::HandleSetWindowTitle, base::Unretained(this)));
     web_ui()->RegisterMessageCallback(
         "stackedWindows", base::BindRepeating(&CrestUIHandler::HandleStackedWindows, base::Unretained(this)));
@@ -638,8 +640,12 @@ class CrestUIHandler final : public content::WebUIMessageHandler, public CoreHos
     const std::string id = args.size() == 1 ? WindowKey(args[0]) : std::string();
     LinuxWindow* window = Window();
     if (id.empty() || !window) return;
+    AllowJavascript();
     window->Adopt(id);
     WindowAdopted(id);
+    // A window opened behind, or one another came in front of while its
+    // WebUI started, hears it is not the one in use.
+    window->TellUse();
   }
 
   // args: the kind of window ("browser" or "quick"), the core's id of a
@@ -658,7 +664,9 @@ class CrestUIHandler final : public content::WebUIMessageHandler, public CoreHos
       if (args[3].GetBool()) open->Present();
       return;
     }
-    LinuxWindow::Open(Profile::FromWebUI(web_ui()), *kind, id, args[2].GetString(), args[3].GetBool());
+    // It opens over the window that asked for it, as a Quick Window opens
+    // over the window it promotes into.
+    LinuxWindow::Open(Profile::FromWebUI(web_ui()), *kind, id, args[2].GetString(), args[3].GetBool(), Window());
   }
 
   // The WebUI agreed to its window closing, or closes it itself.
@@ -673,6 +681,12 @@ class CrestUIHandler final : public content::WebUIMessageHandler, public CoreHos
 
   void HandlePresentWindow(const base::ListValue& args) {
     if (LinuxWindow* window = Window()) window->Present();
+  }
+
+  // The person used the window's WebUI: the window is the one in use, though
+  // the window manager may not have activated it.
+  void HandleUseWindow(const base::ListValue& args) {
+    if (LinuxWindow* window = Window()) window->TakeUse();
   }
 
   // args: the window's title, as the desktop's window list names it.
@@ -874,6 +888,10 @@ void ReportPageFocused(LinuxWindow& window, const std::string& page) {
 
 void ReportPageLeft(LinuxWindow& window, const std::string& page) {
   Tell(window, "crest-page-left", base::Value(page));
+}
+
+void ReportPageFree(LinuxWindow& window, const std::string& page) {
+  Tell(window, "crest-page-free", base::Value(page));
 }
 
 void ReportPageArrived(LinuxWindow& window, const std::string& page) {
