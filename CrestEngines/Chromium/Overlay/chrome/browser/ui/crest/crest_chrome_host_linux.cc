@@ -8,6 +8,7 @@
 // Crest UI that Linux does not draw yet keep Chromium's own behavior or
 // decline, and say so where they do.
 
+#include <algorithm>
 #include <memory>
 #include <optional>
 #include <string>
@@ -38,6 +39,7 @@
 #include "chrome/browser/ui/crest/crest_webui_linux.h"
 #include "chrome/browser/ui/toasts/api/toast_id.h"
 #include "components/permissions/permission_request.h"
+#include "components/permissions/request_type.h"
 #include "components/renderer_context_menu/render_view_context_menu_observer.h"
 #include "content/public/browser/context_menu_params.h"
 #include "content/public/browser/navigation_throttle.h"
@@ -328,7 +330,12 @@ std::unique_ptr<permissions::PermissionPrompt> CreatePermissionPrompt(
 void AnswerPermissionRequests(permissions::PermissionPrompt::Delegate& delegate, bool grants, bool remembers) {
   base::AutoReset<raw_ptr<const permissions::PermissionPrompt::Delegate>> answering(
       &State().answering_permission, &delegate);
-  if (grants && remembers) {
+  // Chromium allows several downloads only for good: its download request
+  // refuses an answer for this time alone.
+  const bool downloads = std::ranges::any_of(delegate.Requests(), [](const auto& request) {
+    return request->request_type() == permissions::RequestType::kMultipleDownloads;
+  });
+  if (grants && (remembers || downloads)) {
     delegate.Accept(std::monostate());
   } else if (grants) {
     delegate.AcceptThisTime(std::monostate());
