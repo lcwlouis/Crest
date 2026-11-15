@@ -1,5 +1,6 @@
 #include "chrome/browser/ui/crest/crest_webui_linux.h"
 
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -150,13 +151,20 @@ base::FilePath FreeDownloadPath(const base::FilePath& name) {
 
 // The save dialog for one download, which deletes itself once answered, as
 // Chromium's DownloadFilePicker. Answers the path, or none when the person
-// cancels; `unavailable` when no dialog can be shown.
+// cancels; `unavailable` when no dialog can be shown. A dialog whose question
+// the core settles first (the download cancelled, its page closed) is closed
+// by its key, as the Mac's BrowserPromptDismissal closes its panel.
 class DownloadSaveDialog final : public ui::SelectFileDialog::Listener {
  public:
   using Answer = base::OnceCallback<void(base::FilePath path, bool unavailable)>;
 
-  static void Show(content::WebContents* contents, const base::FilePath& suggested, Answer answer) {
-    auto* listener = new DownloadSaveDialog(std::move(answer));
+  static void Show(content::WebContents* contents,
+                   const std::string& key,
+                   const base::FilePath& suggested,
+                   Answer answer) {
+    Close(key);
+    auto* listener = new DownloadSaveDialog(key, std::move(answer));
+    Open()[key] = listener;
     listener->dialog_ = ui::SelectFileDialog::Create(listener, nullptr);
     if (!listener->dialog_) {
       listener->Finish(base::FilePath(), true);
@@ -166,21 +174,35 @@ class DownloadSaveDialog final : public ui::SelectFileDialog::Listener {
                                   nullptr, 0, base::FilePath::StringType(), contents->GetTopLevelNativeWindow());
   }
 
+  // Closes the dialog asked under `key`, if it is open; it answers as cancelled.
+  static void Close(const std::string& key) {
+    auto open = Open().find(key);
+    if (open != Open().end()) open->second->Finish(base::FilePath(), false);
+  }
+
   // ui::SelectFileDialog::Listener:
   void FileSelected(const ui::SelectedFileInfo& file, int index) override { Finish(file.path(), false); }
   void FileSelectionCanceled() override { Finish(base::FilePath(), false); }
 
  private:
-  explicit DownloadSaveDialog(Answer answer) : answer_(std::move(answer)) {}
+  static std::map<std::string, DownloadSaveDialog*>& Open() {
+    static base::NoDestructor<std::map<std::string, DownloadSaveDialog*>> open;
+    return *open;
+  }
+
+  DownloadSaveDialog(const std::string& key, Answer answer) : key_(key), answer_(std::move(answer)) {}
   ~DownloadSaveDialog() override {
+    // Unhooking the listener drops the portal's request, which closes it.
     if (dialog_) dialog_->ListenerDestroyed();
   }
 
   void Finish(const base::FilePath& path, bool unavailable) {
+    Open().erase(key_);
     std::move(answer_).Run(path, unavailable);
     delete this;
   }
 
+  const std::string key_;
   Answer answer_;
   scoped_refptr<ui::SelectFileDialog> dialog_;
 };
@@ -235,6 +257,8 @@ class CrestUIHandler final : public content::WebUIMessageHandler, public CoreHos
         "showDownloadInFolder", base::BindRepeating(&CrestUIHandler::HandleShowDownloadInFolder, base::Unretained(this)));
     web_ui()->RegisterMessageCallback(
         "chooseDownloadPath", base::BindRepeating(&CrestUIHandler::HandleChooseDownloadPath, base::Unretained(this)));
+    web_ui()->RegisterMessageCallback(
+        "closeDownloadDialog", base::BindRepeating(&CrestUIHandler::HandleCloseDownloadDialog, base::Unretained(this)));
   }
 
   void OnJavascriptDisallowed() override { observation_.Reset(); }
@@ -424,28 +448,44 @@ class CrestUIHandler final : public content::WebUIMessageHandler, public CoreHos
   }
 
   // args: callback id, the name to save under (the WebUI made it safe),
-  // whether to ask where to save. Answers {path, null when the person
+  // whether to ask where to save, and the question's key. Answers {path, null when the person
   // cancels or the folder is unavailable, and unavailable}.
   void HandleChooseDownloadPath(const base::ListValue& args) {
     AllowJavascript();
-    if (args.size() != 3 || !args[1].is_string() || !args[2].is_bool()) {
-      RejectJavascriptCallback(args[0], base::Value("chooseDownloadPath takes a name and whether to ask."));
+    if (args.size() != 4 || !args[1].is_string() || !args[2].is_bool() || !args[3].is_string()) {
+      RejectJavascriptCallback(args[0], base::Value("chooseDownloadPath takes a name, whether to ask and a key."));
       return;
     }
     const base::FilePath name = base::FilePath::FromUTF8Unsafe(args[1].GetString()).BaseName();
     base::ThreadPool::PostTaskAndReplyWithResult(
         FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_BLOCKING}, base::BindOnce(&FreeDownloadPath, name),
         base::BindOnce(&CrestUIHandler::ChooseDownloadPath, weak_factory_.GetWeakPtr(), args[0].Clone(), name,
-                       args[2].GetBool()));
+                       args[2].GetBool(), args[3].GetString()));
   }
 
-  void ChooseDownloadPath(base::Value callback, const base::FilePath& name, bool asks, const base::FilePath& free) {
+  // args: callback id, the key of a question the core settled. Closes its
+  // save dialog if one is open.
+  void HandleCloseDownloadDialog(const base::ListValue& args) {
+    AllowJavascript();
+    if (args.size() != 2 || !args[1].is_string()) {
+      RejectJavascriptCallback(args[0], base::Value("closeDownloadDialog takes a key."));
+      return;
+    }
+    DownloadSaveDialog::Close(args[1].GetString());
+    ResolveJavascriptCallback(args[0], base::Value());
+  }
+
+  void ChooseDownloadPath(base::Value callback,
+                          const base::FilePath& name,
+                          bool asks,
+                          const std::string& key,
+                          const base::FilePath& free) {
     if (!asks) {
       AnswerDownloadPath(std::move(callback), free, free.empty());
       return;
     }
     DownloadSaveDialog::Show(
-        web_ui()->GetWebContents(), free.empty() ? name : free,
+        web_ui()->GetWebContents(), key, free.empty() ? name : free,
         base::BindOnce(&CrestUIHandler::AnswerDownloadPath, weak_factory_.GetWeakPtr(), std::move(callback)));
   }
 

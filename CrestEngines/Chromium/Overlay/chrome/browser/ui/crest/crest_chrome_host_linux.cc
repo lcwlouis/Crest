@@ -12,6 +12,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "base/auto_reset.h"
 #include "base/check.h"
@@ -21,6 +22,7 @@
 #include "base/memory/raw_ptr.h"
 #include "base/no_destructor.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
+#include "chrome/browser/content_settings/host_content_settings_map_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window/public/global_browser_collection.h"
@@ -35,12 +37,14 @@
 #include "chrome/browser/ui/crest/crest_permission_prompt.h"
 #include "chrome/browser/ui/crest/crest_webui_linux.h"
 #include "chrome/browser/ui/toasts/api/toast_id.h"
+#include "components/content_settings/core/browser/host_content_settings_map.h"
 #include "components/permissions/permission_request.h"
 #include "components/permissions/request_type.h"
 #include "content/public/browser/navigation_throttle.h"
 #include "content/public/browser/navigation_throttle_registry.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/drop_data.h"
+#include "url/gurl.h"
 #include "extensions/common/extension.h"
 #include "ui/views/widget/widget.h"
 
@@ -221,7 +225,28 @@ void AnswerPermissionRequests(permissions::PermissionPrompt::Delegate& delegate,
   const bool downloads = std::ranges::any_of(delegate.Requests(), [](const auto& request) {
     return request->request_type() == permissions::RequestType::kMultipleDownloads;
   });
-  if (grants && (remembers || downloads)) {
+  if (grants && downloads && !remembers) {
+    // The downloads waiting go ahead; the grant Chromium saved comes back
+    // out, so the site asks again next time, as the person chose.
+    std::vector<GURL> origins;
+    for (const auto& request : delegate.Requests()) {
+      if (request->request_type() == permissions::RequestType::kMultipleDownloads) {
+        origins.push_back(request->requesting_origin_url());
+      }
+    }
+    content::WebContents* contents = delegate.GetAssociatedWebContents();
+    HostContentSettingsMap* settings =
+        contents ? HostContentSettingsMapFactory::GetForProfile(
+                       Profile::FromBrowserContext(contents->GetBrowserContext()))
+                 : nullptr;
+    delegate.Accept(std::monostate());
+    if (settings) {
+      for (const GURL& origin : origins) {
+        settings->SetContentSettingDefaultScope(origin, GURL(), ContentSettingsType::AUTOMATIC_DOWNLOADS,
+                                                CONTENT_SETTING_DEFAULT);
+      }
+    }
+  } else if (grants && (remembers || downloads)) {
     delegate.Accept(std::monostate());
   } else if (grants) {
     delegate.AcceptThisTime(std::monostate());
