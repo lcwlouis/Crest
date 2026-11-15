@@ -1,16 +1,20 @@
 // The page of the small surfaces that float over a web page: the find bar,
-// and the questions sites ask (prompt-float.ts). It keeps no state of its
-// own: the window's main WebUI sends what to draw (setFloat) and hears what
-// the person did here (floatEvent), and talks to the core itself.
+// the questions sites ask (prompt-float.ts), and what Crest shows over a page
+// while it stays in use (page-layers.ts). It keeps no state of its own: the
+// window's main WebUI sends the scene to draw (setFloat), each surface in a
+// layer of its own, and hears what the person did here (floatEvent); it
+// talks to the core itself. Crest's keys pressed here go to the main WebUI,
+// which performs them as it does those the window takes from the page.
 
+import { infoBarStack, isPageLayerState, linkHoverLabel, noticeCapsule, openingCover } from "./page-layers.js";
+import type { PageLayerEvent, PageLayerState } from "./page-layers.js";
 import { isPromptState, PromptView } from "./prompt-float.js";
 import type { PromptFloatEvent, PromptFloatState } from "./prompt-float.js";
 
 declare const chrome: { send(message: string, args?: unknown[]): void };
 
-/** What the main WebUI asks this page to draw. */
+/** What one layer of the scene draws. */
 export type FloatState =
-    | { readonly kind: "none" }
     | {
           readonly kind: "find";
           /** Set when the bar opens, to replace what the field holds. */
@@ -18,7 +22,22 @@ export type FloatState =
           readonly matches: number | null;
           readonly activeMatch: number;
       }
-    | PromptFloatState;
+    | PromptFloatState
+    | PageLayerState;
+
+/** A layer of the scene, placed in this page's CSS pixels. */
+export interface FloatLayer {
+    readonly x: number;
+    readonly y: number;
+    readonly width: number;
+    readonly height: number;
+    readonly state: FloatState;
+}
+
+/** What the main WebUI asks this page to draw, lowest layer first. */
+export interface FloatScene {
+    readonly layers: readonly FloatLayer[];
+}
 
 /** What the person did here. */
 export type FloatEvent =
@@ -26,7 +45,18 @@ export type FloatEvent =
     | { readonly kind: "findNext" }
     | { readonly kind: "findPrevious" }
     | { readonly kind: "findClose" }
-    | PromptFloatEvent;
+    /** A key press with Ctrl, Alt or Meta that nothing here took, for the window's shortcuts. */
+    | {
+          readonly kind: "key";
+          readonly key: string;
+          readonly code: string;
+          readonly ctrlKey: boolean;
+          readonly altKey: boolean;
+          readonly metaKey: boolean;
+          readonly shiftKey: boolean;
+      }
+    | PromptFloatEvent
+    | PageLayerEvent;
 
 const surface = document.getElementById("surface")!;
 
@@ -94,19 +124,116 @@ field.addEventListener("keydown", (event) => {
     }
 });
 
-const prompts = new PromptView(surface, send);
+/**
+ * The keys a text field edits with, as Ctrl and the key: select all, copy,
+ * cut and paste (without Shift, which Copy Page Link adds to C), undo and redo
+ * (Shift too), and moving, selecting or deleting by word (Shift too).
+ */
+const editingKeys = new Set(["a", "c", "v", "x"]);
+const editingKeysWithShift = new Set(["z", "ArrowLeft", "ArrowRight", "Home", "End", "Backspace", "Delete"]);
 
-function draw(state: FloatState): void {
-    if (isPromptState(state)) {
-        prompts.draw(state);
+function edits(event: KeyboardEvent): boolean {
+    const target = event.target as HTMLElement | null;
+    const editable = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target?.isContentEditable === true;
+    if (!editable || !event.ctrlKey || event.altKey || event.metaKey) return false;
+    const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
+    return editingKeysWithShift.has(key) || (!event.shiftKey && editingKeys.has(key));
+}
+
+// Crest's shortcuts while this view has the keyboard, as while the page has
+// it: what a surface here did not take, and a field does not edit with, goes
+// to the main WebUI.
+document.addEventListener("keydown", (event) => {
+    if (event.defaultPrevented || event.isComposing || (!event.ctrlKey && !event.altKey && !event.metaKey)) return;
+    if (["Control", "Alt", "Meta", "Shift"].includes(event.key) || edits(event)) return;
+    send({
+        kind: "key",
+        key: event.key,
+        code: event.code,
+        ctrlKey: event.ctrlKey,
+        altKey: event.altKey,
+        metaKey: event.metaKey,
+        shiftKey: event.shiftKey,
+    });
+});
+
+/** The slots the layers draw in, one for each kind of surface. */
+type Slot = "find" | "prompt" | "notice" | "linkHover" | "opening" | "infoBars";
+
+function slotOf(state: FloatState): Slot {
+    return isPromptState(state) ? "prompt" : state.kind;
+}
+
+const slots = new Map<Slot, HTMLElement>();
+
+function slot(name: Slot): HTMLElement {
+    let made = slots.get(name);
+    if (!made) {
+        made = document.createElement("div");
+        // The find bar and the prompts leave room around them for their shadows.
+        made.className = name === "find" || name === "prompt" ? "float-slot padded" : "float-slot";
+        if (name === "notice") made.classList.add("notice-layer");
+        made.hidden = true;
+        surface.append(made);
+        slots.set(name, made);
+    }
+    return made;
+}
+
+const prompts = new PromptView(slot("prompt"), send);
+
+function drawPageLayer(into: HTMLElement, state: PageLayerState): void {
+    // A layer that shows what it showed keeps its elements, so nothing
+    // starts its entrance again; a notice on its way out only leaves.
+    const key = JSON.stringify(state.kind === "notice" ? { ...state, leaving: false } : state);
+    if (into.dataset.key === key && into.firstElementChild) {
+        if (state.kind === "notice") into.firstElementChild.classList.toggle("leaving", state.leaving);
         return;
     }
-    prompts.clear();
-    if (state.kind !== "find") {
-        surface.replaceChildren();
-        return;
+    into.dataset.key = key;
+    switch (state.kind) {
+        case "notice":
+            into.replaceChildren(noticeCapsule(state));
+            break;
+        case "linkHover":
+            into.replaceChildren(linkHoverLabel(state));
+            break;
+        case "opening":
+            into.replaceChildren(openingCover(state));
+            break;
+        case "infoBars":
+            into.replaceChildren(infoBarStack(state, send));
+            break;
     }
-    if (!bar.isConnected) surface.replaceChildren(bar);
+}
+
+function draw(scene: FloatScene): void {
+    const shown = new Set<Slot>();
+    scene.layers.forEach((layer, index) => {
+        const name = slotOf(layer.state);
+        shown.add(name);
+        const into = slot(name);
+        into.hidden = false;
+        into.style.left = `${layer.x}px`;
+        into.style.top = `${layer.y}px`;
+        into.style.width = `${layer.width}px`;
+        into.style.height = `${layer.height}px`;
+        into.style.zIndex = String(index);
+        if (layer.state.kind === "find") drawFind(into, layer.state);
+        else if (isPromptState(layer.state)) prompts.draw(layer.state);
+        else if (isPageLayerState(layer.state)) drawPageLayer(into, layer.state);
+    });
+    for (const [name, into] of slots) {
+        if (shown.has(name) || into.hidden) continue;
+        into.hidden = true;
+        delete into.dataset.key;
+        if (name === "prompt") prompts.clear();
+        into.replaceChildren();
+    }
+}
+
+function drawFind(into: HTMLElement, state: Extract<FloatState, { kind: "find" }>): void {
+    if (!bar.isConnected) into.replaceChildren(bar);
     if (state.query !== null) field.value = state.query;
     const empty = field.value.length === 0;
     previous.disabled = empty;
@@ -122,7 +249,7 @@ function draw(state: FloatState): void {
 (globalThis as unknown as { cr: unknown }).cr = {
     webUIResponse(): void {},
     webUIListenerCallback(event: string, json: unknown): void {
-        if (event === "crest-float-state") draw(JSON.parse(json as string) as FloatState);
+        if (event === "crest-float-state") draw(JSON.parse(json as string) as FloatScene);
     },
 };
 

@@ -24,6 +24,7 @@ import { FloatSurfaces } from "./surfaces.js";
 import { TabIcons } from "./icons.js";
 import type { Guid, Intent, LaunchEnvironment, PageState, TabState } from "../generated/crest_contracts.js";
 import { Model } from "./model.js";
+import { PageStates } from "./page-states.js";
 import type { Space, Workspace } from "./model.js";
 import { InlineRename } from "./rename.js";
 import { element, Sidebar, symbol } from "./sidebar.js";
@@ -172,12 +173,18 @@ const commands = new Commands({
     toggleUtility: (surface) => utilities.toggleSurface(surface),
 });
 
-// The surface floating over the page shows one of these at a time.
+// The surfaces floating over the page.
 const surfaces = new FloatSurfaces();
 const findBar = new FindBar(shownPage, report, surfaces);
 const prompts = new Prompts({ model, page: shownPage }, surfaces);
+const pageStates = new PageStates({ model, tab: shownTab, page: shownPage, report }, surfaces);
 listenToFloat(
-    (event) => surfaces.handle(event as FloatEvent),
+    (event) => {
+        const floatEvent = event as FloatEvent;
+        // A key the floating view passed on is the window's, as one the page left.
+        if (floatEvent.kind === "key") commands.handleKey(floatEvent);
+        else surfaces.handle(floatEvent);
+    },
     () => surfaces.restore(),
 );
 
@@ -436,12 +443,14 @@ async function start(): Promise<void> {
             followShownPage();
             findBar.follow();
             prompts.apply(changes);
+            pageStates.apply(changes);
             downloadDestinations.apply(changes);
         },
         (bytes) => {
             try {
                 const presentation = decodePresentation(bytes);
                 if (presentation.kind === "FindFinished") findBar.finished(presentation.value);
+                pageStates.present(presentation);
             } catch (error) {
                 console.error(error);
             }

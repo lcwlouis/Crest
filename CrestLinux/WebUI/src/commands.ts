@@ -10,6 +10,7 @@ import type { Guid, Intent, PageState, PaletteCommand, TabState } from "../gener
 import { pageRequest, query } from "./bridge.js";
 import { listKey } from "./model.js";
 import type { Model, Space, Workspace } from "./model.js";
+import { Notices, postNotice } from "./notices.js";
 import { UtilitySurface } from "./utilities.js";
 
 /** What commands act on: the window's shown Space, tab and page. */
@@ -36,8 +37,10 @@ const known = new Set<string>([
     "CopyPageLinkAsMarkdown", "FindInPage", "FindNext", "FindPrevious", "ShowHistory", "ShowArchive", "ShowDownloads",
 ]);
 
-/** Chromium's zoom steps, which the Mac's page zoom also follows. */
-const zoomSteps = [0.25, 0.33, 0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4, 5];
+/** The levels the page zoom commands step through, as the Mac's pageZoomLevels. */
+const zoomSteps = [0.5, 0.67, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3];
+/** Two zooms closer than this are the same level. */
+const zoomTolerance = 0.001;
 
 export class Commands {
     private readonly context: CommandContext;
@@ -163,6 +166,7 @@ export class Commands {
                 return () =>
                     void query("LinkToCopy", { url })
                         .then((clean) => navigator.clipboard.writeText(markdown ? `[${title}](${clean})` : clean))
+                        .then(() => postNotice(Notices.urlCopied))
                         .catch(this.context.report);
             }
             case "ShowHistory":
@@ -221,13 +225,19 @@ export class Commands {
         this.context.send({ kind: "ShowTab", value: { windowId: this.context.windowId(), spaceId: space.state.id, tabId } });
     }
 
+    /**
+     * Steps the page's zoom and says where it is now, as the Mac's zoom
+     * commands do; a step that changes nothing says nothing.
+     */
     private zoomPage(page: PageState, kind: "ZoomIn" | "ZoomOut" | "ActualSize"): void {
         const current = this.zoom.get(page.id) ?? 1;
         let factor = 1;
-        if (kind === "ZoomIn") factor = zoomSteps.find((step) => step > current + 0.001) ?? current;
-        if (kind === "ZoomOut") factor = [...zoomSteps].reverse().find((step) => step < current - 0.001) ?? current;
+        if (kind === "ZoomIn") factor = zoomSteps.find((step) => step > current + zoomTolerance) ?? Math.max(current, zoomSteps.at(-1)!);
+        if (kind === "ZoomOut") factor = [...zoomSteps].reverse().find((step) => step < current - zoomTolerance) ?? Math.min(current, zoomSteps[0]!);
+        if (factor === current) return;
         this.zoom.set(page.id, factor);
         this.request(pageRequest("ZoomPage", { pageId: page.id, factor }));
+        postNotice(Notices.pageZoom(`${Math.round(factor * 100)}%`));
     }
 }
 

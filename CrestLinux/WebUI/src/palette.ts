@@ -26,6 +26,7 @@ import type { Commands } from "./commands.js";
 import type { TabIcons } from "./icons.js";
 import { holdOverlay } from "./overlay.js";
 import type { Space, Workspace } from "./model.js";
+import { Notices, postNotice } from "./notices.js";
 import { element, symbol } from "./sidebar.js";
 
 /** Whether the bar opens a new tab, or opens over the tab the window shows. */
@@ -445,7 +446,10 @@ export class Palette {
                 });
                 return true;
             case "CopiesAnswer":
-                void navigator.clipboard.writeText(row.title).catch(this.host.report);
+                void navigator.clipboard
+                    .writeText(row.title)
+                    .then(() => postNotice(Notices.copied))
+                    .catch(this.host.report);
                 return true;
             default:
                 return false;

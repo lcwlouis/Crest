@@ -354,11 +354,13 @@ export class Prompts {
         this.surfaces = surfaces;
         this.modal = {
             rank: FloatRank.modal,
+            exclusive: true,
             restore: () => this.placeModal(true),
             handle: (event) => this.handle(event),
         };
         this.permission = {
             rank: FloatRank.permission,
+            exclusive: true,
             restore: () => this.placePermission(true),
             handle: () => {},
         };
@@ -482,6 +484,7 @@ export class Prompts {
             bounds: { x: card.left, y: card.top, width: card.width, height: card.height },
             focus,
             state,
+            band: "card",
         });
     }
 
@@ -518,6 +521,7 @@ export class Prompts {
             bounds: { x: card.left + permissionInset, y: card.top + permissionInset, width: permissionWidth + 2 * permissionMargin, height },
             focus,
             state,
+            band: "top",
         });
     }
 

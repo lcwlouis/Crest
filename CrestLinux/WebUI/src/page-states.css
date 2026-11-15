@@ -1,0 +1,267 @@
+/* What Crest shows over a page while the page stays in use (page-layers.ts).
+   The floating page draws them; the main WebUI measures them, and draws a
+   notice itself while it is raised over the page. The Mac draws these on
+   Liquid Glass, which a view over another view cannot sample, so they stand
+   on the window's own surface, as the find bar does. */
+
+.page-layer-measure {
+  position: fixed;
+  top: 0;
+  left: -10000px;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.symbol-knockout {
+  stroke: var(--crest-window-background);
+  fill: var(--crest-window-background);
+}
+
+/* --- Notice: BrowserNoticeView, BrowserRootMetrics --- */
+
+.notice-layer {
+  box-sizing: border-box;
+  height: 100%;
+  padding: var(--crest-notice-top) 24px 24px;
+  pointer-events: none;
+}
+
+.notice-capsule {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: max-content;
+  max-width: var(--crest-notice-max-width);
+  min-height: var(--crest-notice-height);
+  box-sizing: border-box;
+  margin: 0 auto;
+  padding: 0 var(--crest-notice-padding-x);
+  border-radius: calc(var(--crest-notice-height) / 2);
+  background: var(--crest-window-background);
+  box-shadow: var(--crest-notice-shadow) rgb(0 0 0 / var(--crest-opacity-control-shadow)),
+    inset 0 0 0 1px var(--crest-subtle-border);
+  color: var(--crest-primary);
+  font: 600 var(--crest-text-callout)/1.3 var(--crest-font-ui);
+  text-align: center;
+  animation: notice-in var(--crest-dur-feedback) var(--crest-ease-snappy);
+  transition: opacity var(--crest-dur-dismissal) var(--crest-ease-out),
+    transform var(--crest-dur-dismissal) var(--crest-ease-out);
+}
+
+.notice-capsule.leaving {
+  opacity: 0;
+  transform: translateY(calc(-1 * (var(--crest-notice-top) + var(--crest-notice-height))));
+}
+
+.notice-symbol {
+  display: inline-flex;
+  flex: none;
+}
+
+.notice-message {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+@keyframes notice-in {
+  from {
+    opacity: 0;
+    transform: translateY(calc(-1 * (var(--crest-notice-top) + var(--crest-notice-height))));
+  }
+}
+
+/* While the WebUI is raised over the page, it shows the notice itself, over
+   whatever it draws there. */
+#notice {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 30;
+  height: auto;
+}
+
+#notice[hidden] {
+  display: none;
+}
+
+/* --- Link under the pointer: BrowserLinkHoverPreview --- */
+
+.link-hover {
+  display: inline-block;
+  box-sizing: border-box;
+  margin: 4px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: var(--crest-window-background);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.12), inset 0 0 0 1px var(--crest-subtle-border);
+  color: var(--crest-primary);
+  font: var(--crest-text-caption)/1.3 var(--crest-font-ui);
+  white-space: pre;
+  overflow: hidden;
+  direction: ltr;
+  text-align: left;
+}
+
+.link-hover.expanded {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.link-hover.probe {
+  max-width: none;
+}
+
+/* --- A page still opening: BrowserWebPageSurface's loading presentation --- */
+
+.page-opening {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  border-radius: var(--page-corner-radius);
+}
+
+.opening-status {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--crest-space-s);
+  color: var(--crest-secondary);
+  font: var(--crest-text-callout)/1.3 var(--crest-font-ui);
+}
+
+/* ProgressView, .small. */
+.opening-spinner {
+  width: 14px;
+  height: 14px;
+  box-sizing: border-box;
+  border: 2px solid rgb(var(--crest-primary-rgb) / 0.15);
+  border-top-color: var(--crest-secondary);
+  border-radius: 50%;
+  animation: opening-spin 0.9s linear infinite;
+}
+
+@keyframes opening-spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+/* --- The engine's bars: BrowserEngineInfoBarStack, BrowserWebPageSurfaceMetrics --- */
+
+.infobar-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--infobar-spacing);
+  box-sizing: border-box;
+  padding: var(--crest-space-m);
+}
+
+.infobar {
+  display: flex;
+  align-items: center;
+  gap: var(--infobar-spacing);
+  width: 100%;
+  max-width: var(--infobar-max-width);
+  box-sizing: border-box;
+  padding: var(--infobar-padding);
+  border-radius: var(--infobar-radius);
+  background: var(--crest-window-background);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.12), inset 0 0 0 1px var(--crest-subtle-border);
+  color: var(--crest-primary);
+  font: var(--crest-text-callout)/1.3 var(--crest-font-ui);
+}
+
+.infobar-symbol {
+  display: inline-flex;
+  flex: none;
+  color: var(--crest-secondary);
+}
+
+.infobar-message {
+  display: -webkit-box;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.infobar-button {
+  flex: none;
+  height: 22px;
+  padding: 0 var(--crest-space-s);
+  border: var(--crest-button-stroke) solid var(--crest-subtle-border);
+  border-radius: 6px;
+  background: var(--crest-chrome-surface);
+  color: var(--crest-primary);
+  font: inherit;
+  font-weight: var(--crest-control-title-weight);
+  white-space: nowrap;
+  transition: background var(--crest-dur-hover);
+}
+
+.infobar-button:hover {
+  background: var(--crest-hover);
+}
+
+.infobar-button:active {
+  background: var(--crest-selection);
+}
+
+.infobar-button.prominent {
+  border-color: transparent;
+  background: var(--crest-accent);
+  color: var(--crest-ink);
+}
+
+.infobar-button.prominent:hover {
+  background: color-mix(in srgb, var(--crest-accent) 88%, var(--crest-ink));
+}
+
+.infobar-control {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--crest-secondary);
+  transition: background var(--crest-dur-hover);
+}
+
+.infobar-control:hover {
+  background: var(--crest-hover);
+}
+
+.infobar-control:active {
+  background: var(--crest-selection);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .notice-capsule {
+    animation-name: notice-fade;
+  }
+
+  .notice-capsule.leaving {
+    transform: none;
+  }
+
+  @keyframes notice-fade {
+    from {
+      opacity: 0;
+    }
+  }
+}
