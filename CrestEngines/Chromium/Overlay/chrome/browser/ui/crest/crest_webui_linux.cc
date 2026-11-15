@@ -12,6 +12,7 @@
 #include "base/files/file_util.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
+#include "base/logging.h"
 #include "base/memory/ref_counted_memory.h"
 #include "base/memory/weak_ptr.h"
 #include "base/no_destructor.h"
@@ -524,6 +525,7 @@ class CrestUIHandler final : public content::WebUIMessageHandler, public CoreHos
       return;
     }
     const base::FilePath name = base::FilePath::FromUTF8Unsafe(args[1].GetString()).BaseName();
+    VLOG(1) << "The window finds where " << name << " goes" << (args[2].GetBool() ? ", in a save dialog" : "");
     base::ThreadPool::PostTaskAndReplyWithResult(
         FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_BLOCKING}, base::BindOnce(&FreeDownloadPath, name),
         base::BindOnce(&CrestUIHandler::ChooseDownloadPath, weak_factory_.GetWeakPtr(), args[0].Clone(), name,

@@ -4,6 +4,7 @@
 
 #include "base/functional/bind.h"
 #include "base/location.h"
+#include "base/logging.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/sequenced_task_runner.h"
@@ -255,6 +256,11 @@ void EngineDownloads::ChooseDestination(
                             ui::SelectedFileInfo());
     return;
   }
+  const bool forces_prompt = reason != DownloadConfirmationReason::NONE &&
+                             reason != DownloadConfirmationReason::PREFERENCE;
+  VLOG(1) << "Crest asks the core where download " << item->GetGuid()
+          << " goes, confirmation reason " << static_cast<int>(reason)
+          << (forces_prompt ? ", in a save dialog" : "");
   const engine::Guid id = RandomGuid();
   destinations_[id] = Destination{.profile = GuidText(download->profile_id),
                                   .download = download->download_id,
@@ -266,8 +272,7 @@ void EngineDownloads::ChooseDestination(
       .prompt_id = id,
       .download = std::move(*download),
       .suggested_filename = suggested_path.BaseName().AsUTF8Unsafe(),
-      .forces_prompt = reason != DownloadConfirmationReason::NONE &&
-                       reason != DownloadConfirmationReason::PREFERENCE,
+      .forces_prompt = forces_prompt,
       .facts = RiskFacts(item, suggested_path),
       .user_initiated = item->HasUserGesture(),
       .source_host =
