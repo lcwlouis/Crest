@@ -49,7 +49,9 @@ def installed(patches, source, scratch):
             return False
         (scratch / name).parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(source / name, scratch / name)
-    return all(subprocess.run(["patch", "--batch", "--fuzz=0", "--reverse", "-p1", "-s", "--input", patch],
+    # --forward makes a patch that is not applied fail to reverse; with --batch
+    # alone, patch would apply it forward instead and still succeed.
+    return all(subprocess.run(["patch", "--batch", "--fuzz=0", "--reverse", "--forward", "-p1", "-s", "--input", patch],
                               cwd=scratch, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
                for patch in reversed(patches))
 
@@ -91,7 +93,7 @@ def install(source):
         else:
             sys.exit("The host patches neither apply nor are applied; review the Chromium source")
     for patch in LINUX_HOST_PATCHES:
-        if dry_run(patch, source, "--reverse"):
+        if dry_run(patch, source, "--reverse", "--forward"):
             print(f"{patch.name} is already applied.")
         else:
             run([patch], source, "--forward")
