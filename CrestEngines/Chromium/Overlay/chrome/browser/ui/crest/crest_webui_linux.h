@@ -21,6 +21,8 @@ namespace crest {
 
 inline constexpr char kCrestUIHost[] = "crest";
 inline constexpr char kCrestUIURL[] = "chrome://crest/";
+// The page of the small surfaces that float over a page (find bar, notices).
+inline constexpr char kCrestFloatURL[] = "chrome://crest/float.html";
 
 class CrestUI;
 

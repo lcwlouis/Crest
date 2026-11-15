@@ -4,6 +4,7 @@
 
 import {
     decodeChange,
+    decodeEnginePresentation,
     decodePageRequestAnswer,
     decodeQueryAnswer,
     decodeRejection,
@@ -15,6 +16,7 @@ import {
 } from "../generated/crest_contracts.js";
 import type {
     Change,
+    EnginePresentation,
     Intent,
     PageRequest,
     PageRequestAnswers,
@@ -164,6 +166,39 @@ export function showPage(pageId: string): void {
  */
 export function setOverlay(raised: boolean): void {
     chrome.send("setOverlay", [raised]);
+}
+
+/**
+ * Places the floating surface over the page, in CSS pixels of this page (an
+ * empty rectangle hides it), and hands it the state it draws.
+ */
+export function setFloat(
+    bounds: { x: number; y: number; width: number; height: number },
+    focus: boolean,
+    state: unknown,
+): void {
+    chrome.send("setFloat", [
+        Math.round(bounds.x),
+        Math.round(bounds.y),
+        Math.round(bounds.width),
+        Math.round(bounds.height),
+        focus,
+        JSON.stringify(state),
+    ]);
+}
+
+/** Hears what the person does on the floating surface, and when it is ready for state. */
+export function listenToFloat(onEvent: (event: unknown) => void, onReady: () => void): void {
+    listen("crest-float-event", (json) => onEvent(JSON.parse(json as string)));
+    listen("crest-float-ready", () => onReady());
+}
+
+/** Reads one of the engine's presentations, as the core's line relays it. */
+export function decodePresentation(bytes: Uint8Array): EnginePresentation {
+    const reader = new WireReader(bytes);
+    const presentation = decodeEnginePresentation(reader);
+    reader.finish();
+    return presentation;
 }
 
 /** A key the window took from a page for one of Crest's shortcuts. */
