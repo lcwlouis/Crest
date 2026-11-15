@@ -13,7 +13,6 @@
 #include "base/check.h"
 #include "base/functional/bind.h"
 #include "base/location.h"
-#include "base/logging.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/time/time.h"
 #include "chrome/browser/profiles/profile.h"
@@ -635,7 +634,6 @@ void EngineBinding::ReleaseHeldWindow(base::WeakPtr<content::WebContents> conten
 void EngineBinding::Reject(const engine::RejectOfferedPage& rejection) {
   auto offer = offers_.extract(GuidText(rejection.offer_id));
   content::WebContents* contents = offer ? offer.mapped().contents.get() : nullptr;
-  VLOG(1) << "Crest's core refused the page heading to " << (contents ? contents->GetVisibleURL().spec() : "(gone)");
   const auto held = std::find_if(held_windows_.begin(), held_windows_.end(), [contents](const auto& window) {
     return contents && window->contents.get() == contents;
   });
@@ -763,9 +761,6 @@ void EngineBinding::Offer(content::WebContents* contents,
   const engine::Guid offer = RandomGuid();
   offers_.emplace(GuidText(offer), OfferedPage{.contents = contents->GetWeakPtr(), .profile = profile});
   const GURL url = contents->GetVisibleURL();
-  VLOG(1) << "Crest offers a page heading to " << url.spec() << ": source " << (source ? GuidText(*source) : "none")
-          << ", window " << (window.empty() ? "none" : window) << ", space " << (space.empty() ? "none" : space)
-          << (foreground ? ", foreground" : ", background");
   Report(engine::PageOffered{.offer_id = offer,
                              .profile_id = *profile_id,
                              .source_page_id = source,
@@ -1079,8 +1074,7 @@ size_t EngineBinding::OpenBlockedPopups(EnginePage& page, base::FunctionRef<void
   if (disposing_ || !page.web_contents()) {
     return 0;
   }
-  const bool held = Browsers().UseHolding(page.web_contents());
-  VLOG_IF(1, !held) << "Crest pop-ups: no Browser Crest keeps holds page " << page.key();
+  Browsers().UseHolding(page.web_contents());
   base::AutoReset<std::string> opening(&opening_popups_of_, page.key());
   base::AutoReset<size_t> opened(&opened_popups_, 0);
   open();
@@ -1092,8 +1086,6 @@ void EngineBinding::TabInserted(content::WebContents* contents) {
     return;
   }
   ++opened_popups_;
-  VLOG(1) << "Crest pop-ups: page " << opening_popups_of_ << " opened a tab heading to "
-          << contents->GetVisibleURL().spec() << (contents->GetOpener() ? " with" : " without") << " an opener";
   if (!contents->GetOpener()) {
     std::erase_if(link_sources_, [](const auto& entry) { return !entry.first; });
     link_sources_.emplace_back(contents->GetWeakPtr(), opening_popups_of_);
