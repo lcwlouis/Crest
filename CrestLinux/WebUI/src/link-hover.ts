@@ -3,7 +3,10 @@
 // the pointer is on (LinkHovered); after a second on it the address shows on
 // one line, cut in its middle, and after 0.8 seconds more it opens to four.
 // Leaving the link, moving to another, a navigation or the WebUI rising over
-// the page puts it away.
+// the page puts it away, and so does a surface over the page it cannot show
+// with, such as the find bar: as the Mac's label goes with the key press or
+// click that brought that surface, it shows again only for the next link the
+// engine reports.
 
 import type { Guid, LinkHovered, PageState } from "../generated/crest_contracts.js";
 import type { FloatEvent } from "./float.js";
@@ -105,6 +108,10 @@ export class LinkHoverPreview implements FloatSurface {
     }
 
     handle(_event: FloatEvent): void {}
+
+    displaced(): void {
+        this.invalidate();
+    }
 
     private place(): void {
         if (this.shown === null) {

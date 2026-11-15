@@ -4,9 +4,10 @@
 // list chosen for the Space (or Downloads while downloads wait unseen), and
 // the list takes the place of the Space's tabs, with a search field and a
 // filter menu where the address field was. While a list is open the three
-// lists fan out beside the sidebar, over the page, and a press on the page
-// or the list's empty space puts it away. Seeing Downloads acknowledges the
-// Space's downloads, which clears the button's badge.
+// lists fan out beside the sidebar, over the page, and a press on the page,
+// on the list's empty space or on the lists button puts it away, as does
+// Escape. Seeing Downloads acknowledges the Space's downloads, which clears
+// the button's badge.
 //
 // Which list the button opens in each Space is this device's choice, kept
 // across launches as the Mac keeps it in its defaults.
@@ -197,7 +198,12 @@ export class Utilities {
     private readonly filterButton = element("button", "utility-filter");
     private readonly list = element("div", "utility-list");
     private readonly fanLayer = element("div", "utility-fan");
-    private trigger: HTMLElement | null = null;
+    /**
+     * The lists button. The sidebar draws its switcher again on every change
+     * and keeps this one button, so a press that a change lands in the middle
+     * of still reaches it.
+     */
+    private readonly trigger = element("button", "lists-button");
 
     constructor(host: UtilitiesHost) {
         this.host = host;
@@ -236,8 +242,18 @@ export class Utilities {
         this.element.append(toolbar, this.list);
         document.body.append(this.fanLayer);
         this.fanLayer.hidden = true;
-        // A press on the page puts the list away, as the Mac's page does.
+        this.trigger.title = "Archive, History, and Downloads";
+        this.trigger.addEventListener("click", () => this.toggle());
+        this.trigger.addEventListener("contextmenu", (event) => this.openTriggerMenu(event));
+        // A press on the page puts the list away, as the Mac's page does,
+        // and so does Escape that nothing nearer took: a menu, an alert, or
+        // the search field clearing its text.
         document.getElementById("page")!.addEventListener("mousedown", () => this.dismiss());
+        document.addEventListener("keydown", (event) => {
+            if (event.key !== "Escape" || event.defaultPrevented || !this.shown) return;
+            event.preventDefault();
+            this.dismiss();
+        });
         window.addEventListener("resize", () => this.placeFan());
     }
 
@@ -536,29 +552,39 @@ export class Utilities {
         const unseen = this.unseenDownloads(space);
         const downloads = this.downloads(space);
         const opens = unseen.length > 0 ? UtilitySurface.downloads : this.triggerSurface(space.state.id);
-        const button = element("button", this.shown ? "lists-button expanded" : "lists-button");
-        button.innerHTML = sfSymbol((this.shown ?? opens).symbol, 17);
-        button.title = "Archive, History, and Downloads";
+        const button = this.trigger;
+        button.classList.toggle("expanded", this.shown !== null);
         button.setAttribute("aria-label", opens.title);
         button.setAttribute("aria-expanded", String(this.shown !== null));
-        button.addEventListener("click", () => this.toggle());
-        button.addEventListener("contextmenu", (event) => {
-            event.preventDefault();
-            const chosen = this.triggerSurface(space.state.id);
-            Menu.open(
-                UtilitySurface.all.map((surface) => ({
-                    title: surface.title,
-                    icon: { kind: "symbol", name: surface.symbol },
-                    checked: surface === chosen,
-                    action: () => this.chooseTriggerSurface(surface, space.state.id),
-                })),
-                { x: event.clientX, y: event.clientY },
-            );
-        });
-        if (unseen.length > 0) button.append(this.badge(unseen.length, downloads));
-        this.trigger = button;
+        // Drawn again only when it shows something else, so a press on it
+        // ends on what it began on.
+        const badge = unseen.length > 0 ? this.badge(unseen.length, downloads) : null;
+        const symbol = (this.shown ?? opens).symbol;
+        const key = JSON.stringify([symbol, badge?.outerHTML ?? null]);
+        if (button.dataset.key !== key) {
+            button.dataset.key = key;
+            button.innerHTML = sfSymbol(symbol, 17);
+            if (badge) button.append(badge);
+        }
         requestAnimationFrame(() => this.drawFan(space));
         return button;
+    }
+
+    /** The lists button's menu: the list it opens in the shown Space. */
+    private openTriggerMenu(event: MouseEvent): void {
+        event.preventDefault();
+        const spaceId = this.host.space()?.state.id;
+        if (!spaceId) return;
+        const chosen = this.triggerSurface(spaceId);
+        Menu.open(
+            UtilitySurface.all.map((surface) => ({
+                title: surface.title,
+                icon: { kind: "symbol", name: surface.symbol },
+                checked: surface === chosen,
+                action: () => this.chooseTriggerSurface(surface, spaceId),
+            })),
+            { x: event.clientX, y: event.clientY },
+        );
     }
 
     private badge(count: number, downloads: readonly DownloadState[]): HTMLElement {
@@ -606,7 +632,7 @@ export class Utilities {
 
     /** Each destination sits beside the trigger, centred on the window's height, one step apart. */
     private placeFan(): void {
-        if (this.fanLayer.hidden || !this.trigger) return;
+        if (this.fanLayer.hidden) return;
         const trigger = this.trigger.getBoundingClientRect();
         const x = trigger.right + fan.buttonSize / 2 + fan.destinationGap + fan.additionalEdgeOffset;
         const count = this.fanLayer.children.length;

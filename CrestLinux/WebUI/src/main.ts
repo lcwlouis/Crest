@@ -189,7 +189,12 @@ const findBar = new FindBar(shownPage, report, surfaces);
 const prompts = new Prompts({ model, page: shownPage }, surfaces);
 const pageStates = new PageStates({ model, tab: shownTab, page: shownPage, report }, surfaces);
 listenToFloat(
-    (event) => surfaces.handle(event as FloatEvent),
+    (event) => {
+        const floatEvent = event as FloatEvent;
+        // A key the floating view passed on is the window's, as one the page left.
+        if (floatEvent.kind === "key") commands.handleKey(floatEvent);
+        else surfaces.handle(floatEvent);
+    },
     () => surfaces.restore(),
 );
 
