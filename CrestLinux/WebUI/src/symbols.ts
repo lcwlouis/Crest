@@ -45,7 +45,45 @@ const paths: Record<string, string> = {
     xmark: '<path d="M6 6l12 12"/><path d="M18 6L6 18"/>',
     "xmark.circle": '<circle cx="12" cy="12" r="9"/><path d="M9 9l6 6M15 9l-6 6"/>',
 };
+// The utility lists' symbols: the lists themselves, their filters, a
+// download's file kinds, states and row actions.
+Object.assign(paths, {
+    archivebox: '<rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9"/><path d="M10 13h4"/>',
+    "clock.arrow.circlepath": '<path d="M3.5 12a8.5 8.5 0 1 0 2.5-6"/><path d="M3 4v4h4"/><path d="M12 8v4l3 2"/>',
+    "arrow.down.circle": '<circle cx="12" cy="12" r="9"/><path d="M12 7.5v9"/><path d="M8.5 13l3.5 3.5 3.5-3.5"/>',
+    "line.3.horizontal.decrease": '<path d="M4 7h16"/><path d="M7 12h10"/><path d="M10 17h4"/>',
+    magnifyingglass: '<circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5 5"/>',
+    "checkmark.circle": '<circle cx="12" cy="12" r="9"/><path d="M8 12.5l3 3 5-6"/>',
+    "exclamationmark.triangle": '<path d="M12 3.5l9.5 16.5h-19z"/><path d="M12 10v4.5"/><path d="M12 17.5v.01"/>',
+    "exclamationmark.shield": '<path d="M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6z"/><path d="M12 8v5"/><path d="M12 16v.01"/>',
+    calendar: '<rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16"/><path d="M8 3v4M16 3v4"/>',
+    "calendar.badge.clock": '<path d="M12 20H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v4"/><path d="M4 10h16"/><path d="M8 3v4M16 3v4"/><circle cx="17.5" cy="17.5" r="4"/><path d="M17.5 15.5v2l1.5 1"/>',
+    timer: '<circle cx="12" cy="13.5" r="7.5"/><path d="M12 13.5V10"/><path d="M10 3h4"/>',
+    "icloud.and.arrow.down": '<path d="M7 18a4.5 4.5 0 0 1-.5-9 6 6 0 0 1 11.5 1.5A3.8 3.8 0 0 1 17.5 18"/><path d="M12 11v9"/><path d="M9 17l3 3 3-3"/>',
+    globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.5 2.5 3.5 5.5 3.5 9s-1 6.5-3.5 9c-2.5-2.5-3.5-5.5-3.5-9s1-6.5 3.5-9z"/>',
+    "arrow.up.forward": '<path d="M7 17L17 7"/><path d="M9 7h8v8"/>',
+    "arrow.up.forward.square": '<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9.5 14.5l5-5"/><path d="M10.5 9.5h4v4"/>',
+    "square.and.arrow.up": '<path d="M8 9H6.5A1.5 1.5 0 0 0 5 10.5v8A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5v-8A1.5 1.5 0 0 0 17.5 9H16"/><path d="M12 14V3"/><path d="M8.5 6.5L12 3l3.5 3.5"/>',
+    "arrow.clockwise": '<path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3"/><path d="M19.5 4v4h-4"/>',
+    pause: '<path d="M9 6v12M15 6v12"/>',
+    play: '<path d="M8 5.5v13l10-6.5z"/>',
+    photo: '<rect x="3.5" y="5" width="17" height="14" rx="2"/><circle cx="9" cy="10" r="1.5"/><path d="M20.5 16l-5-5-8 8"/>',
+    "doc.richtext": '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M8.5 17l2.5-3 2 2 1.5-1.5 1.5 2.5"/>',
+    "doc.text": '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h6"/>',
+    doc: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/>',
+    waveform: '<path d="M4 10v4M8 7v10M12 4v16M16 8v8M20 11v2"/>',
+    film: '<rect x="3.5" y="4" width="17" height="16" rx="2"/><path d="M7.5 4v16M16.5 4v16M3.5 9h4M3.5 15h4M16.5 9h4M16.5 15h4"/>',
+    externaldrive: '<rect x="3" y="7" width="18" height="10" rx="2.5"/><path d="M17 12h.01"/>',
+    "exclamationmark.arrow.trianglehead.2.clockwise.rotate.90": '<path d="M4.5 12a7.5 7.5 0 0 1 13-5"/><path d="M18 3v4h-4"/><path d="M19.5 12a7.5 7.5 0 0 1-13 5"/><path d="M6 21v-4h4"/><path d="M12 8.5v4"/><path d="M12 15.5v.01"/>',
+});
 paths["folder.fill"] = paths.folder!;
+// SF Symbols' filled variants draw as their outlines here.
+for (const name of [
+    "archivebox", "arrow.down.circle", "checkmark.circle", "exclamationmark.triangle", "exclamationmark.shield",
+    "xmark.circle", "icloud.and.arrow.down", "photo", "doc.richtext", "doc.text", "doc", "film", "externaldrive", "trash",
+]) {
+    paths[`${name}.fill`] = paths[name]!;
+}
 
 /** The SVG of the SF Symbol `name`, drawn in the current colour. */
 export function sfSymbol(name: string, size = 16): string {
