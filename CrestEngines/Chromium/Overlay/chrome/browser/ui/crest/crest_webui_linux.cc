@@ -234,6 +234,8 @@ class CrestUIHandler final : public content::WebUIMessageHandler, public CoreHos
     web_ui()->RegisterMessageCallback(
         "setPageBounds", base::BindRepeating(&CrestUIHandler::HandleSetPageBounds, base::Unretained(this)));
     web_ui()->RegisterMessageCallback(
+        "setPageLayout", base::BindRepeating(&CrestUIHandler::HandleSetPageLayout, base::Unretained(this)));
+    web_ui()->RegisterMessageCallback(
         "floatReady", base::BindRepeating(&CrestUIHandler::HandleFloatReady, base::Unretained(this)));
     web_ui()->RegisterMessageCallback(
         "setFloat", base::BindRepeating(&CrestUIHandler::HandleSetFloat, base::Unretained(this)));
@@ -341,6 +343,43 @@ class CrestUIHandler final : public content::WebUIMessageHandler, public CoreHos
     if (LinuxWindow* window = LinuxWindow::Current()) {
       window->SetPageBounds(gfx::Rect(values[0], values[1], values[2], values[3]));
     }
+  }
+
+  // args: one list per page, [core page id, x, y, width, height, whether it
+  // stays over the raised WebUI, corner radius], the later over the earlier,
+  // then the id of the page in use (empty when none is). Shows those pages
+  // and no other: the cards of a split, and a Peek's page over them.
+  void HandleSetPageLayout(const base::ListValue& args) {
+    if (args.size() != 2 || !args[0].is_list() || !args[1].is_string()) return;
+    LinuxWindow* window = LinuxWindow::Current();
+    if (!window) return;
+    std::vector<LinuxWindow::PageSlot> slots;
+    for (const base::Value& entry : args[0].GetList()) {
+      const base::ListValue* fields = entry.GetIfList();
+      if (!fields || fields->size() != 7 || !(*fields)[0].is_string()) return;
+      const std::optional<engine::Guid> page = ParseGuid((*fields)[0].GetString());
+      if (!page) return;
+      int values[4];
+      for (size_t index = 0; index < 4; ++index) {
+        const base::Value& value = (*fields)[index + 1];
+        if (!value.is_int() && !value.is_double()) return;
+        values[index] = static_cast<int>(value.GetDouble());
+      }
+      if (values[2] < 0 || values[3] < 0) return;
+      const base::Value& radius = (*fields)[6];
+      slots.push_back(LinuxWindow::PageSlot{
+          .page = GuidText(*page),
+          .bounds = gfx::Rect(values[0], values[1], values[2], values[3]),
+          .above = (*fields)[5].GetIfBool().value_or(false),
+          .corner_radius = radius.is_int() || radius.is_double() ? static_cast<float>(radius.GetDouble()) : 0});
+    }
+    std::string focused;
+    if (!args[1].GetString().empty()) {
+      const std::optional<engine::Guid> page = ParseGuid(args[1].GetString());
+      if (!page) return;
+      focused = GuidText(*page);
+    }
+    window->SetPageLayout(slots, focused);
   }
 
   // The floating surfaces' page started; it hears what the main WebUI sends.
@@ -487,9 +526,12 @@ bool ClaimShortcut(const input::NativeWebKeyboardEvent& event, bool page_decline
   const bool alt = modifiers & blink::WebInputEvent::kAltKey;
   const bool meta = modifiers & blink::WebInputEvent::kMetaKey;
   const bool shift = modifiers & blink::WebInputEvent::kShiftKey;
-  if (!ctrl && !alt && !meta) return false;
   const std::string key = KeyName(event.windows_key_code);
   if (key.empty()) return false;
+  // A key without Ctrl, Alt or Meta stays the page's, but for Escape, which
+  // closes a Peek before its page sees it, as the Mac's Peek keyboard
+  // monitor takes it.
+  if (!ctrl && !alt && !meta && key != "Escape") return false;
   for (const Shortcut& shortcut : Shortcuts()) {
     if (!page_declined && !shortcut.reserved) continue;
     if (shortcut.key != key && !(shortcut.key == "+" && key == "=")) continue;
@@ -508,6 +550,10 @@ bool ClaimShortcut(const input::NativeWebKeyboardEvent& event, bool page_decline
 
 void PerformCommand(const std::string& command) {
   if (g_handler) g_handler->FireCommand(command);
+}
+
+void ReportPageFocused(const std::string& page) {
+  if (g_handler) g_handler->Fire("crest-page-focused", base::Value(page));
 }
 
 CrestUIConfig::CrestUIConfig() : DefaultWebUIConfig(content::kChromeUIScheme, kCrestUIHost) {}

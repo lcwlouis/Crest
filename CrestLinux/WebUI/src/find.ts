@@ -6,6 +6,7 @@
 import type { FindFinished, Guid, PageState } from "../generated/crest_contracts.js";
 import { pageRequest } from "./bridge.js";
 import type { FloatEvent, FloatState } from "./float.js";
+import { shownCard } from "./page-cards.js";
 import { FloatRank } from "./surfaces.js";
 import type { FloatSurface, FloatSurfaces } from "./surfaces.js";
 
@@ -98,7 +99,7 @@ export class FindBar implements FloatSurface {
     /** Sends the bar where the page's card is, and what it shows. */
     place(focus: boolean, query: string | null): void {
         if (!this.pageId) return;
-        const card = document.getElementById("page")!.getBoundingClientRect();
+        const card = shownCard().getBoundingClientRect();
         const state: FloatState = { kind: "find", query, matches: this.matches, activeMatch: this.activeMatch };
         this.surfaces.post(this, {
             bounds: { x: card.right - width - inset, y: card.top + inset, width, height },

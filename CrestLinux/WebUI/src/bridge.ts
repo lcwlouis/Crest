@@ -159,6 +159,43 @@ export function showPage(pageId: string): void {
     chrome.send("showPage", [pageId]);
 }
 
+/** One page the window shows, where (in CSS pixels), and how its view stacks. */
+export interface PagePlacement {
+    readonly pageId: string;
+    readonly x: number;
+    readonly y: number;
+    readonly width: number;
+    readonly height: number;
+    /** Whether the page stays over this WebUI while it is raised, as a Peek's page does. */
+    readonly above: boolean;
+    readonly cornerRadius: number;
+}
+
+/**
+ * Shows these pages and no other, the later ones over the earlier: the cards
+ * of a split side by side, and a Peek's page over them. `focusedPageId` is
+ * the page in use, which takes the keyboard; empty when none is.
+ */
+export function setPageLayout(pages: readonly PagePlacement[], focusedPageId: string): void {
+    chrome.send("setPageLayout", [
+        pages.map((page) => [
+            page.pageId,
+            Math.round(page.x),
+            Math.round(page.y),
+            Math.round(page.width),
+            Math.round(page.height),
+            page.above,
+            page.cornerRadius,
+        ]),
+        focusedPageId,
+    ]);
+}
+
+/** Hears the person click into a page the window shows, by its page id. */
+export function listenToPageFocus(onFocus: (pageId: string) => void): void {
+    listen("crest-page-focused", (pageId) => onFocus((pageId as string).toLowerCase()));
+}
+
 /**
  * Raises the WebUI over the page while it draws a floating surface, such as
  * the command bar, and lowers it again after. Raised, the page shows through
@@ -222,10 +259,10 @@ export function registerShortcuts(
 ): void {
     listen("crest-shortcut", (key) => onKey(key as HostKey));
     listen("crest-command", (command) => onCommand(command as string));
-    chrome.send("setShortcuts", shortcuts.map((shortcut) => [...shortcut]));
+    updateShortcuts(shortcuts);
 }
 
-/** Tells the window Crest's keys again, after the person changed them. */
+/** Tells the window which keys are Crest's again, as `registerShortcuts` first did. */
 export function updateShortcuts(shortcuts: readonly (readonly [string, boolean, boolean, boolean, number, boolean])[]): void {
     chrome.send("setShortcuts", shortcuts.map((shortcut) => [...shortcut]));
 }
