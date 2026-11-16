@@ -12,6 +12,8 @@ const paths: Record<string, string> = {
     checkmark: '<path d="M5 12.5l4.5 4.5L19 7"/>',
     "checkmark.circle.fill":
         '<circle cx="12" cy="12" r="10" fill="currentColor" stroke="none"/><path class="symbol-knockout" d="M7.5 12.5l3 3 6-6.5"/>',
+    "chevron.down": '<path d="M6 9l6 6 6-6"/>',
+    "chevron.left": '<path d="M15 18l-6-6 6-6"/>',
     "chevron.right": '<path d="M9 6l6 6-6 6"/>',
     "chevron.up": '<path d="M6 15l6-6 6 6"/>',
     ellipsis:
@@ -31,6 +33,9 @@ const paths: Record<string, string> = {
     link: '<path d="M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1 1"/><path d="M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1-1"/>',
     lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
     "lock.open": '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 7.6-1.8"/>',
+    macwindow: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 8.5h18"/><path d="M6 6.25h.01M8.5 6.25h.01"/>',
+    "macwindow.badge.plus":
+        '<path d="M13 20H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v7"/><path d="M3 8.5h18"/><path d="M6 6.25h.01M8.5 6.25h.01"/><path d="M18.5 14.5v7M15 18h7"/>',
     minus: '<path d="M5 12h14"/>',
     pencil: '<path d="M4 20l1-4L16 5l3 3L8 19z"/><path d="M14 7l3 3"/>',
     pin: '<path d="M12 16v6"/><path d="M8 3h8l-1 6 3 4v3H6v-3l3-4z"/>',

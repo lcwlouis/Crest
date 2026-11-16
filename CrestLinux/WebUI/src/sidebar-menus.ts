@@ -12,9 +12,13 @@
 // Items whose surface Linux does not draw yet are left out rather than
 // offered dead: tab sharing, the icon picker (Change Icon…, Folder Icon…),
 // the folder colour popover, Pull New Icon (it needs the page's image
-// bytes), multi-selection, history, passwords, settings, private browsing
-// and new windows. The empty sidebar's menu and the Space switcher's are the
-// Space actions' (space-actions.ts).
+// bytes), multi-selection, history, passwords, settings and private
+// browsing. The empty sidebar's menu and the Space switcher's are the Space
+// actions' (space-actions.ts).
+//
+// Move to Window stands in for the Mac's drag of a tab out of its window or
+// onto another (inventory D14): it moves the tab to a new window, or to one
+// of the other windows open now, which comes forward showing it.
 
 import type {
     FolderState,
@@ -52,6 +56,11 @@ export interface SidebarMenuHost {
     readonly perform: (command: ShortcutCommand) => void;
     /** Opens Settings, as the Mac's Space header menu does. */
     readonly openSettings: () => void;
+    /** The other browser windows open now, and moving a tab to one of them or to a new window (`null`). */
+    readonly windows: {
+        otherWindows(): readonly { readonly windowId: Guid; readonly title: string }[];
+        moveTab(spaceId: Guid, tabId: Guid, destination: Guid | null): Promise<void>;
+    };
 }
 
 /** The colour a new folder takes (BrandColor.folderDefault, "Slate"). */
@@ -349,6 +358,19 @@ export class SidebarMenus {
                 ),
             });
         }
+
+        const moveToWindow = (destination: Guid | null) => () =>
+            void this.host.windows.moveTab(space.state.id, tab.id, destination).catch(this.host.report);
+        const others = this.host.windows.otherWindows();
+        entries.push({
+            title: "Move to Window",
+            icon: symbol("macwindow"),
+            submenu: [
+                { title: "New Window", icon: symbol("macwindow.badge.plus"), action: moveToWindow(null) },
+                ...(others.length > 0 ? ["separator" as const] : []),
+                ...others.map((other): MenuItem => ({ title: other.title, icon: symbol("macwindow"), action: moveToWindow(other.windowId) })),
+            ],
+        });
 
         entries.push("separator", {
             title: "Split with Current Tab",

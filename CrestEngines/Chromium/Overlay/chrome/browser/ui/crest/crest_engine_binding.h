@@ -99,8 +99,11 @@ class EngineBinding {
     // when no Space can host the profile's tabs.
     virtual std::optional<WindowPlacement> ReserveWindow(const std::string& profile, bool own_window) = 0;
     // Opens the window reserved as `placement`, showing its Space, just before
-    // its first tab is offered; in front when `focused`.
-    virtual void PresentWindow(const WindowPlacement& placement, bool focused) = 0;
+    // its first tab is offered; in front when `focused`. False when the
+    // window opens later, as one whose UI loads first does: its tabs wait to
+    // be offered until the shell reports it open with
+    // EngineBrowsers::WindowOpened.
+    virtual bool PresentWindow(const WindowPlacement& placement, bool focused) = 0;
     // Drops the views the shell hosts beside `page`, whose WebContents the
     // binding destroys next.
     virtual void ReleasePage(const std::string& page) = 0;
