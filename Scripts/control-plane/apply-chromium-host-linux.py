@@ -30,6 +30,9 @@ HEADERS = [REPO / "CrestContracts/include" / name
                         "crest_contracts.h")]
 HEADERS += [REPO / "CrestCore/native/ContentFilter/include/crest_content_filter.h",
             ENGINE / "Apple/CrestChromiumHost.h"]
+# Linux-only host patches, each applied on its own once the host's are in, so
+# a source that already has the host takes a new one without a new prepare.
+LINUX_HOST_PATCHES = [ENGINE / "Linux/Patches/feature-overrides.patch"]
 
 
 def dry_run(patch, source, *flags):
@@ -38,17 +41,28 @@ def dry_run(patch, source, *flags):
 
 
 def installed(patches, source, scratch):
-    """Whether every patch is in `source`: they reverse, last first, in a copy."""
-    names = {line.split()[1].removeprefix("a/") for patch in patches
+    """Whether every patch is in `source`: they reverse, last first, in a copy.
+
+    The Linux-only patches apply over the host's and can change its context,
+    so any of them in the copy comes out first."""
+    names = {line.split()[1].removeprefix("a/") for patch in [*patches, *LINUX_HOST_PATCHES]
              for line in patch.read_text().splitlines() if line.startswith("--- a/")}
     for name in names:
         if not (source / name).is_file():
             return False
         (scratch / name).parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(source / name, scratch / name)
-    return all(subprocess.run(["patch", "--batch", "--fuzz=0", "--reverse", "-p1", "-s", "--input", patch],
+
+    # --forward makes a patch that is not applied fail to reverse; with --batch
+    # alone, patch would apply it forward instead and still succeed.
+    def reverse(patch):
+        return subprocess.run(["patch", "--batch", "--fuzz=0", "--reverse", "--forward", "-p1", "-s", "--input", patch],
                               cwd=scratch, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
-               for patch in reversed(patches))
+
+    for patch in reversed(LINUX_HOST_PATCHES):
+        if dry_run(patch, scratch, "--reverse", "--forward"):
+            reverse(patch)
+    return all(reverse(patch) for patch in reversed(patches))
 
 
 def derive(directory, split):
@@ -87,6 +101,11 @@ def install(source):
             run(patches, source, "--forward")
         else:
             sys.exit("The host patches neither apply nor are applied; review the Chromium source")
+    for patch in LINUX_HOST_PATCHES:
+        if dry_run(patch, source, "--reverse", "--forward"):
+            print(f"{patch.name} is already applied.")
+        else:
+            run([patch], source, "--forward")
     for path in (ENGINE / "Overlay").rglob("*"):
         if path.is_file():
             destination = source / path.relative_to(ENGINE / "Overlay")

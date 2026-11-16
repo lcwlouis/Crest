@@ -1,0 +1,57 @@
+# The features Crest turns off on Linux, as native-host.patch does for the Mac
+# in the same function: Linux has none of what they need either. Applies after
+# the host's patches, whose Mac block it follows.
+
+--- a/chrome/browser/chrome_browser_field_trials.cc
++++ b/chrome/browser/chrome_browser_field_trials.cc
+@@ -63,6 +63,17 @@
+ #include "media/base/media_switches.h"
+ #endif
+
++#if BUILDFLAG(IS_LINUX)
++#include "chrome/common/chrome_features.h"
++#include "components/lens/lens_features.h"
++#include "components/security_interstitials/core/features.h"
++#include "content/public/common/content_features.h"
++#include "pdf/buildflags.h"
++#if BUILDFLAG(ENABLE_PDF_SAVE_TO_DRIVE)
++#include "pdf/pdf_features.h"
++#endif
++#endif
++
+ #if BUILDFLAG(IS_CHROMEOS)
+ #include "chrome/common/channel_info.h"
+ #include "chromeos/ash/services/multidevice_setup/public/cpp/first_run_field_trial.h"
+@@ -162,6 +173,32 @@
+   }
+ #endif  // BUILDFLAG(IS_MAC)
+
++#if BUILDFLAG(IS_LINUX)
++  if (base::CommandLine::ForCurrentProcess()->HasSwitch("crest-control-plane")) {
++    // Crest keeps federated sign-in (FedCM) off and hides the API from
++    // pages, which sign in through their own pop-up or redirect instead.
++    // Crest has no account chooser to show for such a request.
++    feature_overrides.DisableFeature(features::kFedCm);
++    // An http:// address that can't be upgraded to HTTPS loads over HTTP
++    // without a warning, as on the Mac. HTTPS-First's warning is a
++    // tab-scoped dialog, which needs a Views host that Crest's pages don't
++    // have.
++    feature_overrides.DisableFeature(features::kHttpsFirstBalancedMode);
++    feature_overrides.DisableFeature(features::kHttpsFirstModeIncognito);
++    feature_overrides.DisableFeature(
++        security_interstitials::features::kHttpsFirstDialogUi);
++    // Google Lens needs Chrome's side panel, which Crest's window doesn't
++    // have, so a page's menu offers a plain image search instead.
++    feature_overrides.DisableFeature(lens::features::kLensOverlay);
++    feature_overrides.DisableFeature(lens::features::kLensStandalone);
++#if BUILDFLAG(ENABLE_PDF_SAVE_TO_DRIVE)
++    // Saving a PDF to Google Drive signs in through Chrome's Google account
++    // windows, which Crest doesn't have. The viewer keeps its Download button.
++    feature_overrides.DisableFeature(chrome_pdf::features::kPdfSaveToDrive);
++#endif
++  }
++#endif  // BUILDFLAG(IS_LINUX)
++
+ #if BUILDFLAG(IS_ANDROID)
+ #if BUILDFLAG(IS_DESKTOP_ANDROID)
+   // Nota bene: Anything here is expected to be short-lived, unless deemed too

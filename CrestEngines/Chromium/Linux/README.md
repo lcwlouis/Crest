@@ -56,7 +56,11 @@ The host is the Mac's, with Linux sources for what the Mac does in AppKit:
 which Crest's Swift UI does on the Mac), `crest_linux_window.cc` (a window with
 Crest's sidebar beside the page) and `crest_webui_linux.cc` (`chrome://crest`,
 the sidebar, which reaches the core through the browser process in the core's
-wire format). The sidebar is `CrestLinux/WebUI`, built with Node 22.13 or later:
+wire format). Patches here that only Linux needs, such as
+`feature-overrides.patch` (the Chromium features Crest turns off, as the Mac
+host does, and the PDF viewer's Save to Google Drive), apply after the host's,
+each on its own. The sidebar is `CrestLinux/WebUI`, built with Node 22.13 or
+later:
 
 ```sh
 node CrestLinux/WebUI/build.mjs ~/Chromium/crest-ui
