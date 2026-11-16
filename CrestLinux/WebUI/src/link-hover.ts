@@ -20,6 +20,7 @@ import {
     truncateMiddle,
 } from "./page-layers.js";
 import type { PageLayerState } from "./page-layers.js";
+import { shownCard } from "./page-cards.js";
 import { FloatRank } from "./surfaces.js";
 import type { FloatSurface, FloatSurfaces } from "./surfaces.js";
 
@@ -118,7 +119,7 @@ export class LinkHoverPreview implements FloatSurface {
             this.surfaces.post(this, null);
             return;
         }
-        const card = document.getElementById("page")!.getBoundingClientRect();
+        const card = shownCard().getBoundingClientRect();
         const maxWidth = Math.min(linkHoverMaxWidth, Math.max(0, card.width - 2 * linkHoverInset));
         const state: Extract<PageLayerState, { kind: "linkHover" }> = {
             kind: "linkHover",

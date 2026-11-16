@@ -3,7 +3,7 @@
 // address of the link under the pointer, a page still opening, the engine's
 // bars for the page, and a page its engine could not make.
 
-import type { Change, EnginePresentation, PageState, TabState } from "../generated/crest_contracts.js";
+import type { Change, EnginePresentation, Guid, PageState, TabState } from "../generated/crest_contracts.js";
 import { InfoBars } from "./infobars.js";
 import { LinkHoverPreview } from "./link-hover.js";
 import type { Model } from "./model.js";
@@ -42,6 +42,11 @@ export class PageStates {
         this.opening.apply(changes);
         this.infoBars.apply(changes);
         this.processFailure.follow();
+    }
+
+    /** Another window took the page `pageId`: what showed over it here goes. */
+    pageLeft(pageId: Guid): void {
+        this.linkHover.invalidate(pageId);
     }
 
     /** Hears one of the engine's presentations. */
