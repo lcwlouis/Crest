@@ -11,12 +11,16 @@
 // choice, once Linux draws the Space settings that set them.
 
 import type { Change, DownloadDestinationAsked, Guid, Intent } from "../generated/crest_contracts.js";
-import { chooseDownloadPath } from "./bridge.js";
+import { chooseDownloadPath, closeDownloadDialog } from "./bridge.js";
 
 export class DownloadDestinations {
     private readonly send: (intent: Intent) => Promise<unknown>;
     /** Questions heard but not yet taken up, so ones a later batch settles are never asked. */
     private readonly waiting = new Map<Guid, DownloadDestinationAsked>();
+    /** Questions being asked now, whose dialog a settling closes. */
+    private readonly asking = new Set<Guid>();
+    /** Questions the core settled while they were asked, which need no answer. */
+    private readonly settled = new Set<Guid>();
 
     constructor(send: (intent: Intent) => Promise<unknown>) {
         this.send = send;
@@ -34,6 +38,12 @@ export class DownloadDestinations {
                 asked = true;
             } else if (change.kind === "PromptSettled") {
                 this.waiting.delete(change.value.promptId);
+                // The download was cancelled or its page closed while the
+                // person was choosing: the dialog goes, as on the Mac.
+                if (this.asking.has(change.value.promptId)) {
+                    this.settled.add(change.value.promptId);
+                    void closeDownloadDialog(change.value.promptId).catch(console.error);
+                }
             }
         }
         if (!asked) return;
@@ -46,12 +56,16 @@ export class DownloadDestinations {
 
     private async choose(asked: DownloadDestinationAsked): Promise<void> {
         let answer: { readonly path: string | null; readonly unavailable: boolean };
+        this.asking.add(asked.promptId);
         try {
-            answer = await chooseDownloadPath(safeFilename(asked.suggestedFilename), asked.forcesPrompt);
+            answer = await chooseDownloadPath(safeFilename(asked.suggestedFilename), asked.forcesPrompt, asked.promptId);
         } catch (error) {
             console.error(error);
             answer = { path: null, unavailable: true };
+        } finally {
+            this.asking.delete(asked.promptId);
         }
+        if (this.settled.delete(asked.promptId)) return;
         if (answer.unavailable) {
             await this.send({ kind: "FailDownload", value: { downloadId: asked.downloadId, reason: "FolderUnavailable", message: null } });
         }

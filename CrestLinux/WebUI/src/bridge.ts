@@ -263,6 +263,12 @@ export function showDownloadInFolder(fileUrl: string): void {
 export function chooseDownloadPath(
     filename: string,
     asks: boolean,
+    key: string,
 ): Promise<{ readonly path: string | null; readonly unavailable: boolean }> {
-    return send("chooseDownloadPath", filename, asks);
+    return send("chooseDownloadPath", filename, asks, key);
+}
+
+/** Closes the save dialog asked under `key`, if it is still open; it answers as cancelled. */
+export function closeDownloadDialog(key: string): Promise<void> {
+    return send("closeDownloadDialog", key);
 }

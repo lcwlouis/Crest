@@ -8,6 +8,7 @@
 #include "base/functional/bind.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/uuid.h"
+#include "build/build_config.h"
 #include "chrome/browser/permissions/system/system_permission_settings.h"
 #include "chrome/browser/ui/crest/crest_engine_binding.h"
 #include "chrome/browser/ui/crest/crest_engine_page.h"
@@ -48,6 +49,14 @@ std::optional<engine::SitePermission> PermissionFor(permissions::PermissionPromp
         several = several || single.has_value();
         single = engine::SitePermission::kNotifications;
         break;
+#if !BUILDFLAG(IS_MAC)
+      // The Mac host asks this one in a sheet of its own; Linux has no such
+      // sheet, and an unanswered request holds every later download.
+      case permissions::RequestType::kMultipleDownloads:
+        several = several || single.has_value();
+        single = engine::SitePermission::kAutomaticDownloads;
+        break;
+#endif
       default:
         return std::nullopt;
     }
@@ -63,6 +72,7 @@ std::optional<engine::SitePermission> PermissionFor(permissions::PermissionPromp
   return several ? std::nullopt : single;
 }
 
+#if BUILDFLAG(IS_MAC)
 // The capture devices a batch of engine requests asks for. Chromium keeps the
 // system's answer for each, and reads it again only when it asks the system
 // itself.
@@ -82,6 +92,7 @@ std::vector<ContentSettingsType> CaptureDevicesFor(permissions::PermissionPrompt
   }
   return devices;
 }
+#endif  // BUILDFLAG(IS_MAC)
 
 // The origin a permission belongs to, as Crest's choices name it.
 engine::SiteOrigin SiteOriginOf(const GURL& url) {
@@ -125,9 +136,13 @@ class EnginePrompts::PermissionPrompt final : public permissions::PermissionProm
       return;
     }
     std::vector<ContentSettingsType> devices;
+#if BUILDFLAG(IS_MAC)
+    // Only the Mac has a system answer for each device; elsewhere Chromium's
+    // system permission settings have nothing to ask and must not be asked.
     if (grants) {
       devices = CaptureDevicesFor(*delegate_);
     }
+#endif
     if (devices.empty()) {
       AnswerPermissionRequests(*delegate_, grants, remembers);
       return;
