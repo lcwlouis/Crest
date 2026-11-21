@@ -31,6 +31,8 @@ import { Onboarding } from "./onboarding.js";
 import { CredentialPrompts } from "./credential-prompts.js";
 import { PageStates } from "./page-states.js";
 import { WebNotifications } from "./notifications.js";
+import { MediaSessions } from "./media-sessions.js";
+import { NowPlayingDeck } from "./now-playing.js";
 import type { Space, Workspace } from "./model.js";
 import { InlineRename } from "./rename.js";
 import { element, Sidebar, symbol } from "./sidebar.js";
@@ -211,6 +213,16 @@ const sidebar = new Sidebar(
     },
     root,
 );
+
+// The widget deck above the Space switcher, with the pages' Now Playing cards.
+const mediaSessions: MediaSessions = new MediaSessions({ model, report, changed: () => nowPlaying.render() });
+const nowPlaying: NowPlayingDeck = new NowPlayingDeck({
+    sessions: mediaSessions,
+    icons,
+    windowId: () => windows.windowId,
+    send: (intent) => void dispatch(intent).catch(report),
+});
+root.insertBefore(nowPlaying.root, root.querySelector(".switcher"));
 
 const commands = new Commands({
     model,
@@ -551,6 +563,7 @@ async function start(): Promise<void> {
                 pageStates.present(presentation);
                 credentialPrompts.present(presentation);
                 webNotifications.present(presentation);
+                mediaSessions.present(presentation);
             } catch (error) {
                 console.error(error);
             }

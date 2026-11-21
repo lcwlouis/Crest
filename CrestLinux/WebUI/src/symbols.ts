@@ -166,6 +166,18 @@ Object.assign(paths, {
     "wand.and.stars": '<path d="M4 20L15 9"/><path d="M14 4v3M12.5 5.5h3M19 9v3M17.5 10.5h3M18 3v2M17 4h2"/>',
     "person.badge.key": '<circle cx="10" cy="7.5" r="3.5"/><path d="M3 20a7 7 0 0 1 10-6.3"/><circle cx="17" cy="15" r="2.5"/><path d="M17 17.5V21M17 19.5h2"/>',
 });
+// Now Playing's glyphs (now-playing).
+Object.assign(paths, {
+    "music.note": '<path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/>',
+    "play.fill": '<path d="M7 4.5v15l12-7.5z" fill="currentColor"/>',
+    "pause.fill": '<rect x="6" y="4.5" width="4" height="15" rx="1" fill="currentColor"/><rect x="14" y="4.5" width="4" height="15" rx="1" fill="currentColor"/>',
+    "backward.fill": '<path d="M12 6.5v11L3.5 12z" fill="currentColor"/><path d="M21 6.5v11L12.5 12z" fill="currentColor"/>',
+    "forward.fill": '<path d="M12 6.5v11l8.5-5.5z" fill="currentColor"/><path d="M3 6.5v11l8.5-5.5z" fill="currentColor"/>',
+    "speaker.wave.2.fill": '<path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="currentColor"/><path d="M15.5 9a4 4 0 0 1 0 6"/><path d="M18 6.5a7.5 7.5 0 0 1 0 11"/>',
+    "speaker.slash.fill": '<path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="currentColor"/><path d="M15.5 9.5l5 5M20.5 9.5l-5 5"/>',
+    xmark: '<path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/>',
+    globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.5 2.7 3.8 5.7 3.8 9s-1.3 6.3-3.8 9c-2.5-2.7-3.8-5.7-3.8-9S9.5 5.7 12 3z"/>',
+});
 for (const name of [
     "gearshape", "briefcase", "person", "house", "graduationcap", "paintbrush", "gamecontroller", "sun.max", "sun.horizon", "moon", "star",
     "bolt", "flame", "drop", "key", "crown", "leaf", "mountain.2", "heart", "pin", "bookmark", "rectangle.stack",
