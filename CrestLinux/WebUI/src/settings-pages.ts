@@ -5,6 +5,7 @@ import type { SettingsPage, SpaceSectionPage } from "./settings.js";
 import { aboutPage, advancedPage } from "./settings-about.js";
 import { adBlockingPage } from "./settings-adblocking.js";
 import { appearancePage } from "./settings-appearance.js";
+import { extensionsPage, extensionsSection } from "./settings-extensions.js";
 import { generalPage, tabsPage } from "./settings-general.js";
 import { linksPage } from "./settings-links.js";
 import { passwordsPage, passwordsSection } from "./settings-passwords.js";
@@ -23,12 +24,14 @@ export const settingsPages: Readonly<Record<string, SettingsPage>> = {
     privacy: privacyPage,
     adBlocking: adBlockingPage,
     passwords: passwordsPage,
+    extensions: extensionsPage,
     advanced: advancedPage,
     about: aboutPage,
 };
 
-export const spaceSectionPages: Readonly<Record<"browsing" | "privacy" | "passwords", SpaceSectionPage>> = {
+export const spaceSectionPages: Readonly<Record<"browsing" | "privacy" | "passwords" | "extensions", SpaceSectionPage>> = {
     browsing: browsingSection,
     privacy: privacySection,
     passwords: passwordsSection,
+    extensions: extensionsSection,
 };
