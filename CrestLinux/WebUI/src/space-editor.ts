@@ -1,5 +1,6 @@
-// A Space's editor, the Mac's Space page in Settings (BrowserSettingsSpacePage)
-// as one sheet over the window until Linux has Settings: the Space's icon and
+// A Space's editor, the Mac's Space page in Settings (BrowserSettingsSpacePage),
+// which Settings embeds as its Space page's header and Appearance page, and
+// which can also stand as one sheet over the window: the Space's icon and
 // its name, which edits in place (BrowserInlineSpaceName), its actions menu
 // (BrowserSettingsSpaceMenu, with Reset Appearance and Artwork Credits), and
 // the Appearance page's Crest Studio as the Mac shows it where Settings has no
@@ -16,8 +17,8 @@
 // Left out until Linux draws them: the crest's own layers (shape, field,
 // band, emblem, border and finish, the Forge's steps), Shuffle, the full SF
 // Symbols catalogue (the eight BrowserSpaceSimpleSymbol glyphs stand in), the
-// gradient dial (a slider sets the angle), each row's reset control, and the
-// other pages (Browsing, Privacy, Passwords, Extensions).
+// gradient dial (a slider sets the angle), and each row's reset control.
+// Settings draws the Space's other pages (settings-space.ts).
 
 import type { BrandColor, Guid, SpaceBranding, SpaceSettings, SpaceTextColorMode } from "../generated/crest_contracts.js";
 import { SpaceBannerPattern, SpaceHouse, SpaceScheme, SpaceTextColorMode as TextColorModes, Tincture } from "../generated/crest_contracts.js";
@@ -184,7 +185,9 @@ function startingLook(look: SpaceBranding): SpaceBranding | null {
 export class SpaceEditor {
     private readonly host: SpaceEditorHost;
     private spaceId: Guid | null = null;
+    /** The sheet's layer, or the embedded header: whatever is open. */
     private layer: HTMLElement | null = null;
+    private embedded: { readonly header: HTMLElement; readonly body: HTMLElement } | null = null;
     private body: HTMLElement | null = null;
     private headerIcon: HTMLElement | null = null;
     private readonly name = element("input", "space-editor-name");
@@ -244,6 +247,24 @@ export class SpaceEditor {
         }
     }
 
+    /**
+     * Draws the editor of `spaceId` into a header and a body that Settings
+     * places on its Space page, doing what `intent` asks on arrival; the same
+     * nodes while the Space stays the same.
+     */
+    embed(spaceId: Guid, intent: SpaceEditorIntent): { readonly header: HTMLElement; readonly body: HTMLElement } {
+        if (this.spaceId !== spaceId || !this.embedded) this.close();
+        this.spaceId = spaceId;
+        if (!this.embedded) this.build(true);
+        this.draft = null;
+        this.render();
+        if (intent !== "none") {
+            this.name.focus();
+            this.name.select();
+        }
+        return this.embedded!;
+    }
+
     close(): void {
         if (!this.layer) return;
         if (document.activeElement === this.name) this.rename();
@@ -253,11 +274,13 @@ export class SpaceEditor {
         this.redrawAfterPress = false;
         this.layer.remove();
         this.layer = null;
+        this.embedded = null;
         this.body = null;
         this.spaceId = null;
         this.release?.();
         this.release = null;
         if (this.restoreFocus instanceof HTMLElement && this.restoreFocus.isConnected) this.restoreFocus.focus({ preventScroll: true });
+        this.restoreFocus = null;
     }
 
     /** Draws what the core now holds for the Space, or closes once it is gone. */
@@ -343,14 +366,7 @@ export class SpaceEditor {
 
     // MARK: - Drawing
 
-    private build(): void {
-        this.restoreFocus = document.activeElement;
-        this.release = holdOverlay();
-        const layer = element("div", "space-editor-layer");
-        const sheet = element("div", "space-editor");
-        sheet.setAttribute("role", "dialog");
-        sheet.setAttribute("aria-modal", "true");
-        sheet.setAttribute("aria-label", "Space");
+    private build(embeds = false): void {
         const header = element("div", "space-editor-header");
         this.headerIcon = element("span", "space-editor-header-icon");
         const actions = element("button", "space-editor-actions");
@@ -359,17 +375,31 @@ export class SpaceEditor {
         actions.setAttribute("aria-label", "Space actions");
         actions.setAttribute("aria-haspopup", "menu");
         actions.addEventListener("click", () => void this.openActions(actions));
+        header.append(this.headerIcon, this.name, actions);
+        this.body = element("div", "space-editor-body");
+        window.addEventListener("pointerup", this.onPointerUp, true);
+        if (embeds) {
+            for (const part of [header, this.body]) part.addEventListener("pointerdown", () => (this.pressing = true), true);
+            this.embedded = { header, body: this.body };
+            this.layer = header;
+            return;
+        }
+        this.restoreFocus = document.activeElement;
+        this.release = holdOverlay();
+        const layer = element("div", "space-editor-layer");
+        const sheet = element("div", "space-editor");
+        sheet.setAttribute("role", "dialog");
+        sheet.setAttribute("aria-modal", "true");
+        sheet.setAttribute("aria-label", "Space");
         const done = element("button", "space-editor-done", "Done");
         done.addEventListener("click", () => this.close());
-        header.append(this.headerIcon, this.name, actions, done);
-        this.body = element("div", "space-editor-body");
+        header.append(done);
         sheet.append(header, this.body);
         layer.append(sheet);
         layer.addEventListener("mousedown", (event) => {
             if (event.target === layer) this.close();
         });
         layer.addEventListener("pointerdown", () => (this.pressing = true), true);
-        window.addEventListener("pointerup", this.onPointerUp, true);
         document.body.append(layer);
         this.layer = layer;
         window.addEventListener("keydown", this.onKey);

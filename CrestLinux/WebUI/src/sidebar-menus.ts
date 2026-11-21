@@ -50,6 +50,8 @@ export interface SidebarMenuHost {
     readonly report: (error: unknown) => void;
     /** Performs one of the core's commands, as the command bar does. */
     readonly perform: (command: ShortcutCommand) => void;
+    /** Opens Settings, as the Mac's Space header menu does. */
+    readonly openSettings: () => void;
 }
 
 /** The colour a new folder takes (BrandColor.folderDefault, "Slate"). */
@@ -623,6 +625,7 @@ export class SidebarMenus {
                             this.nameNewFolder(space, folderId);
                         })(),
                 },
+                { title: "Settings", icon: symbol("gearshape"), action: () => this.host.openSettings() },
                 commandItem("ClearUnpinnedTabs", () => this.host.perform("ClearUnpinnedTabs")),
             ],
             { anchor },

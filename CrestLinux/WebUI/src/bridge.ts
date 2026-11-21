@@ -254,6 +254,11 @@ export function registerPageMenu(
     listen("crest-copy-link", (url) => onCopyLink(url as string));
 }
 
+/** Tells the window Crest's keys again, after the person changed them. */
+export function updateShortcuts(shortcuts: readonly (readonly [string, boolean, boolean, boolean, number, boolean])[]): void {
+    chrome.send("setShortcuts", shortcuts.map((shortcut) => [...shortcut]));
+}
+
 /** Asks the engine about one of its pages directly, as the Mac's views do. */
 export async function pageRequest<K extends PageRequest["kind"] & keyof PageRequestAnswers>(
     kind: K,
