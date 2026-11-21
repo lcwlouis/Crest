@@ -14,6 +14,7 @@ import {
     query,
     Refused,
     registerShortcuts,
+    relayoutInspector,
     updateShortcuts,
 } from "./bridge.js";
 import { Commands, shortcutTable, useShortcutBindings } from "./commands.js";
@@ -30,6 +31,10 @@ import { PageMenu } from "./pagemenu.js";
 import { Onboarding } from "./onboarding.js";
 import { CredentialPrompts } from "./credential-prompts.js";
 import { PageStates } from "./page-states.js";
+import { WebNotifications } from "./notifications.js";
+import { MediaSessions } from "./media-sessions.js";
+import { NowPlayingDeck } from "./now-playing.js";
+import { AutomaticPictureInPicture } from "./picture-in-picture.js";
 import type { Space, Workspace } from "./model.js";
 import { InlineRename } from "./rename.js";
 import { element, Sidebar, symbol } from "./sidebar.js";
@@ -219,6 +224,24 @@ const sidebar = new Sidebar(
     root,
 );
 
+// A playing video floats when its tab leaves the window's cards.
+const automaticPictureInPicture = new AutomaticPictureInPicture({
+    model,
+    windowId: () => windows.windowId,
+    isEnabled: () => preferences.app.automaticallyEntersPictureInPicture,
+    report,
+});
+
+// The widget deck above the Space switcher, with the pages' Now Playing cards.
+const mediaSessions: MediaSessions = new MediaSessions({ model, report, changed: () => nowPlaying.render() });
+const nowPlaying: NowPlayingDeck = new NowPlayingDeck({
+    sessions: mediaSessions,
+    icons,
+    windowId: () => windows.windowId,
+    send: (intent) => void dispatch(intent).catch(report),
+});
+root.insertBefore(nowPlaying.root, root.querySelector(".switcher"));
+
 const commands = new Commands({
     model,
     windowId: () => windows.windowId,
@@ -287,6 +310,12 @@ const surfaces = new FloatSurfaces();
 const findBar = new FindBar(shownPage, report, surfaces);
 const prompts = new Prompts({ model, page: shownPage }, surfaces);
 const pageStates = new PageStates({ model, tab: shownTab, page: shownPage, report }, surfaces);
+const webNotifications = new WebNotifications({
+    model,
+    windowId: () => windows.windowId,
+    send: (intent) => void dispatch(intent).catch(report),
+    report,
+});
 const credentialPrompts = new CredentialPrompts({ model, page: shownPage, zoom: (pageId) => commands.zoomOf(pageId) }, surfaces);
 listenToFloat(
     (event) => {
@@ -491,6 +520,7 @@ function followShownPage(): void {
     showStartPage(open && (!tab || (!page && tab.surface === "StartPage")));
     showFailure(page?.live.failure != null ? page : undefined);
     pageCards.follow();
+    automaticPictureInPicture.follow(pageCards.shownCards());
 }
 
 /** Whether the changes arriving are new, not the history a page that starts late replays. */
@@ -558,9 +588,12 @@ async function start(): Promise<void> {
                 const presentation = decodePresentation(bytes);
                 if (presentation.kind === "FindFinished") findBar.finished(presentation.value);
                 if (presentation.kind === "PeekRequested") peek.requested(presentation.value);
+                if (presentation.kind === "InspectorLayoutChanged") relayoutInspector(presentation.value.pageId);
                 pageStates.present(presentation);
                 sitePermissions.present(presentation);
                 credentialPrompts.present(presentation);
+                webNotifications.present(presentation);
+                mediaSessions.present(presentation);
             } catch (error) {
                 console.error(error);
             }

@@ -680,6 +680,11 @@ void EngineBinding::Close(const engine::ClosePage& closing) {
   std::optional<engine::PageRestoreState> restore_state;
   content::WebContents* contents = nullptr;
   bool runs_before_unload = false;
+  // The page's inspector goes with it, docked or in its own window, rather
+  // than staying attached to a target nobody can see until the engine quits.
+  if (EnginePage* page = Find(key)) {
+    page->Answer(engine::CloseInspector{.page_id = closing.page_id});
+  }
   if (auto page = pages_.extract(key)) {
     contents = page.mapped()->web_contents();
     runs_before_unload = page.mapped()->AwaitsBeforeUnload();

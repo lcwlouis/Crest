@@ -111,9 +111,14 @@ class LinuxShell final : public crest::EngineBinding::Shell {
 
   void ReleasePage(const std::string& page) override { crest::LinuxWindow::ReleaseEverywhere(page); }
 
-  // TODO(linux): docked DevTools, extension side panels and popups live in
-  // the page's card, which the Linux window does not draw yet.
-  void DockInspector(const std::string& page, content::WebContents* frontend) override {}
+  // A docked inspector fills the card of the page it inspects, in whichever
+  // window shows that page; undocked, it keeps Chromium's own DevTools window.
+  void DockInspector(const std::string& page, content::WebContents* frontend) override {
+    crest::LinuxWindow::DockInspector(page, frontend);
+  }
+
+  // TODO(linux): extension side panels and popups live in the page's card,
+  // which the Linux window does not draw yet.
   void ReleaseProfile(const std::string& profile) override {}
   void RetractSidePanels(Profile* profile, const std::string& extension_id, std::optional<int> tab_id) override {}
 };

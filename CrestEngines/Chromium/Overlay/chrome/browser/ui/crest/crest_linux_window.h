@@ -90,6 +90,10 @@ class LinuxWindow final : public views::WidgetObserver {
   static void CloseAll();
   // Stops showing `page` in any window: the engine lets it go.
   static void ReleaseEverywhere(const std::string& page);
+  // Hosts `frontend`, the inspector the engine docked on `page`, in the card
+  // of whichever window shows the page, or takes it down when `frontend` is
+  // null, as the Mac's page surface hosts its DevTools panel.
+  static void DockInspector(const std::string& page, content::WebContents* frontend);
   // Reads the frames the browser windows kept under their ids from `file`,
   // as the Mac's windows keep theirs under their autosave names, and keeps
   // each window's there from now on. A window with an id takes its own once
@@ -162,6 +166,9 @@ class LinuxWindow final : public views::WidgetObserver {
   // command bar, a menu, Peek), and lowers it again after. Raised, the WebUI
   // is transparent where the page shows through and takes the input.
   void SetOverlay(bool raised);
+  // The inspector docked on `page` asked for another split of the card: the
+  // page moves to the area it leaves, as InspectorLayoutChanged says.
+  void RelayoutInspector(const std::string& page);
   // Places the floating surface the WebUI draws over the page (the find bar,
   // a notice), in the window contents' coordinates; empty hides it. `focus`
   // gives it the keyboard.
@@ -188,7 +195,12 @@ class LinuxWindow final : public views::WidgetObserver {
   // One view that shows a page, or none while it waits for one.
   struct Slot {
     raw_ptr<views::WebView> view;
+    // The page's docked inspector, which fills the card under the page; made
+    // the first time the page shown has one.
+    raw_ptr<views::WebView> inspector = nullptr;
     std::string page;
+    // The card, where the WebUI placed the page.
+    gfx::Rect bounds;
     bool above = false;
     float corner_radius = 0;
     // Hears the person click into the page.
@@ -217,6 +229,10 @@ class LinuxWindow final : public views::WidgetObserver {
   void Attach(Slot& slot, const std::string& page, content::WebContents* contents);
   // Lets the view of `slot` go of its page.
   void Detach(Slot& slot);
+  // Shows the inspector docked on the page of `slot` under it, or none.
+  void ShowInspector(Slot& slot);
+  // Hands the contents view where each slot's views go.
+  void Place();
   // The slot showing `page`, or null.
   Slot* SlotShowing(const std::string& page);
   // Whether the window shows `contents` in one of its slots.
