@@ -17,6 +17,7 @@ import type { SidebarMenus } from "./sidebar-menus.js";
 import type { SpaceActions } from "./space-actions.js";
 import { SpaceGroups } from "./space-groups.js";
 import { SidebarPresentation } from "./sidebar-presentation.js";
+import { SpacePager } from "./space-pager.js";
 import { sfSymbol, sfSymbolPaths } from "./symbols.js";
 import type { Utilities } from "./utilities.js";
 
@@ -111,6 +112,17 @@ export class Sidebar {
         this.host = host;
         root.append(this.page, this.switcher);
         this.presentation = new SidebarPresentation(root);
+        // Swipes between Spaces (space-pager.ts).
+        new SpacePager(
+            {
+                model: host.model,
+                windowId: host.windowId,
+                send: host.send,
+                pageOf: (space) => this.preview(space),
+                isLocked: () => host.utilities.isOpen,
+            },
+            this.page,
+        );
         new ResizeObserver(() => this.render()).observe(root);
         // The sidebar's empty stretches open the Space's own menu.
         this.page.addEventListener("contextmenu", (event) => {
@@ -129,6 +141,23 @@ export class Sidebar {
 
     render(): void {
         this.host.rename.whileRedrawing(() => this.draw());
+    }
+
+    /**
+     * The page of `space` as the pager slides it in beside the shown one: its
+     * pins, header and lists, drawn for looking at only.
+     */
+    private preview(space: Space): HTMLElement {
+        const workspace = this.host.model.workspace!;
+        const page = element("div", "space-page preview");
+        page.inert = true;
+        const tabs = element("div", "tabs");
+        if (space.state.settings.isSavedTabsExpanded) this.appendList(tabs, space, "Saved", null);
+        tabs.append(this.seam(workspace, space), this.newTabRow());
+        this.appendList(tabs, space, "Current", null);
+        const pinned = this.pinnedGrid(space);
+        page.append(...(pinned ? [pinned] : []), this.spaceHeader(workspace, space), tabs);
+        return page;
     }
 
     private draw(): void {
@@ -171,7 +200,7 @@ export class Sidebar {
         const grid = element("div", "pinned");
         const width = this.page.clientWidth - 2 * 8;
         grid.style.gridTemplateColumns = `repeat(${pinnedColumns(tabs.length, width)}, minmax(0, 1fr))`;
-        const selected = this.host.shownTabId();
+        const selected = this.selectedTabId(space);
         for (const tab of tabs) {
             const tile = element("button", tab.id === selected ? "pin selected" : "pin");
             tile.append(this.favicon(tab));
@@ -299,7 +328,7 @@ export class Sidebar {
         } else {
             // A collapsed folder keeps showing the tab the window shows, as
             // the Mac's folder group does.
-            const shown = this.host.shownTabId();
+            const shown = this.selectedTabId(space);
             const tab = shown ? this.tab(space, shown) : undefined;
             if (tab && this.isInside(space, tab, folder.id)) group.append(this.tabRow(space, tab, row.depth + 1));
         }
@@ -316,7 +345,7 @@ export class Sidebar {
     private splitRow(space: Space, row: SidebarRow): HTMLElement {
         const group = space.splitGroups.get(row.id);
         const members = row.members.map((id) => this.tab(space, id)).filter((tab): tab is TabState => !!tab);
-        const selected = this.host.shownTabId();
+        const selected = this.selectedTabId(space);
         const element_ = element("div", "row split");
         element_.style.setProperty("--depth", String(row.depth));
         if (members.some((tab) => tab.id === selected)) element_.classList.add("selected");
@@ -332,7 +361,7 @@ export class Sidebar {
     }
 
     private tabRow(space: Space, tab: TabState, depth: number): HTMLElement {
-        const selected = tab.id === this.host.shownTabId();
+        const selected = tab.id === this.selectedTabId(space);
         const row = element("div", selected ? "row tab selected" : "row tab");
         row.style.setProperty("--depth", String(depth));
         row.tabIndex = 0;
@@ -420,6 +449,12 @@ export class Sidebar {
         } else {
             this.switcher.replaceChildren(toggle, track, lists);
         }
+    }
+
+    /** The tab the window shows in `space`, which its row draws selected. */
+    private selectedTabId(space: Space): Guid | null {
+        const window = this.host.model.windows.get(this.host.windowId());
+        return window?.shownTabs.find((shown) => shown.spaceId === space.state.id)?.tabId ?? null;
     }
 
     private tab(space: Space, id: Guid): TabState | undefined {

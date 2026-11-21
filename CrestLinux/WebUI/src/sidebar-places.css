@@ -1,6 +1,22 @@
-/* The sidebar's places (sidebar-presentation.ts), with the Mac's metrics:
-   BrowserSidebarPresentation, BrowserRootMetrics' floating sidebar and
+/* The sidebar's places and its Space pager (sidebar-presentation.ts,
+   space-pager.ts), with the Mac's metrics: BrowserSidebarPresentation,
+   BrowserRootMetrics' floating sidebar and
    BrowserCollapsedSidebarRevealMetrics. */
+
+/* --- Space pager --- */
+
+#sidebar.paging {
+  overflow: clip;
+}
+
+/* The neighbouring Space's page, beside the shown one while a swipe moves them. */
+.space-page.pager-incoming {
+  position: absolute;
+  left: 0;
+  pointer-events: none;
+}
+
+/* --- The sidebar's places --- */
 
 .switcher {
   gap: var(--crest-space-xs, 4px);
