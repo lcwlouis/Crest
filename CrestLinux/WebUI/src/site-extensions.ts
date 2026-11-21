@@ -3,26 +3,20 @@
 // "Extensions" header with its Manage Extensions button, the page's actions
 // in a grid of four (each with its badge, a pin button on hover and its
 // context menu), and Install Extension… on a Chrome Web Store listing whose
-// Space may change. Site Controls embeds the section; until Linux has Site
-// Controls in this branch, a puzzle-piece control in the navigation band
-// opens the section in a popover of its own.
+// Space may change. Site Controls shows the section under its quick actions.
 
 import type { PageState } from "../generated/crest_contracts.js";
 import { iconView } from "./extension-install.js";
 import { webStoreExtensionId } from "./extensions.js";
 import type { ExtensionActionPresentation, ExtensionStore } from "./extensions.js";
-import { Menu } from "./menu.js";
 import type { Space } from "./model.js";
-import { holdOverlay } from "./overlay.js";
+import type { SiteControlsSection } from "./site-controls.js";
 import { element } from "./settings-form.js";
 import { sfSymbol } from "./symbols.js";
 
 /** BrowserSiteControlMetrics. */
 const metrics = {
-    width: 292,
     glyph: 17,
-    gap: 6,
-    margin: 8,
 } as const;
 
 // MARK: - Parts
@@ -129,104 +123,21 @@ function actionButton(context: SiteExtensionsContext, action: ExtensionActionPre
     return cell;
 }
 
-// MARK: - The temporary popover
+// MARK: - In Site Controls
 
-/**
- * The navigation band's extensions control and the popover it opens with
- * the section in it.
- *
- * TODO(linux): Site Controls (linux/site-controls) embeds
- * siteExtensionsSection where its header leaves the "extensions grid (step
- * 16)"; once it merges, this control and its popover go, and the store's
- * fallback anchor is the Site Controls trigger alone.
- */
-export class SiteExtensionsControl {
-    // MARK: - Variables
-
-    readonly trigger: HTMLButtonElement;
-    private readonly store: ExtensionStore;
-    private popover: { readonly layer: HTMLElement; readonly panel: HTMLElement; readonly pageId: string; readonly release: () => void; readonly onKey: (event: KeyboardEvent) => void } | null = null;
-
-    // MARK: - Initializers
-
-    constructor(store: ExtensionStore) {
-        this.store = store;
-        this.trigger = element("button", "nav-control extensions-trigger");
-        this.trigger.type = "button";
-        this.trigger.title = "Extensions";
-        this.trigger.setAttribute("aria-label", "Extensions");
-        this.trigger.innerHTML = sfSymbol("puzzlepiece.extension", 14);
-        this.trigger.addEventListener("click", (event) => {
-            event.stopPropagation();
-            if (this.popover) this.close();
-            else this.open();
-        });
-    }
-
-    // MARK: - Actions
-
-    /** Draws the control for the shown page, and the open popover again. */
-    follow(): void {
-        const page = this.store.host.page();
-        // Site Controls, where it exists, holds the section itself.
-        const siteControls = document.querySelector(".site-control-trigger");
-        this.trigger.hidden = !page || page.live.address === null || siteControls !== null;
-        this.trigger.setAttribute("aria-expanded", String(this.popover !== null));
-        const popover = this.popover;
-        if (!popover) return;
-        if (!page || page.id !== popover.pageId) {
-            this.close();
-            return;
-        }
-        this.draw(page);
-    }
-
-    private open(): void {
-        const page = this.store.host.page();
-        const space = page ? this.store.space(page.spaceId) : undefined;
-        if (!page || !space) return;
-        const layer = element("div", "site-extensions-layer");
-        const panel = element("div", "site-extensions-popover");
-        panel.setAttribute("role", "dialog");
-        panel.setAttribute("aria-label", "Extensions");
-        layer.append(panel);
-        layer.addEventListener("mousedown", (event) => {
-            if (event.target !== layer) return;
-            event.preventDefault();
-            this.close();
-        });
-        const onKey = (event: KeyboardEvent): void => {
-            if (event.key !== "Escape" || Menu.isOpen) return;
-            event.preventDefault();
-            event.stopPropagation();
-            this.close();
-        };
-        window.addEventListener("keydown", onKey, true);
-        document.body.append(layer);
-        this.popover = { layer, panel, pageId: page.id, release: holdOverlay(), onKey };
-        this.store.prepare(space);
-        this.follow();
-    }
-
-    close(): void {
-        const popover = this.popover;
-        if (!popover) return;
-        this.popover = null;
-        window.removeEventListener("keydown", popover.onKey, true);
-        popover.layer.remove();
-        popover.release();
-        this.trigger.setAttribute("aria-expanded", "false");
-    }
-
-    private draw(page: PageState): void {
-        const popover = this.popover;
-        const space = this.store.space(page.spaceId);
-        if (!popover || !space) return;
-        popover.panel.replaceChildren(siteExtensionsSection({ store: this.store, page, space, dismiss: () => this.close() }));
-        const anchor = this.trigger.getBoundingClientRect();
-        const left = Math.max(metrics.margin, Math.min(anchor.left, window.innerWidth - metrics.width - metrics.margin));
-        popover.panel.style.left = `${left}px`;
-        popover.panel.style.top = `${anchor.bottom + metrics.gap}px`;
-        popover.panel.style.width = `${metrics.width}px`;
-    }
+/** The section Site Controls shows under its quick actions for the window's store. */
+export function siteControlsExtensions(store: ExtensionStore): SiteControlsSection {
+    return {
+        key: (page) => {
+            const space = store.space(page.spaceId);
+            if (!space) return "";
+            return JSON.stringify([store.actions(page), store.mayChange(space), webStoreExtensionId(page.live.address)]);
+        },
+        draw: (page, dismiss) => {
+            const space = store.space(page.spaceId);
+            if (!space) return null;
+            store.prepare(space);
+            return siteExtensionsSection({ store, page, space, dismiss });
+        },
+    };
 }

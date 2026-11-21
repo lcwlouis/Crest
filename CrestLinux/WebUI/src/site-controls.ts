@@ -9,6 +9,8 @@
 // - the blocked pop-up's notice, with Allow Automatic Pop-ups
 //   (BrowserBlockedPopupSiteControlNotice);
 // - the quick actions (BrowserSiteQuickActions);
+// - the page's extension actions (ChromiumExtensionControls), which the
+//   window's extension store draws (site-extensions.ts);
 // - the site's origin, its connection and certificate
 //   (BrowserSiteSecuritySection), and each permission's choice for the site
 //   in the page's Space (BrowserSitePermissionDisclosure);
@@ -20,7 +22,7 @@
 // SitePermissionSessions.
 //
 // Left out until Linux has them: Capture and Inspect among the quick actions
-// (region capture and docked DevTools), the extensions grid (step 16), the
+// (region capture and docked DevTools), the
 // Developer Mode status (the developer toolbar), Open This Page in another
 // Space (the Quick Window), and the Opens in engine row, which shows only
 // where a device registered more than one engine.
@@ -47,6 +49,16 @@ export interface SiteControlsHost {
     /** The page the window shows. */
     readonly page: () => PageState | undefined;
     readonly report: (error: unknown) => void;
+    /** The page's extensions section, which the popover shows under its quick actions. */
+    readonly extensions?: SiteControlsSection;
+}
+
+/** A section another part of the window draws in the popover. */
+export interface SiteControlsSection {
+    /** What the section draws from for `page`, so the popover draws again when it changes. */
+    readonly key: (page: PageState) => string;
+    /** The section for `page`, or null for none; `dismiss` closes the popover. */
+    readonly draw: (page: PageState, dismiss: () => void) => HTMLElement | null;
 }
 
 /** BrowserSiteControlMetrics. */
@@ -191,6 +203,11 @@ export class SiteControls {
 
     get model(): Model {
         return this.host.model;
+    }
+
+    /** The page's extensions section, when the window has one. */
+    get extensions(): SiteControlsSection | undefined {
+        return this.host.extensions;
     }
 
     get sessions(): SitePermissionSessions {
@@ -367,6 +384,7 @@ class SiteControlsPopover {
             [...this.decisions],
             this.permissionsExpanded,
             this.hasCertificate,
+            this.controls.extensions?.key(page) ?? "",
         ]);
         if (drawn === this.drawn) return;
         this.drawn = drawn;
@@ -375,7 +393,10 @@ class SiteControlsPopover {
         content.append(this.header(page));
         const notice = this.controls.sessions.notice(page.id);
         if (notice) content.append(this.notice(page, notice));
-        content.append(this.quickActions(page), element("div", "site-control-divider"));
+        content.append(this.quickActions(page));
+        const extensions = this.controls.extensions?.draw(page, () => this.controls.close());
+        if (extensions) content.append(element("div", "site-control-divider"), extensions);
+        content.append(element("div", "site-control-divider"));
         const origin = siteOriginOf(page.live.address);
         if (origin) content.append(this.siteSettings(page, origin));
         if (hostOf(page.live.address)) content.append(element("div", "site-control-divider"), this.dataActions(page));

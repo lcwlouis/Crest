@@ -20,7 +20,7 @@ import { element } from "./settings-form.js";
 const glyphSize = 16;
 
 /** The controls a popup with no tile of its own hangs from, in the order tried. */
-const fallbackControls = [".site-control-trigger:not([hidden])", ".extensions-trigger:not([hidden])", "#sidebar .address"];
+const fallbackControls = [".site-control-trigger:not([hidden])", "#sidebar .address"];
 
 export class ExtensionStrip {
     // MARK: - Variables

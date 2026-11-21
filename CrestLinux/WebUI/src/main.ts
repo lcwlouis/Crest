@@ -54,7 +54,7 @@ import { isSettingsKey, Settings, settingsShortcut } from "./settings.js";
 import { settingsPages, spaceSectionPages } from "./settings-pages.js";
 import { ExtensionStore } from "./extensions.js";
 import { ExtensionStrip } from "./extension-strip.js";
-import { SiteExtensionsControl } from "./site-extensions.js";
+import { siteControlsExtensions } from "./site-extensions.js";
 
 const model = new Model();
 const preferences = new Preferences();
@@ -160,7 +160,17 @@ navigation.append(back, forward, reload);
 const addressField = element("div", "address");
 const address = element("button", "address-text");
 address.addEventListener("click", () => palette.open("current", address.dataset.url ?? ""));
-const siteControls = new SiteControls({ model, sessions: sitePermissions, page: shownPage, report });
+const siteControls = new SiteControls({
+    model,
+    sessions: sitePermissions,
+    page: shownPage,
+    report,
+    // The store is made below; the popover asks for the section only once it opens.
+    extensions: {
+        key: (page) => siteExtensionsSection.key(page),
+        draw: (page, dismiss) => siteExtensionsSection.draw(page, dismiss),
+    },
+});
 addressField.append(address, siteControls.trigger);
 root.append(navigation, addressField);
 const rename = new InlineRename(() => render());
@@ -213,12 +223,12 @@ const extensions = new ExtensionStore({
     openSettings: (spaceId) => settings.open({ kind: "space", spaceId, section: "extensions" }),
     redraw: () => {
         render();
+        siteControls.follow();
         settings.follow();
     },
 });
 const extensionStrip = new ExtensionStrip(extensions);
-const siteExtensions = new SiteExtensionsControl(extensions);
-navigation.append(siteExtensions.trigger);
+const siteExtensionsSection = siteControlsExtensions(extensions);
 const downloadDestinations = new DownloadDestinations((intent) => dispatch(intent).catch((error: unknown) => console.error(error)));
 const sidebar = new Sidebar(
     {
@@ -508,7 +518,6 @@ function render(): void {
     // The list's search field stands in the address field's place, as on the Mac.
     addressField.hidden = utilities.isOpen;
     sidebar.render();
-    siteExtensions.follow();
 }
 
 /**
