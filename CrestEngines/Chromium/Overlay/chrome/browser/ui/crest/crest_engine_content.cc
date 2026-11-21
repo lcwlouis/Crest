@@ -1,12 +1,15 @@
 #include "chrome/browser/ui/crest/crest_engine_content.h"
 
+#include <algorithm>
 #include <optional>
+#include <utility>
 
 #include "base/functional/bind.h"
 #include "base/json/json_writer.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/strings/utf_string_conversions.h"
+#include "build/build_config.h"
 #include "chrome/browser/ui/crest/crest_chrome_hooks.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
@@ -70,7 +73,25 @@ PageContent::PageContent(content::WebContents* contents, const engine::Guid& pag
 PageContent::~PageContent() = default;
 
 void PageContent::Add(std::string source, bool main_frame_only) {
+  // A bridge already installed stays as it is: Linux's windows each install
+  // the bridges of the pages they hear of.
+  if (std::ranges::find(scripts_, std::pair(source, main_frame_only)) != scripts_.end()) {
+    return;
+  }
+#if BUILDFLAG(IS_LINUX)
+  const bool first = scripts_.empty();
+#endif
   scripts_.emplace_back(std::move(source), main_frame_only);
+#if BUILDFLAG(IS_LINUX)
+  // On Linux the WebUI installs the bridges once it hears the page is ready,
+  // which can be after its first document began; the documents it already
+  // has take them now. Only the first bridge can: a document that set up
+  // the bridges' world takes no more until it is replaced.
+  if (first) {
+    contents_->GetPrimaryMainFrame()->ForEachRenderFrameHost(
+        [this](content::RenderFrameHost* frame) { DocumentAvailable(frame); });
+  }
+#endif
 }
 
 void PageContent::DocumentAvailable(content::RenderFrameHost* frame) {
