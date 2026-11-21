@@ -1,0 +1,120 @@
+/* --- Recent tabs: RecentTabSwitcherView, RecentTabSwitcherMetrics --- */
+
+.recent-tabs-layer {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-command-palette);
+  display: grid;
+  place-items: center;
+  padding: var(--crest-space-l);
+}
+
+.recent-tabs-layer[hidden] {
+  display: none;
+}
+
+.recent-tabs {
+  display: flex;
+  gap: var(--crest-space-s);
+  max-width: 100%;
+  padding: var(--crest-space-l);
+  overflow: hidden;
+  border-radius: var(--crest-radius-panel);
+  background: var(--crest-window-background);
+  box-shadow: 0 24px 60px rgb(0 0 0 / 0.28), inset 0 0 0 1px var(--crest-subtle-border);
+  backdrop-filter: blur(30px);
+  animation: palette-in 160ms ease-out;
+}
+
+.recent-tab-card {
+  display: flex;
+  flex: none;
+  gap: var(--crest-space-s);
+  align-items: flex-start;
+  padding: var(--crest-space-s);
+  border: 0;
+  border-radius: var(--crest-radius-card);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  box-shadow: inset 0 0 0 var(--crest-surface-selected-border) transparent;
+  transition: background var(--crest-dur-hover) var(--crest-ease-in-out);
+}
+
+.recent-tab-card:hover {
+  background: var(--crest-hover);
+}
+
+.recent-tab-card:active {
+  background: var(--crest-selection);
+}
+
+.recent-tab-card.highlighted {
+  background: var(--crest-selection);
+  box-shadow: var(--crest-surface-selected-shadow), inset 0 0 0 var(--crest-card-selected-border) var(--crest-selected-border);
+}
+
+.recent-tab-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--crest-space-s);
+  width: 176px;
+}
+
+.recent-tab-card.split .recent-tab-page {
+  width: 136px;
+}
+
+.recent-tab-thumbnail {
+  display: grid;
+  place-items: center;
+  height: 112px;
+  overflow: hidden;
+  border-radius: var(--crest-radius-compact);
+  background: var(--crest-chrome-surface);
+  box-shadow: inset 0 0 0 var(--crest-hairline) var(--crest-subtle-border);
+}
+
+.recent-tab-label {
+  display: flex;
+  gap: var(--crest-space-s);
+  align-items: center;
+  min-width: 0;
+}
+
+.recent-tab-title {
+  overflow: hidden;
+  font-size: var(--crest-text-caption);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.recent-tab-favicon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.recent-tab-favicon.large {
+  width: 40px;
+  height: 40px;
+  font-size: 22px;
+}
+
+.recent-tab-favicon img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.recent-tab-favicon.letter {
+  border-radius: var(--crest-radius-compact);
+  background: var(--crest-chrome-surface);
+  color: var(--crest-secondary);
+}

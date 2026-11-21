@@ -1006,11 +1006,53 @@ bool Tell(LinuxWindow& window, const std::string& event, const base::Value& valu
   return handler && handler->Fire(event, value);
 }
 
+// Tells the WebUI the modifiers still held once a page's view saw one of them
+// released, which the WebUI cannot see while the page has the keyboard, as
+// the Mac's switcher watches flagsChanged.
+void ReportModifierRelease(CrestUIHandler& handler, const input::NativeWebKeyboardEvent& event) {
+  int modifiers = event.GetModifiers();
+  switch (event.windows_key_code) {
+    case ui::VKEY_CONTROL:
+    case ui::VKEY_LCONTROL:
+    case ui::VKEY_RCONTROL:
+      modifiers &= ~blink::WebInputEvent::kControlKey;
+      break;
+    case ui::VKEY_SHIFT:
+    case ui::VKEY_LSHIFT:
+    case ui::VKEY_RSHIFT:
+      modifiers &= ~blink::WebInputEvent::kShiftKey;
+      break;
+    case ui::VKEY_MENU:
+    case ui::VKEY_LMENU:
+    case ui::VKEY_RMENU:
+      modifiers &= ~blink::WebInputEvent::kAltKey;
+      break;
+    case ui::VKEY_LWIN:
+    case ui::VKEY_RWIN:
+      modifiers &= ~blink::WebInputEvent::kMetaKey;
+      break;
+    default:
+      return;
+  }
+  base::DictValue held;
+  held.Set("ctrlKey", (modifiers & blink::WebInputEvent::kControlKey) != 0);
+  held.Set("altKey", (modifiers & blink::WebInputEvent::kAltKey) != 0);
+  held.Set("metaKey", (modifiers & blink::WebInputEvent::kMetaKey) != 0);
+  held.Set("shiftKey", (modifiers & blink::WebInputEvent::kShiftKey) != 0);
+  handler.Fire("crest-modifiers", base::Value(std::move(held)));
+}
+
 }  // namespace
 
 bool ClaimShortcut(LinuxWindow& window, const input::NativeWebKeyboardEvent& event, bool page_declined) {
   CrestUIHandler* handler = MainHandler(window);
-  if (!handler || event.GetType() != input::NativeWebKeyboardEvent::Type::kRawKeyDown) return false;
+  if (!handler) return false;
+  if (event.GetType() == input::NativeWebKeyboardEvent::Type::kKeyUp) {
+    // Heard once, before the page; a key-up is never Crest's to take.
+    if (!page_declined) ReportModifierRelease(*handler, event);
+    return false;
+  }
+  if (event.GetType() != input::NativeWebKeyboardEvent::Type::kRawKeyDown) return false;
   const int modifiers = event.GetModifiers();
   const bool ctrl = modifiers & blink::WebInputEvent::kControlKey;
   const bool alt = modifiers & blink::WebInputEvent::kAltKey;

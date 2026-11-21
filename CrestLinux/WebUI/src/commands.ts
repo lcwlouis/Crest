@@ -34,6 +34,13 @@ export interface CommandContext {
     readonly peek: { readonly isOpen: boolean; close(): boolean };
     /** The windows the window opens, and its own close, which asks it first. */
     readonly windows: { openNewWindow(): void; openQuickWindow(): void; close(): void };
+    /** The recent tabs while a Most Recent Tab shortcut is held. */
+    readonly recentTabs: {
+        readonly isHolding: boolean;
+        begin(command: ShortcutCommand, keys: KeyLike): boolean;
+        handleKey(event: KeyLike, command: ShortcutCommand | null): boolean;
+        jump(command: ShortcutCommand): Intent | null;
+    };
 }
 
 /** The commands the Linux window performs; the rest wait for their surfaces. */
@@ -44,6 +51,7 @@ const known = new Set<string>([
     "CopyPageLinkAsMarkdown", "FindInPage", "FindNext", "FindPrevious", "ShowHistory", "ShowArchive", "ShowDownloads",
     "SplitWithNextTab", "FocusNextSplitCard", "FocusPreviousSplitCard", "RemoveTabFromSplit", "SeparateSplitTabs",
     "MoveSplitCardLeft", "MoveSplitCardRight", "NewWindow", "NewQuickWindow", "CloseWindow",
+    "MostRecentTab", "MostRecentTabBackward",
 ]);
 
 /** Whether the Linux window performs `command` at all. */
@@ -105,7 +113,11 @@ export class Commands {
      */
     handleKey(event: KeyLike): boolean {
         const command = commandForKeys(event);
+        // While a Most Recent Tab shortcut is held, its switcher has the keys.
+        const recentTabs = this.context.recentTabs;
+        if (recentTabs.isHolding) return recentTabs.handleKey(event, command);
         if (!command) return false;
+        if (this.supports(command) && recentTabs.begin(command, event)) return true;
         return this.perform(command);
     }
 
@@ -136,6 +148,12 @@ export class Commands {
                 return space ? () => this.context.windows.openQuickWindow() : null;
             case "CloseWindow":
                 return () => this.context.windows.close();
+            case "MostRecentTab":
+            case "MostRecentTabBackward": {
+                // Without a held shortcut, as from the command bar, the command jumps at once.
+                const jump = this.context.recentTabs.jump(command);
+                return space && jump ? () => send(jump) : null;
+            }
             case "ArchiveTab":
                 return ids && tab ? () => send({ kind: "CloseTab", value: { ...ids, tabId: tab.id } }) : null;
             case "Back":

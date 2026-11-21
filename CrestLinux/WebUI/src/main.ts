@@ -38,6 +38,7 @@ import { SpaceEditor } from "./space-editor.js";
 import { DownloadDestinations } from "./download-destinations.js";
 import { PageCards } from "./page-cards.js";
 import { Peek } from "./peek.js";
+import { RecentTabSwitcher } from "./recent-tabs.js";
 import { Utilities } from "./utilities.js";
 import { Windows } from "./windows.js";
 import { applyDeviceAppearance } from "./device-appearance.js";
@@ -230,6 +231,13 @@ const commands = new Commands({
         close: () => peek.close(),
     },
     windows,
+    recentTabs: new RecentTabSwitcher({
+        icons,
+        preferences,
+        windowId: () => windows.windowId,
+        space: shownSpace,
+        send: (intent) => void dispatch(intent).catch(report),
+    }),
 });
 
 // The page cards: the shown tab's, or its split's side by side, with a Peek
