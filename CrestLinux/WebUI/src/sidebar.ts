@@ -21,6 +21,10 @@ import type { InlineRename } from "./rename.js";
 import type { SidebarMenus } from "./sidebar-menus.js";
 import type { SpaceActions } from "./space-actions.js";
 import { SpaceGroups } from "./space-groups.js";
+import { SidebarDrag } from "./sidebar-drag.js";
+import type { SidebarDragHost } from "./sidebar-drag.js";
+import { SidebarPresentation } from "./sidebar-presentation.js";
+import { SpacePager } from "./space-pager.js";
 import { sfSymbol, sfSymbolPaths } from "./symbols.js";
 import type { Utilities } from "./utilities.js";
 
@@ -43,6 +47,8 @@ export interface SidebarHost {
     readonly utilities: Utilities;
     /** The Space's pinned extensions, drawn above its pinned tabs (extension-strip.ts). */
     readonly extensionStrip?: (space: Space) => HTMLElement | null;
+    /** What a drag out of the sidebar reaches: the page cards and the other windows (sidebar-drag.ts). */
+    readonly drag: Omit<SidebarDragHost, "model" | "windowId" | "redraw" | "isLocked">;
 }
 
 export function element<K extends keyof HTMLElementTagNameMap>(
@@ -110,10 +116,38 @@ export class Sidebar {
     private readonly host: SidebarHost;
     private readonly page = element("div", "space-page");
     private readonly switcher = element("div", "switcher");
+    /** Where the sidebar is: beside the page, floating over it, or put away. */
+    readonly presentation: SidebarPresentation;
+    /** Drags of rows, folders, splits and pins (sidebar-drag.ts). */
+    private readonly drag: SidebarDrag;
+    /** Swipes between Spaces (space-pager.ts). */
+    private readonly pager: SpacePager;
 
     constructor(host: SidebarHost, root: HTMLElement) {
         this.host = host;
         root.append(this.page, this.switcher);
+        this.presentation = new SidebarPresentation(root);
+        this.drag = new SidebarDrag(
+            {
+                ...host.drag,
+                model: host.model,
+                windowId: host.windowId,
+                redraw: () => this.render(),
+                isLocked: () => this.pager.isMoving || host.utilities.isOpen,
+            },
+            root,
+            this.page,
+        );
+        this.pager = new SpacePager(
+            {
+                model: host.model,
+                windowId: host.windowId,
+                send: host.send,
+                pageOf: (space) => this.preview(space),
+                isLocked: () => this.drag.isLifting || host.utilities.isOpen,
+            },
+            this.page,
+        );
         new ResizeObserver(() => this.render()).observe(root);
         // The sidebar's empty stretches open the Space's own menu.
         this.page.addEventListener("contextmenu", (event) => {
@@ -131,7 +165,26 @@ export class Sidebar {
     }
 
     render(): void {
+        // A lift holds the rows it measured still until it lands.
+        if (this.drag.holdsDrawing) return;
         this.host.rename.whileRedrawing(() => this.draw());
+        this.drag.decorate();
+    }
+
+    /**
+     * The page of `space` as the pager slides it in beside the shown one: its
+     * pins, header and lists, drawn for looking at only.
+     */
+    private preview(space: Space): HTMLElement {
+        const workspace = this.host.model.workspace!;
+        const page = element("div", "space-page preview");
+        page.inert = true;
+        const tabs = element("div", "tabs");
+        if (space.state.settings.isSavedTabsExpanded) this.appendList(tabs, space, "Saved", null);
+        tabs.append(this.seam(workspace, space), this.newTabRow());
+        this.appendList(tabs, space, "Current", null);
+        page.append(this.pinnedGrid(space), this.spaceHeader(workspace, space), tabs);
+        return page;
     }
 
     private draw(): void {
@@ -161,23 +214,30 @@ export class Sidebar {
         tabs.append(this.newTabRow());
         this.appendList(tabs, space, "Current", null);
         const strip = this.host.extensionStrip?.(space) ?? null;
-        this.page.replaceChildren(...(strip ? [strip] : []), ...(pinned ? [pinned] : []), header, tabs);
+        this.page.replaceChildren(...(strip ? [strip] : []), pinned, header, tabs);
         tabs.scrollTop = scroll;
     }
 
-    private pinnedGrid(space: Space): HTMLElement | null {
+    /**
+     * The pinned grid, which stands as a thin band with no pins in it, as the
+     * Mac's BrowserPinnedTabsDropSection does, so a tab can be dragged in.
+     */
+    private pinnedGrid(space: Space): HTMLElement {
         const list = space.lists.get(listKey("Pinned", null));
         const tabs = (list?.rows ?? [])
             .filter((row) => row.kind === "Tab")
             .map((row) => this.tab(space, row.id))
             .filter((tab): tab is TabState => tab !== undefined);
-        if (tabs.length === 0) return null;
-        const grid = element("div", "pinned");
+        const grid = element("div", tabs.length === 0 ? "pinned empty" : "pinned");
+        grid.dataset.placement = "Pinned";
+        grid.dataset.folder = "";
         const width = this.page.clientWidth - 2 * 8;
-        grid.style.gridTemplateColumns = `repeat(${pinnedColumns(tabs.length, width)}, minmax(0, 1fr))`;
-        const selected = this.host.shownTabId();
+        grid.style.gridTemplateColumns = `repeat(${pinnedColumns(Math.max(1, tabs.length), width)}, minmax(0, 1fr))`;
+        const selected = this.selectedTabId(space);
         for (const tab of tabs) {
             const tile = element("button", tab.id === selected ? "pin selected" : "pin");
+            tile.dataset.row = "tab";
+            tile.dataset.id = tab.id;
             tile.append(this.favicon(tab));
             tile.title = tab.displayTitle || tab.url || "";
             tile.setAttribute("aria-label", tile.title);
@@ -254,8 +314,13 @@ export class Sidebar {
         return row;
     }
 
-    private appendList(into: HTMLElement, space: Space, section: TabPlacement, folderId: Guid | null): void {
+    /** One of the core's lists, in a run of its own that a drag can aim at. */
+    private appendList(parent: HTMLElement, space: Space, section: TabPlacement, folderId: Guid | null): void {
         const list = space.lists.get(listKey(section, folderId));
+        const into = element("div", "list");
+        into.dataset.placement = section;
+        into.dataset.folder = folderId ?? "";
+        parent.append(into);
         for (const row of list?.rows ?? []) {
             switch (row.kind) {
                 case "Tab": {
@@ -277,6 +342,8 @@ export class Sidebar {
 
     private appendFolder(into: HTMLElement, space: Space, section: TabPlacement, folder: FolderState, row: SidebarRow): void {
         const group = element("div", "folder");
+        group.dataset.row = "folder";
+        group.dataset.id = folder.id;
         group.style.setProperty("--depth", String(row.depth));
         const header = element("button", "row folder-header");
         header.setAttribute("aria-expanded", String(!folder.isCollapsed));
@@ -303,7 +370,7 @@ export class Sidebar {
         } else {
             // A collapsed folder keeps showing the tab the window shows, as
             // the Mac's folder group does.
-            const shown = this.host.shownTabId();
+            const shown = this.selectedTabId(space);
             const tab = shown ? this.tab(space, shown) : undefined;
             if (tab && this.isInside(space, tab, folder.id)) group.append(this.tabRow(space, tab, row.depth + 1));
         }
@@ -320,12 +387,17 @@ export class Sidebar {
     private splitRow(space: Space, row: SidebarRow): HTMLElement {
         const group = space.splitGroups.get(row.id);
         const members = row.members.map((id) => this.tab(space, id)).filter((tab): tab is TabState => !!tab);
-        const selected = this.host.shownTabId();
+        const selected = this.selectedTabId(space);
         const element_ = element("div", "row split");
+        element_.dataset.row = "split";
+        element_.dataset.id = row.id;
+        element_.dataset.members = row.members.join(" ");
         element_.style.setProperty("--depth", String(row.depth));
         if (members.some((tab) => tab.id === selected)) element_.classList.add("selected");
         for (const tab of members) {
             const card = element("button", tab.id === selected ? "split-card selected" : "split-card");
+            card.dataset.row = "tab";
+            card.dataset.id = tab.id;
             card.append(this.favicon(tab), element("span", "title", tab.displayTitle || tab.url || "New Tab"));
             card.title = group?.displayTitle ?? tab.displayTitle;
             card.addEventListener("click", () => this.show(space, tab.id));
@@ -336,8 +408,10 @@ export class Sidebar {
     }
 
     private tabRow(space: Space, tab: TabState, depth: number): HTMLElement {
-        const selected = tab.id === this.host.shownTabId();
+        const selected = tab.id === this.selectedTabId(space);
         const row = element("div", selected ? "row tab selected" : "row tab");
+        row.dataset.row = "tab";
+        row.dataset.id = tab.id;
         row.style.setProperty("--depth", String(depth));
         row.tabIndex = 0;
         row.setAttribute("role", "button");
@@ -405,6 +479,7 @@ export class Sidebar {
             const id = other.state.id;
             const shown = id === space.state.id;
             const segment = element("button", shown ? "segment shown" : "segment");
+            segment.dataset.space = id;
             segment.append(spaceIcon(other.state.settings, size));
             segment.title = other.state.settings.name;
             segment.setAttribute("aria-label", other.state.settings.name);
@@ -415,10 +490,21 @@ export class Sidebar {
             onContextMenu(segment, (at) => this.host.spaces.switcher(other, at));
             track.append(segment);
         }
-        // The lists button stays where it is, so a press on it is not cut short.
+        // The sidebar's toggle leads the strip and the lists button ends it,
+        // as on the Mac; both stay where they are, so a press on one is not cut short.
         const lists = this.host.utilities.listsButton(space);
-        if (this.switcher.lastChild === lists && this.switcher.childNodes.length === 2) this.switcher.firstChild!.replaceWith(track);
-        else this.switcher.replaceChildren(track, lists);
+        const toggle = this.presentation.toggleButton;
+        if (this.switcher.firstChild === toggle && this.switcher.lastChild === lists && this.switcher.childNodes.length === 3) {
+            this.switcher.childNodes[1]!.replaceWith(track);
+        } else {
+            this.switcher.replaceChildren(toggle, track, lists);
+        }
+    }
+
+    /** The tab the window shows in `space`, which its row draws selected. */
+    private selectedTabId(space: Space): Guid | null {
+        const window = this.host.model.windows.get(this.host.windowId());
+        return window?.shownTabs.find((shown) => shown.spaceId === space.state.id)?.tabId ?? null;
     }
 
     private tab(space: Space, id: Guid): TabState | undefined {

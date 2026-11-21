@@ -28,6 +28,8 @@ export interface CommandContext {
     readonly find: (action: "open" | "next" | "previous") => void;
     /** Opens one of the sidebar's lists, or puts it away when it shows. */
     readonly toggleUtility: (surface: UtilitySurface) => void;
+    /** Show or Hide Sidebar: docks the sidebar, or puts a docked one away. */
+    readonly toggleSidebar: () => void;
     /** The tabs the window shows as cards: one, or a split's members. */
     readonly cards: () => readonly Guid[];
     /** The Peek over the page, which Close Tab closes before the tab under it. */
@@ -51,7 +53,7 @@ const known = new Set<string>([
     "NextTab", "PreviousSpace", "NextSpace", "SelectNumbered", "ZoomIn", "ZoomOut", "ActualSize", "CopyPageLink",
     "CopyPageLinkAsMarkdown", "FindInPage", "FindNext", "FindPrevious", "ShowHistory", "ShowArchive", "ShowDownloads",
     "SplitWithNextTab", "FocusNextSplitCard", "FocusPreviousSplitCard", "RemoveTabFromSplit", "SeparateSplitTabs",
-    "MoveSplitCardLeft", "MoveSplitCardRight", "NewWindow", "NewQuickWindow", "CloseWindow", "ShowWebInspector",
+    "MoveSplitCardLeft", "MoveSplitCardRight", "NewWindow", "NewQuickWindow", "CloseWindow", "ShowWebInspector", "ToggleSidebar",
 ]);
 
 /** Whether the Linux window performs `command` at all. */
@@ -208,6 +210,8 @@ export class Commands {
                         .then(() => postNotice(Notices.urlCopied))
                         .catch(this.context.report);
             }
+            case "ToggleSidebar":
+                return () => this.context.toggleSidebar();
             case "ShowHistory":
                 return () => this.context.toggleUtility(UtilitySurface.history);
             case "ShowArchive":

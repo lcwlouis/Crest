@@ -1,0 +1,111 @@
+/* The sidebar's places and its Space pager (sidebar-presentation.ts,
+   space-pager.ts), with the Mac's metrics: BrowserSidebarPresentation,
+   BrowserRootMetrics' floating sidebar and
+   BrowserCollapsedSidebarRevealMetrics. */
+
+/* --- Space pager --- */
+
+#sidebar.paging {
+  overflow: clip;
+}
+
+/* The neighbouring Space's page, beside the shown one while a swipe moves them. */
+.space-page.pager-incoming {
+  position: absolute;
+  left: 0;
+  pointer-events: none;
+}
+
+/* --- The sidebar's places --- */
+
+.switcher {
+  gap: var(--crest-space-xs, 4px);
+}
+
+.switcher-track {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.switcher-toggle {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--switcher-utility-button);
+  height: var(--switcher-utility-button);
+  margin-right: auto;
+  padding: 0;
+  border: none;
+  border-radius: var(--crest-radius-compact);
+  background: none;
+  color: var(--muted);
+}
+
+/* The lists button ends the strip, so the Spaces stay centred between the two. */
+.switcher-track + * {
+  margin-left: auto;
+}
+
+.switcher-toggle:hover {
+  background: var(--crest-hover);
+  color: var(--text);
+}
+
+/* Put away, the sidebar leaves the page the whole window. */
+body.sidebar-collapsed {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+body.sidebar-collapsed #page {
+  margin-left: var(--page-frame-inset);
+}
+
+/* Put away or floating, the sidebar is a card over the page's leading edge
+   (BrowserSidebarPresentation: inset 7, corners 18). */
+body.sidebar-collapsed #sidebar {
+  position: fixed;
+  top: 7px;
+  bottom: 7px;
+  left: 7px;
+  z-index: 4;
+  width: var(--sidebar-width, var(--sidebar-ideal-width));
+  height: auto;
+  border-radius: 18px;
+  background: var(--sidebar);
+  box-shadow: var(--crest-floating-sidebar-shadow),
+    inset 0 0 0 var(--crest-floating-sidebar-border) rgb(255 255 255 / var(--crest-floating-sidebar-border-opacity));
+  transform: translateX(calc(-100% - 14px));
+  transition: transform var(--crest-dur-sidebar-retreat) var(--crest-ease-smooth);
+}
+
+body.sidebar-floating #sidebar {
+  transform: none;
+  transition-duration: var(--crest-dur-floating-pane);
+}
+
+/* The strip at the leading edge that brings a collapsed sidebar back
+   (BrowserCollapsedSidebarRevealMetrics.pointer). */
+.sidebar-reveal {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 3;
+  display: none;
+  width: var(--sidebar-reveal-zone-width);
+}
+
+body.sidebar-collapsed:not(.sidebar-floating) .sidebar-reveal {
+  display: block;
+}
+
+body.sidebar-collapsed:not(.sidebar-floating) #status {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.sidebar-collapsed #sidebar {
+    transition: none;
+  }
+}

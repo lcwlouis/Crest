@@ -252,6 +252,11 @@ const sidebar = new Sidebar(
         }),
         rename,
         utilities,
+        // A drag out of the sidebar reaches the page cards and opens a window of its own.
+        drag: {
+            cards: () => pageCards,
+            tearOff: (spaceId, tabId) => void windows.moveTab(spaceId, tabId, null),
+        },
         spaces,
         extensionStrip: (space) => extensionStrip.draw(space),
     },
@@ -288,6 +293,7 @@ const commands = new Commands({
     openPalette: (mode) => palette.open(mode, mode === "current" ? (address.dataset.url ?? "") : ""),
     find: (action) => (action === "open" ? findBar.open() : findBar.step(action === "previous")),
     toggleUtility: (surface) => utilities.toggleSurface(surface),
+    toggleSidebar: () => sidebar.presentation.toggle(),
     cards: () => pageCards.shownCards(),
     peek: {
         get isOpen() {
