@@ -8,7 +8,9 @@
 // registers the binding, and answers the core's wake on the UI thread. Crest's
 // WebUI reaches the core through this host, in the core's own wire format.
 
+#include <atomic>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -47,6 +49,24 @@ class CoreHost {
   crest_status_t Dispatch(base::span<const uint8_t> intent, std::vector<uint8_t>& out);
   crest_status_t Query(base::span<const uint8_t> query, std::vector<uint8_t>& out);
   crest_status_t PageRequest(base::span<const uint8_t> request, std::vector<uint8_t>& out);
+  // crest_app_query from any thread, for a query the core answers without
+  // waiting on its other work, such as ReadImport, which reads another
+  // browser's files: the page asks it away from the UI thread, as the Mac
+  // asks it away from its main thread. CREST_INVALID_STATE once shut down.
+  crest_status_t QueryAway(base::span<const uint8_t> query, std::vector<uint8_t>& out);
+
+  // Where the tabs of a Browser the engine created for itself in `profile`
+  // go, as the core's EngineWindowPlacement answers over `windows`, the
+  // browser windows open now, frontmost first: the window, in GuidText's
+  // spelling, the Space, and whether that window opens for them. None when
+  // the core declines them.
+  struct EngineWindowPlace {
+    std::string window;
+    std::string space;
+    bool opens_window = false;
+  };
+  std::optional<EngineWindowPlace> PlaceEngineWindow(const std::string& profile, bool own_window,
+                                                     const std::vector<std::string>& windows);
 
   // Every batch of changes since the core started, oldest first. A UI that
   // starts late replays them to reach the state the core holds.
@@ -72,7 +92,8 @@ class CoreHost {
   std::unique_ptr<Library> library_;
   uint64_t app_ = 0;
   uint64_t engine_ = 0;
-  bool shut_down_ = false;
+  // Read from the threads QueryAway runs on.
+  std::atomic<bool> shut_down_{false};
   std::vector<std::vector<uint8_t>> history_;
   base::ObserverList<Observer> observers_;
   base::WeakPtrFactory<CoreHost> weak_factory_{this};

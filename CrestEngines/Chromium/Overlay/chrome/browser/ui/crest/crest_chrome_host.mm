@@ -686,10 +686,12 @@ class MacShell final : public crest::EngineBinding::Shell {
     return crest::EngineBinding::WindowPlacement{.window = KeyFor(placement.window), .space = KeyFor(placement.space)};
   }
 
-  void PresentWindow(const crest::EngineBinding::WindowPlacement& placement, bool focused) override {
+  // AppKit opens the window before this returns.
+  bool PresentWindow(const crest::EngineBinding::WindowPlacement& placement, bool focused) override {
     NSUUID* window = UUIDFor(placement.window);
     NSUUID* space = UUIDFor(placement.space);
     if (window && space) [UI() presentEngineWindow:window space:space focused:focused ? YES : NO];
+    return true;
   }
 
   void ReleasePage(const std::string& page) override { State().views.erase(page); }

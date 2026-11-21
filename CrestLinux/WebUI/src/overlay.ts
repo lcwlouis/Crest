@@ -7,15 +7,26 @@ import { setOverlay } from "./bridge.js";
 
 let holders = 0;
 const listeners: (() => void)[] = [];
+const holderListeners: (() => void)[] = [];
 
 /** Whether the WebUI is raised over the page now. */
 export function overlayHeld(): boolean {
     return holders > 0;
 }
 
+/** How many surfaces hold the WebUI raised now. */
+export function overlayHolders(): number {
+    return holders;
+}
+
 /** Hears the WebUI being raised over the page or lowered under it. */
 export function onOverlayChange(listener: () => void): void {
     listeners.push(listener);
+}
+
+/** Hears every surface that takes or lets go of the overlay. */
+export function onOverlayHoldersChange(listener: () => void): void {
+    holderListeners.push(listener);
 }
 
 /** Raises the WebUI over the page until the returned release is called. */
@@ -25,13 +36,18 @@ export function holdOverlay(): () => void {
         setOverlay(true);
         for (const listener of listeners) listener();
     }
+    for (const listener of holderListeners) listener();
     let released = false;
     return () => {
         if (released) return;
         released = true;
-        if (--holders > 0) return;
+        if (--holders > 0) {
+            for (const listener of holderListeners) listener();
+            return;
+        }
         setOverlay(false);
         document.body.classList.remove("overlay");
         for (const listener of listeners) listener();
+        for (const listener of holderListeners) listener();
     };
 }

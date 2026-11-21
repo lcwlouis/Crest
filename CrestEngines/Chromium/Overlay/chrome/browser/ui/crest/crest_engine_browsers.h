@@ -120,6 +120,9 @@ class EngineBrowsers final {
   // Crest window of its own, and a popup a tab in the window the person is
   // using.
   bool MayCreate(Profile* profile);
+  // The Crest window `window` a Browser the engine created for itself was
+  // reserved has opened: its tabs that waited for it are offered now.
+  void WindowOpened(const std::string& window);
 
  private:
   struct KeptBrowser;

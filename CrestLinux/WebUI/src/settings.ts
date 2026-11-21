@@ -25,12 +25,13 @@ import type { SpaceEditor } from "./space-editor.js";
 import { SpaceGroups } from "./space-groups.js";
 import { destinationMatches, destinationNamed, primaryDestinations, secondaryDestinations, SettingsDestination } from "./settings-catalog.js";
 import { element } from "./settings-form.js";
+import { forgetPasswords } from "./settings-passwords.js";
 import { sfSymbol } from "./symbols.js";
 
 // MARK: - Types
 
-/** The Space page's own pages (BrowserSettingsSpacePage.Section); Passwords and Extensions wait for Linux. */
-export type SpaceSection = "appearance" | "browsing" | "privacy";
+/** The Space page's own pages (BrowserSettingsSpacePage.Section). */
+export type SpaceSection = "appearance" | "browsing" | "privacy" | "passwords" | "extensions";
 
 export type SettingsRoute =
     | { readonly kind: "page"; readonly name: string }
@@ -75,6 +76,8 @@ const spaceSections: readonly { readonly section: SpaceSection; readonly title: 
     { section: "appearance", title: "Appearance" },
     { section: "browsing", title: "Browsing" },
     { section: "privacy", title: "Privacy" },
+    { section: "passwords", title: "Passwords" },
+    { section: "extensions", title: "Extensions" },
 ];
 
 /** Whether `key` is Settings' own: Ctrl+, as the Mac's Command-comma. */
@@ -311,6 +314,8 @@ export class Settings {
     }
 
     private leaveSpacePage(): void {
+        // The passwords a Space's section read go once Settings leaves it.
+        forgetPasswords();
         if (!this.embedded) return;
         this.embedded = null;
         this.host.spaceEditor.close();
