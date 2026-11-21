@@ -20,6 +20,7 @@ import type {
     TabPlacement,
     TabState,
     WindowState,
+    WorkspaceKind,
 } from "../generated/crest_contracts.js";
 
 export interface Space {
@@ -60,6 +61,8 @@ function reorder<T>(entries: T[], order: readonly Guid[] | null, id: (entry: T) 
 
 export interface Workspace {
     readonly id: Guid;
+    /** What the workspace is: the person's own, or a private one, which keeps nothing. */
+    readonly kind: WorkspaceKind;
     spaces: Map<Guid, Space>;
     order: Guid[];
     /** The Spaces this workspace is deleting, which stay until their data is erased. */
@@ -87,9 +90,20 @@ export class Model {
         for (const change of changes) this.applyOne(change);
     }
 
-    /** The first persistent workspace the core holds open. */
+    /** The workspace this page draws, as `drawWorkspace` named it, when it is not the person's own. */
+    private drawnWorkspaceId: Guid | null = null;
+
+    /** The workspace this page draws: the one it named, or the first persistent workspace the core holds open. */
     get workspace(): Workspace | undefined {
+        const drawn = this.drawnWorkspaceId ? this.workspaces.get(this.drawnWorkspaceId) : undefined;
+        if (drawn) return drawn;
+        for (const workspace of this.workspaces.values()) if (workspace.kind === "Persistent") return workspace;
         return this.workspaces.values().next().value;
+    }
+
+    /** Makes `workspaceId` the workspace this page draws, as a private window draws its own. */
+    drawWorkspace(workspaceId: Guid): void {
+        this.drawnWorkspaceId = workspaceId;
     }
 
     /** The page that shows `tabId`, if the engine has one. */
@@ -101,11 +115,12 @@ export class Model {
     private applyOne(change: Change): void {
         switch (change.kind) {
             case "WorkspaceOpened": {
-                const { workspaceId, session } = change.value;
+                const { workspaceId, kind, session } = change.value;
                 const spaces = new Map<Guid, Space>();
                 for (const space of session.spaces) spaces.set(space.id, spaceFrom(space));
                 this.workspaces.set(workspaceId, {
                     id: workspaceId,
+                    kind,
                     spaces,
                     order: session.spaces.map((space) => space.id),
                     deletions: session.spaceDeletions,

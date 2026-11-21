@@ -170,8 +170,11 @@ class QuickWindow {
         this.render();
     }
 
+    /** The workspace that holds the window's Space: the private one for a private window's Quick Window. */
     private workspace(): Workspace | undefined {
-        return this.model.workspace;
+        const spaceId = this.spaceId;
+        const holding = spaceId ? [...this.model.workspaces.values()].find((workspace) => workspace.spaces.has(spaceId)) : undefined;
+        return holding ?? this.model.workspace;
     }
 
     private space(): Space | undefined {

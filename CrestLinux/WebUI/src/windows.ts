@@ -28,6 +28,7 @@ import {
 import { CloseGate } from "./close-gate.js";
 import { addressSeparator, ExternalOpening } from "./external-opening.js";
 import type { Model, Space, Workspace } from "./model.js";
+import { drawsPrivateWindow, endPrivateBrowsing, openPrivateWindow } from "./private-window.js";
 
 /** What the window reads and asks of the rest of its WebUI. */
 export interface WindowsContext {
@@ -165,7 +166,8 @@ export class Windows {
             value: {
                 windowId: this.id,
                 workspaceId,
-                saved: true,
+                // The private window keeps no record past its session.
+                saved: !drawsPrivateWindow,
                 copyingWindowId,
                 showingSpaceId: spaceId,
                 showingTabs: moving ? [{ spaceId, tabId }] : [],
@@ -194,10 +196,15 @@ export class Windows {
         setWindowTitle(title);
     }
 
-    /** New Window: a window that starts as this one shows, in front. */
+    /** New Window: a window that starts as this one shows, in front; from the private window, one over the person's own Spaces. */
     openNewWindow(): void {
         const id = crypto.randomUUID();
-        openWindow("browser", id, { window: id, copying: this.id }, true);
+        openWindow("browser", id, drawsPrivateWindow ? { window: id } : { window: id, copying: this.id }, true);
+    }
+
+    /** New Private Window: the private window, which comes forward when it is open. */
+    openPrivateWindow(): void {
+        openPrivateWindow(this.context.model);
     }
 
     /** New Quick Window: an empty Quick Window in the Space this window shows, which promotes into this window. */
@@ -297,6 +304,8 @@ export class Windows {
                 await dispatch({ kind: "RememberWindowsForLaunch", value: { windowIds: await stackedWindows() } });
             } else {
                 if (!(await this.closeGate.mayCloseWindows([this.id]))) return;
+                // Closing the private window ends private browsing.
+                if (drawsPrivateWindow) await endPrivateBrowsing(this.context.model, this.id);
                 await dispatch({ kind: "CloseWindow", value: { windowId: this.id } });
             }
         } catch (error) {

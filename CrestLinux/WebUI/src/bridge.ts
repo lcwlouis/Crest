@@ -333,6 +333,11 @@ export function presentWindow(windowId: Guid): void {
     openWindow("browser", windowId, {}, true);
 }
 
+/** Lets the engine release the off-the-record profiles `profileIds` of a closed private window. */
+export function releasePrivateProfiles(profileIds: readonly Guid[]): void {
+    chrome.send("releasePrivateProfiles", [...profileIds]);
+}
+
 /** Brings this page's window forward. */
 export function presentThisWindow(): void {
     chrome.send("presentWindow");

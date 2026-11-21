@@ -37,6 +37,7 @@
 #include "chrome/browser/ui/crest/crest_core_host_linux.h"
 #include "chrome/browser/ui/crest/crest_credentials_linux.h"
 #include "chrome/browser/ui/crest/crest_engine_binding.h"
+#include "chrome/browser/ui/crest/crest_engine_profiles.h"
 #include "chrome/browser/ui/crest/crest_linux_ui.h"
 #include "chrome/browser/ui/crest/crest_linux_window.h"
 #include "chrome/browser/ui/crest/crest_password_import_linux.h"
@@ -448,6 +449,22 @@ class CrestUIHandler final : public content::WebUIMessageHandler, public CoreHos
         base::BindRepeating(&CrestUIHandler::HandlePasswordImportCandidates, base::Unretained(this)));
     web_ui()->RegisterMessageCallback(
         "readImportPasswords", base::BindRepeating(&CrestUIHandler::HandleReadImportPasswords, base::Unretained(this)));
+    web_ui()->RegisterMessageCallback(
+        "releasePrivateProfiles",
+        base::BindRepeating(&CrestUIHandler::HandleReleasePrivateProfiles, base::Unretained(this)));
+  }
+
+  // args: the profile ids of a closed private window's Spaces. The engine
+  // lets each go, closing its pages and destroying the off-the-record
+  // profile, as the Mac's private window releases its profiles when it
+  // closes. A profile that keeps data on disk is never released here.
+  void HandleReleasePrivateProfiles(const base::ListValue& args) {
+    EngineBinding& binding = EngineBinding::Get();
+    for (const base::Value& value : args) {
+      const std::string id = WindowKey(value);
+      Profile* profile = id.empty() ? nullptr : binding.Profiles().Find(id);
+      if (profile && profile->IsOffTheRecord()) binding.ReleaseProfile(id);
+    }
   }
 
   void OnJavascriptDisallowed() override { observation_.Reset(); }
