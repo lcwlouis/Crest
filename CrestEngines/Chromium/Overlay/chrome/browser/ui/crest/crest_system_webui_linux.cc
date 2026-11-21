@@ -1,19 +1,41 @@
 #include "chrome/browser/ui/crest/crest_system_webui_linux.h"
 
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <vector>
 
+#include "base/base64.h"
+#include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/functional/bind.h"
+#include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/no_destructor.h"
+#include "base/path_service.h"
+#include "base/strings/utf_string_conversions.h"
+#include "base/task/thread_pool.h"
 #include "base/values.h"
 #include "chrome/browser/ui/crest/crest_engine_binding.h"
+#include "chrome/browser/ui/crest/crest_engine_page.h"
 #include "chrome/browser/ui/crest/crest_linux_window.h"
 #include "chrome/browser/ui/crest/crest_notifications_linux.h"
+#include "chrome/common/chrome_paths.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_message_handler.h"
+#include "printing/buildflags/buildflags.h"
+#include "third_party/skia/include/core/SkBitmap.h"
+#include "ui/base/clipboard/clipboard_buffer.h"
+#include "ui/base/clipboard/scoped_clipboard_writer.h"
+#include "ui/gfx/codec/png_codec.h"
+#include "ui/shell_dialogs/select_file_dialog.h"
+#include "ui/shell_dialogs/selected_file_info.h"
+
+#if BUILDFLAG(ENABLE_PRINTING)
+#include "chrome/browser/printing/print_view_manager_common.h"
+#include "mojo/public/cpp/bindings/pending_associated_remote.h"
+#endif
 
 namespace crest {
 
@@ -24,6 +46,63 @@ namespace {
 std::string PageKey(const base::Value& value) {
   const std::optional<engine::Guid> id = value.is_string() ? ParseGuid(value.GetString()) : std::nullopt;
   return id ? GuidText(*id) : std::string();
+}
+
+// The page the core's id `value` names, or nullptr.
+content::WebContents* PageContents(const base::Value& value) {
+  const std::string page = PageKey(value);
+  EnginePage* engine_page = page.empty() ? nullptr : EngineBinding::Get().Find(page);
+  return engine_page ? engine_page->web_contents() : nullptr;
+}
+
+// The save dialog for a page's export, which deletes itself once answered,
+// as crest_webui_linux.cc's DownloadSaveDialog does for a download. Answers
+// the path, or none when the person cancels; `unavailable` when no dialog
+// can be shown.
+class ExportSaveDialog final : public ui::SelectFileDialog::Listener {
+ public:
+  using Answer = base::OnceCallback<void(base::FilePath path, bool unavailable)>;
+
+  static void Show(content::WebContents* contents,
+                   const std::u16string& title,
+                   const base::FilePath& suggested,
+                   const base::FilePath::StringType& extension,
+                   Answer answer) {
+    auto* listener = new ExportSaveDialog(std::move(answer));
+    listener->dialog_ = ui::SelectFileDialog::Create(listener, nullptr);
+    if (!listener->dialog_) {
+      listener->Finish(base::FilePath(), true);
+      return;
+    }
+    ui::SelectFileDialog::FileTypeInfo types;
+    types.extensions = {{extension}};
+    types.include_all_files = true;
+    listener->dialog_->SelectFile(ui::SelectFileDialog::SELECT_SAVEAS_FILE, title, suggested, &types, 1, extension,
+                                  contents->GetTopLevelNativeWindow());
+  }
+
+  // ui::SelectFileDialog::Listener:
+  void FileSelected(const ui::SelectedFileInfo& file, int index) override { Finish(file.path(), false); }
+  void FileSelectionCanceled() override { Finish(base::FilePath(), false); }
+
+ private:
+  explicit ExportSaveDialog(Answer answer) : answer_(std::move(answer)) {}
+  ~ExportSaveDialog() override {
+    if (dialog_) dialog_->ListenerDestroyed();
+  }
+
+  void Finish(const base::FilePath& path, bool unavailable) {
+    std::move(answer_).Run(path, unavailable);
+    delete this;
+  }
+
+  Answer answer_;
+  scoped_refptr<ui::SelectFileDialog> dialog_;
+};
+
+// Writes `contents` to `path`, replacing what is there. Off the UI thread.
+bool WriteExport(const base::FilePath& path, const std::vector<uint8_t>& contents) {
+  return base::WriteFile(path, contents);
 }
 
 class SystemUIHandler;
@@ -53,6 +132,12 @@ class SystemUIHandler final : public content::WebUIMessageHandler {
         "showNotification", base::BindRepeating(&SystemUIHandler::HandleShowNotification, base::Unretained(this)));
     web_ui()->RegisterMessageCallback(
         "closeNotification", base::BindRepeating(&SystemUIHandler::HandleCloseNotification, base::Unretained(this)));
+    web_ui()->RegisterMessageCallback(
+        "printPage", base::BindRepeating(&SystemUIHandler::HandlePrintPage, base::Unretained(this)));
+    web_ui()->RegisterMessageCallback(
+        "saveExport", base::BindRepeating(&SystemUIHandler::HandleSaveExport, base::Unretained(this)));
+    web_ui()->RegisterMessageCallback(
+        "copyImage", base::BindRepeating(&SystemUIHandler::HandleCopyImage, base::Unretained(this)));
   }
 
   // Fires `event` to the page; false while it cannot hear it.
@@ -145,6 +230,81 @@ class SystemUIHandler final : public content::WebUIMessageHandler {
     const std::string page = args.size() == 1 ? PageKey(args[0]) : std::string();
     LinuxWindow* window = Window();
     if (!page.empty() && window) window->RelayoutInspector(page);
+  }
+
+  // --- Page output ----------------------------------------------------------
+  // Printing, saving what a page exported and copying a capture of it, which
+  // the Mac does with NSPrintOperation, NSSavePanel and NSPasteboard.
+
+  // args: the core's id of a page. Opens Chromium's print preview over it,
+  // which the page's Browser hosts in the window as a tab-modal dialog.
+  void HandlePrintPage(const base::ListValue& args) {
+    content::WebContents* page = args.size() == 1 ? PageContents(args[0]) : nullptr;
+    if (!page) return;
+#if BUILDFLAG(ENABLE_PRINTING)
+    printing::StartPrint(page, mojo::NullAssociatedRemote(), /*print_preview_disabled=*/false,
+                         /*has_selection=*/false);
+#endif
+  }
+
+  // args: callback id, the save dialog's title, the name it proposes (the
+  // WebUI made it safe), its extension without the dot, the file's contents
+  // as base64. Asks where to save and writes the file there. Answers
+  // "saved", "cancelled", "failed" when it could not be written, or
+  // "unavailable" when no dialog can be shown.
+  void HandleSaveExport(const base::ListValue& args) {
+    AllowJavascript();
+    if (args.size() != 5 || !args[1].is_string() || !args[2].is_string() || !args[3].is_string() ||
+        !args[4].is_string()) {
+      RejectJavascriptCallback(args[0], base::Value("saveExport takes a title, a name, an extension and contents."));
+      return;
+    }
+    std::optional<std::vector<uint8_t>> contents = base::Base64Decode(args[4].GetString());
+    if (!contents) {
+      ResolveJavascriptCallback(args[0], base::Value("failed"));
+      return;
+    }
+    base::FilePath folder;
+    base::PathService::Get(chrome::DIR_DEFAULT_DOWNLOADS, &folder);
+    const base::FilePath name = base::FilePath::FromUTF8Unsafe(args[2].GetString()).BaseName();
+    ExportSaveDialog::Show(
+        web_ui()->GetWebContents(), base::UTF8ToUTF16(args[1].GetString()), folder.empty() ? name : folder.Append(name),
+        base::FilePath::FromUTF8Unsafe(args[3].GetString()).value(),
+        base::BindOnce(&SystemUIHandler::WriteChosenExport, weak_factory_.GetWeakPtr(), args[0].Clone(),
+                       std::move(*contents)));
+  }
+
+  void WriteChosenExport(base::Value callback, std::vector<uint8_t> contents, base::FilePath path, bool unavailable) {
+    if (path.empty()) {
+      if (IsJavascriptAllowed()) ResolveJavascriptCallback(callback, base::Value(unavailable ? "unavailable" : "cancelled"));
+      return;
+    }
+    base::ThreadPool::PostTaskAndReplyWithResult(
+        FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_BLOCKING},
+        base::BindOnce(&WriteExport, path, std::move(contents)),
+        base::BindOnce(&SystemUIHandler::AnswerWritten, weak_factory_.GetWeakPtr(), std::move(callback)));
+  }
+
+  void AnswerWritten(base::Value callback, bool written) {
+    if (IsJavascriptAllowed()) ResolveJavascriptCallback(callback, base::Value(written ? "saved" : "failed"));
+  }
+
+  // args: callback id, a PNG as base64. Puts the image on the clipboard.
+  // Answers whether it could.
+  void HandleCopyImage(const base::ListValue& args) {
+    AllowJavascript();
+    if (args.size() != 2 || !args[1].is_string()) {
+      RejectJavascriptCallback(args[0], base::Value("copyImage takes a PNG."));
+      return;
+    }
+    std::optional<std::vector<uint8_t>> png = base::Base64Decode(args[1].GetString());
+    SkBitmap bitmap = png ? gfx::PNGCodec::Decode(*png) : SkBitmap();
+    if (bitmap.isNull()) {
+      ResolveJavascriptCallback(args[0], base::Value(false));
+      return;
+    }
+    ui::ScopedClipboardWriter(ui::ClipboardBuffer::kCopyPaste).WriteImage(bitmap);
+    ResolveJavascriptCallback(args[0], base::Value(true));
   }
 
   base::WeakPtrFactory<SystemUIHandler> weak_factory_{this};

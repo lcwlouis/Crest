@@ -3,7 +3,9 @@
 
 // What chrome://crest asks of the desktop and of a window's page cards
 // beyond the core: the inspector docked in a card, the desktop's
-// notifications, and the desktop's screen-sharing picker. It lives beside
+// notifications, the desktop's screen-sharing picker, and a page's print
+// preview, the save dialog for what a page exported and the clipboard for a
+// capture of it. It lives beside
 // crest_webui_linux.cc's handler, which relays the core, as its own message
 // handler on the same page.
 

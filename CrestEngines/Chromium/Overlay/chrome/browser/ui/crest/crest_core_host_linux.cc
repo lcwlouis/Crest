@@ -72,7 +72,9 @@ std::vector<uint8_t> EngineRegistration() {
                        EngineCapability::kPageResidency, EngineCapability::kPopups,
                        EngineCapability::kWorkspaceProfiles, EngineCapability::kWorkspaceTransfer,
                        EngineCapability::kProfileDeletion, EngineCapability::kBeforeUnload,
-                       EngineCapability::kInternalPages},
+                       EngineCapability::kInternalPages, EngineCapability::kInspector,
+                       EngineCapability::kViewportCapture, EngineCapability::kFullPageCapture,
+                       EngineCapability::kPdf, EngineCapability::kWebArchive, EngineCapability::kPrint},
       .is_default = true});
 }
 
