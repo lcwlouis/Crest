@@ -36,6 +36,9 @@ import { NowPlayingDeck } from "./now-playing.js";
 import { AutomaticPictureInPicture } from "./picture-in-picture.js";
 import { PageOutput } from "./page-output.js";
 import { DeveloperToolbar } from "./developer-toolbar.js";
+import { TabPictures } from "./tab-pictures.js";
+import { TabPreviewLayer } from "./tab-preview-layer.js";
+import { DeviceAppearance } from "./device-appearance.js";
 import type { Space, Workspace } from "./model.js";
 import { InlineRename } from "./rename.js";
 import { element, Sidebar, symbol } from "./sidebar.js";
@@ -290,6 +293,30 @@ const pageCards: PageCards = new PageCards({
     shows: (pageId) => windows.shows(pageId),
     decorations: developerToolbar,
 });
+// The sidebar's tab and folder preview cards, and the pictures of the tabs' pages they draw.
+const tabPictures: TabPictures = new TabPictures({
+    wanted: () => DeviceAppearance.tabHoverPreview.value,
+    shownCards: () => pageCards.shownCards(),
+    shownPage: (tabId) => {
+        const page = model.pageFor(tabId);
+        if (!page || page.phase !== "Live" || page.live.failure || !pageCards.frameOf(page.id)) return undefined;
+        return { id: page.id, url: page.live.url, isLoading: page.live.isLoading };
+    },
+    openTabs: () => new Set([...(model.workspace?.spaces.values() ?? [])].flatMap((space) => space.tabs.map((tab) => tab.id))),
+    capture: (pageId, width) => pageOutput.capture(pageId, null, width),
+    changed: () => tabPreview.follow(),
+});
+const tabPreview: TabPreviewLayer = new TabPreviewLayer({
+    model,
+    icons,
+    pictures: tabPictures,
+    space: shownSpace,
+    shownTabId,
+    sidebar: root,
+    tabRow: (space, tab) => sidebar.tabRow(space, tab, 0),
+});
+DeviceAppearance.listen(() => tabPictures.follow());
+
 const peek: Peek = new Peek({
     model,
     windowId: () => windows.windowId,
@@ -574,6 +601,8 @@ async function start(): Promise<void> {
             render();
             peek.apply(changes);
             followShownPage();
+            tabPictures.follow();
+            tabPreview.follow();
             findBar.follow();
             prompts.apply(changes);
             pageStates.apply(changes);

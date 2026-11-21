@@ -5,10 +5,9 @@
 // page only draws the lists the core publishes (SpaceState.sidebar) and sends
 // the person's actions back as intents.
 //
-// TODO(linux): the Mac shows a tab's preview card on hover (TabPreview's
-// BrowserTabPreviewLayer, from a CapturePage snapshot) and a folder's preview
-// with its search field; the Settings toggles exist (tabHoverPreview,
-// folderHoverPreview) but Linux draws neither card yet.
+// Each tab row, pinned tile, split card and folder names what it draws in
+// data-preview-tab or data-preview-folder, which the window's tab preview
+// (tab-preview-layer.ts) reads to show its card on hover.
 
 import { pinColumnRequest } from "./device-appearance.js";
 import type { BrandColor, FolderState, Guid, Intent, SidebarRow, TabPlacement, TabState } from "../generated/crest_contracts.js";
@@ -175,6 +174,7 @@ export class Sidebar {
         const selected = this.host.shownTabId();
         for (const tab of tabs) {
             const tile = element("button", tab.id === selected ? "pin selected" : "pin");
+            tile.dataset.previewTab = tab.id;
             tile.append(this.favicon(tab));
             tile.title = tab.displayTitle || tab.url || "";
             tile.setAttribute("aria-label", tile.title);
@@ -276,6 +276,7 @@ export class Sidebar {
         const group = element("div", "folder");
         group.style.setProperty("--depth", String(row.depth));
         const header = element("button", "row folder-header");
+        header.dataset.previewFolder = folder.id;
         header.setAttribute("aria-expanded", String(!folder.isCollapsed));
         header.style.setProperty("--depth", String(row.depth));
         const icon = element("span", "favicon folder-icon");
@@ -323,6 +324,7 @@ export class Sidebar {
         if (members.some((tab) => tab.id === selected)) element_.classList.add("selected");
         for (const tab of members) {
             const card = element("button", tab.id === selected ? "split-card selected" : "split-card");
+            card.dataset.previewTab = tab.id;
             card.append(this.favicon(tab), element("span", "title", tab.displayTitle || tab.url || "New Tab"));
             card.title = group?.displayTitle ?? tab.displayTitle;
             card.addEventListener("click", () => this.show(space, tab.id));
@@ -332,9 +334,11 @@ export class Sidebar {
         return element_;
     }
 
-    private tabRow(space: Space, tab: TabState, depth: number): HTMLElement {
+    /** A tab's row, as the sidebar draws it and a folder's preview card lists it. */
+    tabRow(space: Space, tab: TabState, depth: number): HTMLElement {
         const selected = tab.id === this.host.shownTabId();
         const row = element("div", selected ? "row tab selected" : "row tab");
+        row.dataset.previewTab = tab.id;
         row.style.setProperty("--depth", String(depth));
         row.tabIndex = 0;
         row.setAttribute("role", "button");
