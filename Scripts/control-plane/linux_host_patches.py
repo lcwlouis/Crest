@@ -24,6 +24,13 @@ MAC_ONLY = re.compile(r"(_mac\.(cc|h|mm)$|\.mm$|/cocoa/|/mac/|_cocoa\.)")
 # services (the macOS passkey sheet, the system screen-sharing picker, Mac
 # feature flags, Chrome's Mac native-messaging folders, a product bundle). They
 # keep their Mac gates; Linux gets its own behavior for them later.
+#
+# TODO(linux): screen sharing keeps Chromium's own picker on Linux, whose
+# window and screen choices go through the xdg-desktop-portal ScreenCast
+# picker on Wayland. Crest's offer (ShareSourcesOffered, ChooseShareSource)
+# needs the display_media_access_handler gate widened and
+# ScreenSharingPicker::OpenSystemPicker to start the portal's picker through
+# webrtc's PipeWire capturer (its DelegatedSourceListController) on Linux.
 KEEP_MAC_GATES = {
     "chrome/app/chrome_main_delegate.cc",
     "chrome/browser/chrome_browser_field_trials.cc",
