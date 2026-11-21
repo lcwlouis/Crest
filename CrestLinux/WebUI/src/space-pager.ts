@@ -13,6 +13,10 @@
 // Chromium hands the page wheel events without the touchpad's phases, so a
 // gesture ends after a short quiet gap rather than at its lift-off, and the
 // fling Chromium synthesises after it counts as part of the swipe.
+//
+// TODO(linux): blend the window's backdrop between the two Spaces' colours
+// with the swipe, as SpacePagerViewport does; the backdrop changes when the
+// core shows the new Space.
 
 import type { Guid, Intent } from "../generated/crest_contracts.js";
 import { dispatch } from "./bridge.js";
