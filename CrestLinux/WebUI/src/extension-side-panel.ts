@@ -7,6 +7,10 @@
 // with its tab. Nothing here is kept: the engine owns each document, and
 // closing the window leaves nothing behind. This draws the card's header and
 // tells the window where the document goes (placeSidePanel).
+//
+// TODO(linux): the Mac's card is as wide as the person drags it
+// (BrowserSplitPanelLayoutMetrics, commitWidth); here it keeps
+// --side-panel-width, with no handle to resize it.
 
 import type { Guid, PageState, SidePanelRequested, SidePanelScope } from "../generated/crest_contracts.js";
 import { closeSidePanel, openSidePanel, pageRequest, placeSidePanel } from "./bridge.js";

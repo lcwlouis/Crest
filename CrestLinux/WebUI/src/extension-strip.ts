@@ -5,6 +5,10 @@
 // the Space, so it shows whether or not a page is open; it also tells the
 // window where each tile is, so a popup an extension opens itself hangs from
 // its tile, and any other from the window's fallback control.
+//
+// TODO(linux): the Mac's Quick Window shows the pinned actions in its own
+// toolbar (BrowserPinnedExtensionToolbarActions, with its overflow); the
+// Linux Quick Window (quick.ts) shows none yet.
 
 import { actionArtwork, anchorOf } from "./site-extensions.js";
 import type { ExtensionStore } from "./extensions.js";
