@@ -64,6 +64,11 @@ def derive(directory, split):
             ENGINE / "Linux/Patches/crest-host-linux-deps.patch"]
 
 
+# Linux-only hooks that call into the host, applied over the host's patches,
+# whose changed lines they keep as context.
+FOLLOWING = [ENGINE / "Linux/Patches/crest-second-launch.patch"]
+
+
 def run(patches, source, *flags):
     for patch in patches:
         print(f"{'Reversing' if '--reverse' in flags else 'Applying'} {patch.name}", flush=True)
@@ -78,6 +83,9 @@ def install(source):
         # The first derivation left Crest's includes inside Chromium's own Mac
         # include blocks; a source that has it is moved to the current one.
         legacy = derive(derived / "legacy", split=False)
+        # The hooks over the host's patches come out first, so the host's are
+        # checked as they were applied, and go back in after.
+        run([patch for patch in reversed(FOLLOWING) if dry_run(patch, source, "--reverse")], source, "--reverse")
         if dry_run(patches[0], source, "--forward"):
             run(patches, source, "--forward")
         elif installed(patches, source, derived / "check"):
@@ -87,6 +95,7 @@ def install(source):
             run(patches, source, "--forward")
         else:
             sys.exit("The host patches neither apply nor are applied; review the Chromium source")
+        run(FOLLOWING, source, "--forward")
     for path in (ENGINE / "Overlay").rglob("*"):
         if path.is_file():
             destination = source / path.relative_to(ENGINE / "Overlay")

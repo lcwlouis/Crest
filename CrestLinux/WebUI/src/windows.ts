@@ -19,13 +19,13 @@ import {
     openWindow,
     pageRequest,
     presentWindow,
-    query,
     useThisWindow,
     Refused,
     requestClose,
     setWindowTitle,
     stackedWindows,
 } from "./bridge.js";
+import { addressSeparator, ExternalOpening } from "./external-opening.js";
 import type { Model, Space, Workspace } from "./model.js";
 
 /** What the window reads and asks of the rest of its WebUI. */
@@ -52,8 +52,8 @@ interface Opening {
     /** A tab it opens showing, which it takes from `fromWindowId`, as Move to New Window does. */
     readonly tabId: Guid | null;
     readonly fromWindowId: Guid | null;
-    /** A link another app handed Crest, which opens in a new tab once the window is open. */
-    readonly url: string | null;
+    /** Links or documents another app handed Crest, which open in new tabs once the window is open. */
+    readonly urls: readonly string[];
 }
 
 function opening(): Opening {
@@ -65,7 +65,7 @@ function opening(): Opening {
         spaceId: id("space"),
         tabId: id("tab"),
         fromWindowId: id("from"),
-        url: parameters.get("url"),
+        urls: parameters.get("url")?.split(addressSeparator).filter(Boolean) ?? [],
     };
 }
 
@@ -84,9 +84,18 @@ export class Windows {
     /** Pages this window asked the core and the engine to move here, until they did. */
     private readonly claiming = new Set<Guid>();
     private title = "";
+    /** What another app hands Crest through this window, opened where the core places it. */
+    private readonly external: ExternalOpening;
 
     constructor(context: WindowsContext) {
         this.context = context;
+        this.external = new ExternalOpening({
+            windowId: () => this.id,
+            openTabs: async (urls, spaceId, windowId) => {
+                for (const url of urls) await this.openLink(url, spaceId, windowId);
+            },
+            report: context.report,
+        });
         listenToWindow({
             closeRequested: (last) => void this.closeAsked(last),
             activeChanged: (active) => this.activeChanged(active),
@@ -101,7 +110,7 @@ export class Windows {
             },
             pageArrived: (pageId) => void this.claim(pageId),
             showSpace: (spaceId) => void this.send({ kind: "ShowSpace", value: { windowId: this.id, spaceId } }),
-            openExternal: (urls) => void this.openExternal(urls),
+            openExternal: (urls) => void this.external.open(urls),
         });
         // The person using the window's WebUI makes it the window in use,
         // though the window manager may keep the focus elsewhere, so what it
@@ -134,7 +143,7 @@ export class Windows {
      * Space and tab it was opened for.
      */
     async open(workspaceId: Guid, launch: () => Promise<{ windowIds: readonly Guid[]; startupWindowId: Guid }>): Promise<void> {
-        const { windowId, copyingWindowId, spaceId, tabId, fromWindowId, url } = this.opening;
+        const { windowId, copyingWindowId, spaceId, tabId, fromWindowId, urls } = this.opening;
         if (windowId === null) {
             const plan = await launch();
             this.id = plan.startupWindowId;
@@ -168,7 +177,7 @@ export class Windows {
                 value: { workspaceId, windowId: fromWindowId, spaceId, tabId, destinationWindowId: this.id },
             });
         }
-        if (url && spaceId) await this.openLink(url, spaceId);
+        if (spaceId) for (const url of urls) await this.openLink(url, spaceId);
     }
 
     /** Follows the core: the window's title is what its shown tab shows, as BrowserWindowTitle names it. */
@@ -281,36 +290,6 @@ export class Windows {
             console.error(error);
         }
         closeWindow();
-    }
-
-    /**
-     * Opens links another app handed Crest where the core routes each, as the
-     * Mac's BrowserMacExternalOpening: a Quick Window alone, over the window
-     * the core names or none, or a new tab in the window the core names,
-     * which opens when it is not open yet.
-     */
-    private async openExternal(urls: readonly string[]): Promise<void> {
-        for (const url of urls) {
-            try {
-                const placement = await query("RouteExternalLink", { windowIds: await stackedWindows(), url });
-                const { spaceId, windowId } = placement;
-                if (!spaceId) continue;
-                if (placement.opensQuickWindow) {
-                    const target = placement.opensWindow ? null : windowId;
-                    openWindow("quick", null, { ...(target ? { target } : {}), space: spaceId, url }, true);
-                } else if (windowId && placement.opensWindow) {
-                    openWindow("browser", windowId, { window: windowId, space: spaceId, url }, true);
-                } else if (windowId === this.id) {
-                    await this.openLink(url, spaceId);
-                } else if (windowId) {
-                    // The window the core names opens the tab; this one asks the core for it.
-                    await this.openLink(url, spaceId, windowId);
-                    presentWindow(windowId);
-                }
-            } catch (error) {
-                this.context.report(error);
-            }
-        }
     }
 
     /** Opens `url` in a new tab of `spaceId`, after the tab the window shows there, which the window shows. */

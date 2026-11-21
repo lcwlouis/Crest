@@ -16,6 +16,7 @@
 #include "base/auto_reset.h"
 #include "base/check.h"
 #include "base/command_line.h"
+#include "base/environment.h"
 #include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/memory/raw_ptr.h"
@@ -42,6 +43,8 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/drop_data.h"
 #include "extensions/common/extension.h"
+#include "net/base/filename_util.h"
+#include "url/gurl.h"
 #include "ui/views/widget/widget.h"
 
 namespace {
@@ -56,6 +59,10 @@ struct HostState {
   // A permission request being answered; Chromium raises it again while it
   // takes the answer, and that request already has one.
   raw_ptr<const permissions::PermissionPrompt::Delegate> answering_permission = nullptr;
+  // Links and files a launch handed Crest before a browser window's WebUI
+  // could take them, as the Mac shell keeps its pending opens until the
+  // launch finished.
+  std::vector<std::string> pending_opens;
 };
 
 HostState& State() {
@@ -108,6 +115,50 @@ class LinuxShell final : public crest::EngineBinding::Shell {
   void RetractSidePanels(Profile* profile, const std::string& extension_id, std::optional<int> tab_id) override {}
 };
 
+// The addresses a launch's command line hands Crest, in order: a link as it
+// was written, and a file, absolute or relative to `current_directory`, as
+// its file: URL. The core decides which of them Crest opens.
+std::vector<std::string> LaunchAddresses(const base::CommandLine& command_line,
+                                         const base::FilePath& current_directory) {
+  std::vector<std::string> addresses;
+  for (const base::CommandLine::StringType& argument : command_line.GetArgs()) {
+    if (argument.empty()) continue;
+    const GURL url(argument);
+    if (url.is_valid() && url.has_scheme()) {
+      addresses.push_back(url.spec());
+      continue;
+    }
+    base::FilePath path(argument);
+    if (!path.IsAbsolute()) {
+      if (current_directory.empty()) continue;
+      path = current_directory.Append(path);
+    }
+    const GURL file = net::FilePathToFileURL(path);
+    if (file.is_valid()) addresses.push_back(file.spec());
+  }
+  return addresses;
+}
+
+// The directory the first launch started in, which its relative file
+// arguments are in. The shell's record of it is read: asking the system
+// would block the UI thread.
+base::FilePath LaunchDirectory() {
+  std::optional<std::string> directory = base::Environment::Create()->GetVar("PWD");
+  return directory && !directory->empty() ? base::FilePath(*directory) : base::FilePath();
+}
+
+// Hands the opens that waited to the browser window in use, once its WebUI
+// opened it in the core.
+void OpenPending() {
+  auto& state = State();
+  if (state.pending_opens.empty() || !state.started || state.disposing) return;
+  crest::LinuxWindow* window = crest::LinuxWindow::Active();
+  if (!window || !window->kind().browses || window->id().empty()) return;
+  std::vector<std::string> urls = std::move(state.pending_opens);
+  state.pending_opens.clear();
+  if (!crest::OpenExternalLinks(*window, urls)) state.pending_opens = std::move(urls);
+}
+
 base::FilePath StorageDirectory(Profile* profile) {
   // Beside Chromium's profiles, in the user data directory the launch names.
   return profile->GetPath().DirName().Append("Crest");
@@ -146,6 +197,9 @@ void EnsureCrestUIStarted(Browser* browser) {
   // The frames the browser windows kept, which the windows the launch
   // reopens come back at.
   LinuxWindow::LoadFrames(StorageDirectory(browser->GetProfile()).Append("WindowFrames.json"));
+  // Links and files the launch itself was handed open once its first window
+  // opened in the core.
+  state.pending_opens = LaunchAddresses(*base::CommandLine::ForCurrentProcess(), LaunchDirectory());
   // The launch's first window, whose WebUI opens the rest the core reopens.
   LinuxWindow::Open(browser->GetProfile(), LinuxWindow::Kind::kBrowser, std::string(), std::string(),
                     /*activates=*/true);
@@ -182,15 +236,35 @@ views::Widget* WindowForBrowser(const Browser* browser) {
 }
 
 void WindowAdopted(const std::string& window) {
-  if (!State().disposing) EngineBinding::Get().Browsers().WindowOpened(window);
+  if (State().disposing) return;
+  EngineBinding::Get().Browsers().WindowOpened(window);
+  OpenPending();
 }
 
-// TODO(linux): the browser hands a second launch's links to the running
-// one through StartupBrowserCreator, which no Linux patch routes here yet.
 bool OpenExternalURLs(const std::vector<std::string>& urls) {
   if (!IsEnabled() || !State().started || State().disposing) return false;
   LinuxWindow* window = LinuxWindow::Active();
-  return window && OpenExternalLinks(*window, urls);
+  return window && window->kind().browses && !window->id().empty() && OpenExternalLinks(*window, urls);
+}
+
+// crest-second-launch.patch calls this from
+// StartupBrowserCreator::ProcessCommandLineAlreadyRunning. Once Crest's UI
+// started, its windows are the only ones a launch opens: the links and files
+// go where the core routes them, and a launch with none brings the window in
+// use forward, as a Dock click does on the Mac.
+bool OpenSecondLaunch(const base::CommandLine& command_line, const base::FilePath& current_directory) {
+  auto& state = State();
+  if (!IsEnabled() || !state.started) return false;
+  if (state.disposing || state.quitting) return true;
+  std::vector<std::string> urls = LaunchAddresses(command_line, current_directory);
+  if (urls.empty()) {
+    if (LinuxWindow* window = LinuxWindow::Active()) window->Present();
+    return true;
+  }
+  // With no browser window's WebUI to take them yet, they wait for the next
+  // window that opens in the core.
+  if (!OpenExternalURLs(urls)) state.pending_opens.insert(state.pending_opens.end(), urls.begin(), urls.end());
+  return true;
 }
 
 // TODO(linux): Crest's quit preparation (downloads, unsaved pages) asks
