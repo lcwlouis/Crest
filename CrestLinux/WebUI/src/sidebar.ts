@@ -4,6 +4,11 @@
 // run, and the Space switcher below. The core owns every order and rule; the
 // page only draws the lists the core publishes (SpaceState.sidebar) and sends
 // the person's actions back as intents.
+//
+// TODO(linux): the Mac shows a tab's preview card on hover (TabPreview's
+// BrowserTabPreviewLayer, from a CapturePage snapshot) and a folder's preview
+// with its search field; the Settings toggles exist (tabHoverPreview,
+// folderHoverPreview) but Linux draws neither card yet.
 
 import { pinColumnRequest } from "./device-appearance.js";
 import type { BrandColor, FolderState, Guid, Intent, SidebarRow, TabPlacement, TabState } from "../generated/crest_contracts.js";

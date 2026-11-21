@@ -36,7 +36,15 @@ export interface CommandContext {
     readonly windows: { openNewWindow(): void; openQuickWindow(): void; close(): void };
 }
 
-/** The commands the Linux window performs; the rest wait for their surfaces. */
+/**
+ * The commands the Linux window performs; the rest wait for their surfaces.
+ *
+ * TODO(linux): PrintPage, ExportPDF, SaveWebArchive and CapturePage need the
+ * host's print call and a save panel for ExportPage and CapturePage, and
+ * ToggleDeveloperToolbar needs the Mac's BrowserDeveloperToolbar (viewport
+ * presets and the capture tools), which the Settings toggle
+ * automaticallyShowsDeveloperToolbar already names.
+ */
 const known = new Set<string>([
     "NewTab", "OpenLocation", "CloseTabOrWindow", "ArchiveTab", "Back", "Forward", "ReloadPage", "ReloadFromOrigin",
     "StopLoading", "ToggleSelectedTabPinned", "DuplicateTab", "ReopenClosedTab", "ClearUnpinnedTabs", "PreviousTab",
