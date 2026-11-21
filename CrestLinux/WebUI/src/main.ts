@@ -44,6 +44,9 @@ import { applyDeviceAppearance } from "./device-appearance.js";
 import { Preferences } from "./preferences.js";
 import { isSettingsKey, Settings, settingsShortcut } from "./settings.js";
 import { settingsPages, spaceSectionPages } from "./settings-pages.js";
+import { ExtensionStore } from "./extensions.js";
+import { ExtensionStrip } from "./extension-strip.js";
+import { SiteExtensionsControl } from "./site-extensions.js";
 
 const model = new Model();
 const preferences = new Preferences();
@@ -182,6 +185,26 @@ const settings = new Settings(
     },
     document.getElementById("page")!,
 );
+// Extensions: each Space's installed extensions, the pinned strip above the
+// pinned tabs, the page's actions, their popups, side panels and installs.
+const extensions = new ExtensionStore({
+    model,
+    windowId: () => windows.windowId,
+    space: shownSpace,
+    page: shownPage,
+    showsPage: (pageId) => {
+        const page = model.pages.get(pageId);
+        return page?.tabId != null && pageCards.shownCards().includes(page.tabId) && windows.shows(pageId);
+    },
+    openSettings: (spaceId) => settings.open({ kind: "space", spaceId, section: "extensions" }),
+    redraw: () => {
+        render();
+        settings.follow();
+    },
+});
+const extensionStrip = new ExtensionStrip(extensions);
+const siteExtensions = new SiteExtensionsControl(extensions);
+navigation.append(siteExtensions.trigger);
 const downloadDestinations = new DownloadDestinations((intent) => dispatch(intent).catch((error: unknown) => console.error(error)));
 const sidebar = new Sidebar(
     {
@@ -206,6 +229,7 @@ const sidebar = new Sidebar(
         rename,
         utilities,
         spaces,
+        extensionStrip: (space) => extensionStrip.draw(space),
     },
     root,
 );
@@ -438,6 +462,7 @@ function render(): void {
     // The list's search field stands in the address field's place, as on the Mac.
     address.hidden = utilities.isOpen;
     sidebar.render();
+    siteExtensions.follow();
 }
 
 /**
@@ -519,6 +544,7 @@ async function start(): Promise<void> {
             model.apply(changes);
             preferences.apply(changes);
             icons.apply(changes);
+            extensions.apply(changes);
             render();
             peek.apply(changes);
             followShownPage();
@@ -541,6 +567,7 @@ async function start(): Promise<void> {
                 if (presentation.kind === "PeekRequested") peek.requested(presentation.value);
                 pageStates.present(presentation);
                 credentialPrompts.present(presentation);
+                extensions.present(presentation);
             } catch (error) {
                 console.error(error);
             }
