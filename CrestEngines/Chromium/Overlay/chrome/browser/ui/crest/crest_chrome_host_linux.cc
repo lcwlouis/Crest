@@ -31,6 +31,7 @@
 #include "chrome/browser/ui/crest/crest_engine_browsers.h"
 #include "chrome/browser/ui/crest/crest_engine_page.h"
 #include "chrome/browser/ui/crest/crest_extension_prompt.h"
+#include "chrome/browser/ui/crest/crest_extensions_linux.h"
 #include "chrome/browser/ui/crest/crest_linux_ui.h"
 #include "chrome/browser/ui/crest/crest_linux_window.h"
 #include "chrome/browser/ui/crest/crest_permission_prompt.h"
@@ -99,13 +100,20 @@ class LinuxShell final : public crest::EngineBinding::Shell {
     return false;
   }
 
-  void ReleasePage(const std::string& page) override { crest::LinuxWindow::ReleaseEverywhere(page); }
+  // The page's extension popup and side panel go before the page itself.
+  void ReleasePage(const std::string& page) override {
+    crest::ReleaseExtensionViews(page);
+    crest::LinuxWindow::ReleaseEverywhere(page);
+  }
 
-  // TODO(linux): docked DevTools, extension side panels and popups live in
-  // the page's card, which the Linux window does not draw yet.
+  // TODO(linux): docked DevTools live in the page's card, which the Linux
+  // window does not draw yet.
   void DockInspector(const std::string& page, content::WebContents* frontend) override {}
-  void ReleaseProfile(const std::string& profile) override {}
-  void RetractSidePanels(Profile* profile, const std::string& extension_id, std::optional<int> tab_id) override {}
+  // A popup opened with no page may be anchored in the profile being let go of.
+  void ReleaseProfile(const std::string& profile) override { crest::ReleaseSpaceExtensionPopup(); }
+  void RetractSidePanels(Profile* profile, const std::string& extension_id, std::optional<int> tab_id) override {
+    crest::RetractExtensionSidePanels(profile, extension_id, tab_id);
+  }
 };
 
 base::FilePath StorageDirectory(Profile* profile) {
@@ -223,17 +231,22 @@ void AddNavigationThrottle(content::NavigationThrottleRegistry& registry) {
   registry.AddThrottle(EngineBinding::LinkThrottle(registry));
 }
 
-// TODO(linux): extension action popups open from the extension's control in
-// Crest's toolbar, which the Linux window does not draw yet.
+// `chrome.action.openPopup()` opens over the page `browser` shows, from the
+// extension's control in the window's sidebar (crest_extensions_linux).
 bool OpenExtensionActionPopup(BrowserWindowInterface& browser, const extensions::Extension& extension,
                               base::OnceCallback<void(extensions::ExtensionHost*)> shown) {
-  return false;
+  if (!IsEnabled() || !State().started || State().disposing || State().quitting) return false;
+  return OpenExtensionPopupFromEngine(browser, extension, std::move(shown));
 }
 
 // Crest's own installs ask the core through the prompt they install with and
 // never come here. Any other install has no review in Crest to answer it, and
 // Crest's review is the only consent an install in its windows gets, so it
 // is declined, as the Mac host declines one it cannot place.
+// TODO(linux): the Mac host asks the engine's other prompts (an extension
+// that needs more permissions to be enabled again, one opened from outside
+// a Crest window) in a native sheet; Linux declines them until its WebUI
+// draws one.
 void ShowExtensionPrompt(std::unique_ptr<ExtensionInstallPromptShowParams> params,
                          ExtensionInstallPrompt::DoneCallback callback,
                          std::unique_ptr<extensions::InstallPromptData> prompt) {

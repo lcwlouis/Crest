@@ -45,6 +45,8 @@ LINUX_SHELL_SOURCES = (
     "ui/crest/crest_core_host_linux.h",
     "ui/crest/crest_credentials_linux.cc",
     "ui/crest/crest_credentials_linux.h",
+    "ui/crest/crest_extensions_linux.cc",
+    "ui/crest/crest_extensions_linux.h",
     "ui/crest/crest_linux_ui.h",
     "ui/crest/crest_linux_window.cc",
     "ui/crest/crest_linux_window.h",

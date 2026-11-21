@@ -25,6 +25,7 @@
 #include "chrome/browser/ui/crest/crest_engine_binding.h"
 #include "chrome/browser/ui/crest/crest_engine_browsers.h"
 #include "chrome/browser/ui/crest/crest_engine_page.h"
+#include "chrome/browser/ui/crest/crest_extensions_linux.h"
 #include "chrome/browser/ui/crest/crest_linux_ui.h"
 #include "chrome/browser/ui/crest/crest_webui_linux.h"
 #include "content/public/browser/render_widget_host_view.h"
@@ -384,8 +385,9 @@ LinuxWindow::~LinuxWindow() {
   }
   activation_.Reset();
   // The pages' observers and views are let go before the widget that owns
-  // the views.
+  // the views, which takes the extensions' views with it.
   slots_.clear();
+  extension_views_.clear();
   // The widget goes before the delegate it holds.
   widget_.reset();
 }
@@ -689,11 +691,19 @@ void LinuxWindow::Restack() {
   for (const Slot& slot : slots_) {
     if (!overlay_raised_ || !slot.above) order.push_back(slot.view);
   }
+  // An extension's side panel sits beside the pages, as a split's card.
+  for (const auto& [view, popup] : extension_views_) {
+    if (!popup) order.push_back(view);
+  }
   if (overlay_raised_) order.push_back(ui_);
   for (const Slot& slot : slots_) {
     if (overlay_raised_ && slot.above) order.push_back(slot.view);
   }
   order.push_back(float_);
+  // An action's popup over everything, as the Mac's is a child window above.
+  for (const auto& [view, popup] : extension_views_) {
+    if (popup) order.push_back(view);
+  }
   // The views' order is the native windows' order: the last child draws on
   // top and takes the pointer.
   for (size_t index = 0; index < order.size(); ++index) contents->ReorderChildView(order[index], index);
@@ -740,6 +750,26 @@ void LinuxWindow::SetFloat(const gfx::Rect& bounds, bool focus) {
     float_->RequestFocus();
     float_focused_ = true;
   }
+}
+
+views::View* LinuxWindow::AddExtensionView(std::unique_ptr<views::View> view, bool popup) {
+  auto* contents = static_cast<Contents*>(delegate_.GetContentsView());
+  views::View* added = contents->AddChildView(std::move(view));
+  extension_views_.emplace_back(added, popup);
+  Restack();
+  return added;
+}
+
+void LinuxWindow::RemoveExtensionView(views::View* view) {
+  const auto held = std::ranges::find(extension_views_, view, [](const auto& entry) { return entry.first.get(); });
+  if (held == extension_views_.end()) return;
+  extension_views_.erase(held);
+  auto* contents = static_cast<Contents*>(delegate_.GetContentsView());
+  // The view goes with what it hosts.
+  std::unique_ptr<views::View> removed = contents->RemoveChildViewT(view);
+  removed.reset();
+  // A popup that had the keyboard hands it back to the page in use.
+  FocusInUse();
 }
 
 void LinuxWindow::SetOverlay(bool raised) {
@@ -809,8 +839,11 @@ bool LinuxWindow::UI::Reopen() {
   return false;
 }
 
+// A key the page declined and Crest's own shortcuts left may be an
+// extension's (chrome.commands), as the Mac's shell asks the engine last.
 bool LinuxWindow::UI::HandleShortcut(const input::NativeWebKeyboardEvent& event, bool page_declined) {
-  return ClaimShortcut(window_, event, page_declined);
+  return ClaimShortcut(window_, event, page_declined) ||
+         (page_declined && DispatchExtensionShortcut(window_, event));
 }
 
 void LinuxWindow::UI::FocusLocation() {

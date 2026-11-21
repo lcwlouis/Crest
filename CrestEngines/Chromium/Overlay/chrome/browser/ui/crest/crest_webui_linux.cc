@@ -37,6 +37,7 @@
 #include "chrome/browser/ui/crest/crest_core_host_linux.h"
 #include "chrome/browser/ui/crest/crest_credentials_linux.h"
 #include "chrome/browser/ui/crest/crest_engine_binding.h"
+#include "chrome/browser/ui/crest/crest_extensions_linux.h"
 #include "chrome/browser/ui/crest/crest_linux_ui.h"
 #include "chrome/browser/ui/crest/crest_linux_window.h"
 #include "chrome/browser/ui/crest/crest_password_import_linux.h"
@@ -1096,6 +1097,7 @@ CrestUI::CrestUI(content::WebUI* web_ui) : content::WebUIController(web_ui) {
   source->OverrideContentSecurityPolicy(network::mojom::CSPDirectiveName::ImgSrc,
                                         "img-src chrome://resources chrome://favicon2 'self' data: https:;");
   web_ui->AddMessageHandler(std::make_unique<CrestUIHandler>());
+  web_ui->AddMessageHandler(MakeExtensionsHandler());
 }
 
 CrestUI::~CrestUI() = default;
