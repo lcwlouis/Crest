@@ -72,7 +72,9 @@ std::vector<uint8_t> EngineRegistration() {
                        EngineCapability::kPageResidency, EngineCapability::kPopups,
                        EngineCapability::kWorkspaceProfiles, EngineCapability::kWorkspaceTransfer,
                        EngineCapability::kProfileDeletion, EngineCapability::kBeforeUnload,
-                       EngineCapability::kInternalPages},
+                       EngineCapability::kInternalPages, EngineCapability::kInspector,
+                       EngineCapability::kViewportCapture, EngineCapability::kFullPageCapture,
+                       EngineCapability::kPdf, EngineCapability::kWebArchive, EngineCapability::kPrint},
       .is_default = true});
 }
 
@@ -213,6 +215,45 @@ crest_status_t CoreHost::Query(base::span<const uint8_t> query, std::vector<uint
   const crest_status_t status = library_->query(app_, query.data(), query.size(), &buffer);
   out = library_->Take(buffer);
   return status;
+}
+
+crest_status_t CoreHost::QueryAway(base::span<const uint8_t> query, std::vector<uint8_t>& out) {
+  if (shut_down_) return CREST_INVALID_STATE;
+  crest_buffer_t buffer = {nullptr, 0};
+  const crest_status_t status = library_->query(app_, query.data(), query.size(), &buffer);
+  out = library_->Take(buffer);
+  return status;
+}
+
+// The generator writes C++ only for the engine contract, so this one query
+// the shell asks without a WebUI is written here: EngineWindowPlacement's
+// fields in their declared order after its tag, and EngineWindowPlace's in
+// the answer. A change to either record changes the fingerprint, which
+// CoreHost::Start checks, and must change these lines with it.
+std::optional<CoreHost::EngineWindowPlace> CoreHost::PlaceEngineWindow(const std::string& profile, bool own_window,
+                                                                       const std::vector<std::string>& windows) {
+  const std::optional<engine::Guid> profile_id = ParseGuid(profile);
+  if (!profile_id) return std::nullopt;
+  std::vector<engine::Guid> stacked;
+  for (const std::string& window : windows) {
+    if (const std::optional<engine::Guid> id = ParseGuid(window)) stacked.push_back(*id);
+  }
+  engine::WireWriter writer;
+  writer.WriteVarint(CREST_QUERY_ENGINE_WINDOW_PLACEMENT);
+  engine::Write(writer, *profile_id);
+  engine::Write(writer, own_window);
+  engine::Write(writer, stacked);
+  std::vector<uint8_t> answer;
+  if (Query(writer.bytes(), answer) != CREST_OK) return std::nullopt;
+  engine::WireReader reader(answer.data(), answer.size());
+  std::optional<engine::Guid> window;
+  std::optional<engine::Guid> space;
+  bool opens_window = false;
+  engine::Read(reader, window);
+  engine::Read(reader, space);
+  engine::Read(reader, opens_window);
+  if (!reader.ok() || !reader.AtEnd() || !window || !space) return std::nullopt;
+  return EngineWindowPlace{.window = GuidText(*window), .space = GuidText(*space), .opens_window = opens_window};
 }
 
 crest_status_t CoreHost::PageRequest(base::span<const uint8_t> request, std::vector<uint8_t>& out) {

@@ -11,6 +11,7 @@ import { pageRequest } from "./bridge.js";
 import type { FloatEvent } from "./float.js";
 import { infoBarMaxWidth, infoBarPadding, infoBarStack, measure } from "./page-layers.js";
 import type { InfoBarState, PageLayerState } from "./page-layers.js";
+import { shownCard } from "./page-cards.js";
 import { FloatRank } from "./surfaces.js";
 import type { FloatSurface, FloatSurfaces } from "./surfaces.js";
 
@@ -113,7 +114,7 @@ export class InfoBars implements FloatSurface {
             this.surfaces.post(this, null);
             return;
         }
-        const card = document.getElementById("page")!.getBoundingClientRect();
+        const card = shownCard().getBoundingClientRect();
         const width = Math.min(infoBarMaxWidth, Math.max(0, card.width - 2 * infoBarPadding)) + 2 * infoBarPadding;
         const state: PageLayerState = { kind: "infoBars", pageId, bars };
         const size = measure(infoBarStack(state, () => {}), width);

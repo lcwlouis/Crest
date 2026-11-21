@@ -8,10 +8,12 @@
 
 import { ShortcutCommand, ShortcutModifiers, ShortcutPreference, ShortcutSection, ShortcutSpecialKey } from "../generated/crest_contracts.js";
 import type { Guid, Intent, KeyCombination, PageState, PaletteCommand, ShortcutBinding, TabState } from "../generated/crest_contracts.js";
-import { pageRequest, query } from "./bridge.js";
+import { dispatch, pageRequest, query, Refused } from "./bridge.js";
 import { listKey } from "./model.js";
 import type { Model, Space, Workspace } from "./model.js";
 import { Notices, postNotice } from "./notices.js";
+import { PageOutput } from "./page-output.js";
+import type { DeveloperToolbar } from "./developer-toolbar.js";
 import { UtilitySurface } from "./utilities.js";
 
 /** What commands act on: the window's shown Space, tab and page. */
@@ -28,6 +30,18 @@ export interface CommandContext {
     readonly find: (action: "open" | "next" | "previous") => void;
     /** Opens one of the sidebar's lists, or puts it away when it shows. */
     readonly toggleUtility: (surface: UtilitySurface) => void;
+    /** The tabs the window shows as cards: one, or a split's members. */
+    readonly cards: () => readonly Guid[];
+    /** The Peek over the page, which Close Tab closes before the tab under it. */
+    readonly peek: { readonly isOpen: boolean; close(): boolean };
+    /** The windows the window opens, and its own close, which asks it first. */
+    readonly windows: { openNewWindow(): void; openQuickWindow(): void; close(): void };
+    /** Printing, exporting and saving pages. */
+    readonly output: PageOutput;
+    /** The developer toolbar, which also holds Capture Page's selection. */
+    readonly developer: DeveloperToolbar;
+    /** Whether the device's engines offer `capability`, as the Mac's commandPageSupports asks. */
+    readonly offers: (capability: "Print" | "Pdf" | "WebArchive" | "ViewportCapture") => boolean;
 }
 
 /** The commands the Linux window performs; the rest wait for their surfaces. */
@@ -36,6 +50,9 @@ const known = new Set<string>([
     "StopLoading", "ToggleSelectedTabPinned", "DuplicateTab", "ReopenClosedTab", "ClearUnpinnedTabs", "PreviousTab",
     "NextTab", "PreviousSpace", "NextSpace", "SelectNumbered", "ZoomIn", "ZoomOut", "ActualSize", "CopyPageLink",
     "CopyPageLinkAsMarkdown", "FindInPage", "FindNext", "FindPrevious", "ShowHistory", "ShowArchive", "ShowDownloads",
+    "SplitWithNextTab", "FocusNextSplitCard", "FocusPreviousSplitCard", "RemoveTabFromSplit", "SeparateSplitTabs",
+    "MoveSplitCardLeft", "MoveSplitCardRight", "NewWindow", "NewQuickWindow", "CloseWindow", "ShowWebInspector",
+    "PrintPage", "ExportPDF", "SaveWebArchive", "CapturePage", "ToggleDeveloperToolbar",
 ]);
 
 /** Whether the Linux window performs `command` at all. */
@@ -51,6 +68,11 @@ const zoomTolerance = 0.001;
 export class Commands {
     private readonly context: CommandContext;
     private readonly zoom = new Map<Guid, number>();
+
+    /** The zoom this window set on the page `pageId`; 1 when it set none. */
+    zoomOf(pageId: Guid): number {
+        return this.zoom.get(pageId) ?? 1;
+    }
 
     constructor(context: CommandContext) {
         this.context = context;
@@ -105,12 +127,24 @@ export class Commands {
         const page = this.context.page();
         const windowId = this.context.windowId();
         const ids = workspace && space ? { workspaceId: workspace.id, windowId, spaceId: space.state.id } : null;
+        // The core says which commands the window leaves nothing to do for,
+        // as it does for the split commands of a tab shown alone.
+        if (this.context.model.windows.get(windowId)?.unavailableCommands.includes(command)) return null;
         switch (facts.kind) {
             case "NewTab":
                 return () => this.context.openPalette("newTab");
             case "OpenLocation":
                 return () => this.context.openPalette("current");
             case "CloseTabOrWindow":
+                // A Peek closes before the tab under it, as on the Mac.
+                if (this.context.peek.isOpen) return () => void this.context.peek.close();
+                return ids && tab ? () => void this.closeTabOrWindow({ ...ids, tabId: tab.id }) : () => this.context.windows.close();
+            case "NewWindow":
+                return () => this.context.windows.openNewWindow();
+            case "NewQuickWindow":
+                return space ? () => this.context.windows.openQuickWindow() : null;
+            case "CloseWindow":
+                return () => this.context.windows.close();
             case "ArchiveTab":
                 return ids && tab ? () => send({ kind: "CloseTab", value: { ...ids, tabId: tab.id } }) : null;
             case "Back":
@@ -152,7 +186,8 @@ export class Commands {
             case "ZoomOut":
             case "ActualSize": {
                 const kind = facts.kind;
-                return page ? () => this.zoomPage(page, kind) : null;
+                // A viewport preview zooms the page itself, as the Mac's zoom waits on developerViewport.
+                return page && !this.context.developer.previews(page.id) ? () => this.zoomPage(page, kind) : null;
             }
             case "FindInPage":
                 return page ? () => this.context.find("open") : null;
@@ -181,8 +216,102 @@ export class Commands {
                 return () => this.context.toggleUtility(UtilitySurface.archive);
             case "ShowDownloads":
                 return () => this.context.toggleUtility(UtilitySurface.downloads);
+            case "SplitWithNextTab":
+                return ids && tab ? () => this.splitWithNextTab(ids, tab.id) : null;
+            case "FocusNextSplitCard":
+            case "FocusPreviousSplitCard": {
+                // Focus is selection, and wraps at both ends of the split.
+                const cards = this.context.cards();
+                const index = tab ? cards.indexOf(tab.id) : -1;
+                if (!space || cards.length < 2 || index < 0) return null;
+                const next = cards[(index + (facts.kind === "FocusNextSplitCard" ? 1 : -1) + cards.length) % cards.length]!;
+                return () => this.show(space, next);
+            }
+            case "RemoveTabFromSplit":
+                return ids && tab?.splitGroupId
+                    ? () => send({ kind: "LeaveSplit", value: { workspaceId: ids.workspaceId, spaceId: ids.spaceId, tabId: tab.id } })
+                    : null;
+            case "SeparateSplitTabs": {
+                const groupId = tab?.splitGroupId;
+                return ids && groupId
+                    ? () => send({ kind: "DissolveSplit", value: { workspaceId: ids.workspaceId, spaceId: ids.spaceId, groupId } })
+                    : null;
+            }
+            case "MoveSplitCardLeft":
+            case "MoveSplitCardRight": {
+                // Left and right step back and on in a left-to-right window, which this one is.
+                const offset = facts.kind === "MoveSplitCardRight" ? 1 : -1;
+                if (!ids || !tab?.splitGroupId) return null;
+                const step: Intent = {
+                    kind: "StepSplitMember",
+                    value: { workspaceId: ids.workspaceId, spaceId: ids.spaceId, tabId: tab.id, offset },
+                };
+                // The Mac's item is off where the card has nowhere to go, as
+                // the core says (canMoveFocusedSplitCard asks CanSend).
+                return () =>
+                    void query("CanSend", { intent: step })
+                        .then((permission) => (permission.refusal === null ? send(step) : undefined))
+                        .catch(console.error);
+            }
+            case "ShowWebInspector":
+                return page ? () => void this.toggleInspector(page.id).catch(this.context.report) : null;
+            case "PrintPage":
+                return PageOutput.hasDocument(page) && this.context.offers("Print") ? () => this.context.output.print(page) : null;
+            case "ExportPDF":
+                return PageOutput.hasDocument(page) && this.context.offers("Pdf") ? () => this.context.output.exportPDF(page) : null;
+            case "SaveWebArchive":
+                return PageOutput.hasDocument(page) && this.context.offers("WebArchive")
+                    ? () => this.context.output.saveWebArchive(page)
+                    : null;
+            case "CapturePage":
+                return PageOutput.hasDocument(page) && this.context.offers("ViewportCapture")
+                    ? () => this.context.developer.toggleRegionCapture(page)
+                    : null;
+            case "ToggleDeveloperToolbar":
+                return page ? () => this.context.developer.toggle(page) : null;
             default:
                 return null;
+        }
+    }
+
+    /**
+     * Closes the page's inspector, or opens one docked in its card, as the
+     * Mac's Show Web Inspector does.
+     */
+    private async toggleInspector(pageId: Guid): Promise<void> {
+        if (!(await pageRequest("PageInspected", { pageId }))) {
+            await pageRequest("OpenInspector", { pageId, panel: null });
+            return;
+        }
+        await pageRequest("CloseInspector", { pageId });
+    }
+
+    /**
+     * Adds the tab the core picks, the next one in the shown tab's own
+     * section, to the shown tab's split, making the split when there is none,
+     * as the Mac's Split With Next Tab does.
+     */
+    private splitWithNextTab(ids: { workspaceId: Guid; windowId: Guid; spaceId: Guid }, tabId: Guid): void {
+        void query("SplitJoinCandidate", { windowId: ids.windowId })
+            .then((candidate) => {
+                if (candidate.tabId) {
+                    this.context.send({ kind: "JoinSplit", value: { ...ids, tabId: candidate.tabId, targetTabId: tabId, index: null } });
+                }
+            })
+            .catch(this.context.report);
+    }
+
+    /**
+     * Closes the tab the way the core closes it, or the window when the core
+     * says only the window is left to close: it keeps the Start Page that is
+     * its Space's only tab, as the Mac's closeTabOrWindow asks it.
+     */
+    private async closeTabOrWindow(value: { workspaceId: Guid; windowId: Guid; spaceId: Guid; tabId: Guid }): Promise<void> {
+        try {
+            await dispatch({ kind: "CloseTab", value });
+        } catch (error) {
+            if (error instanceof Refused && error.rejection.kind === "LastStartPage") this.context.windows.close();
+            else this.context.report(error);
         }
     }
 

@@ -196,6 +196,10 @@ void ScreenSharingPicker::Offer() {
 // no display; what it shows and the capture it grants are the system's own.
 // A policy that allows tabs at most refuses the request instead. The refusal
 // is posted, since the person's answer that led here may still be running.
+//
+// TODO(linux): Linux has no native picker here; it should open the
+// xdg-desktop-portal ScreenCast picker through webrtc's PipeWire capturer
+// before display_media_access_handler.cc lets Linux reach this picker.
 void ScreenSharingPicker::OpenSystemPicker() {
   if (capture_level_ < AllowedScreenCaptureLevel::kWindow) {
     base::SequencedTaskRunner::GetCurrentDefault()->PostTask(

@@ -1,0 +1,373 @@
+/* What a page card draws over or above its page: the developer toolbar
+   (Mac/Features/Browser/Components/BrowserDeveloperToolbar/), its popovers,
+   and Capture Page's selection (BrowserRegionCaptureOverlay). */
+
+:root {
+  /* BrowserDeveloperToolbarMetrics */
+  --developer-item-spacing: 5px;
+  --developer-button-size: 28px;
+  --developer-divider-height: 22px;
+  --developer-divider-padding: 2px;
+  /* BrowserPageToolbarSurface: 10 points across, 7 points above and below. */
+  --developer-padding-x: 10px;
+  --developer-padding-y: 7px;
+  --developer-stripe: rgb(255 255 255 / 0.045);
+}
+
+/* --- Developer toolbar --- */
+
+.developer-toolbar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--developer-item-spacing);
+  box-sizing: border-box;
+  height: calc(var(--developer-button-size) + 2 * var(--developer-padding-y) + 1px);
+  padding: var(--developer-padding-y) var(--developer-padding-x);
+  overflow: hidden;
+  /* The device's surface, striped so the bar reads as a developer tool. */
+  background:
+    repeating-linear-gradient(45deg, var(--developer-stripe) 0 5.7px, transparent 5.7px 15.6px),
+    var(--crest-window-background);
+  border-bottom: 1px solid var(--crest-subtle-border);
+  color: var(--crest-primary);
+  font: 13px/1 var(--crest-font-ui);
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  :root { --developer-stripe: rgb(255 255 255 / 0.025); }
+}
+
+.developer-button {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: var(--developer-button-size);
+  height: var(--developer-button-size);
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--crest-secondary);
+  transition: transform var(--crest-dur-developer-press) var(--crest-ease-snappy),
+    background-color var(--crest-dur-developer-press) var(--crest-ease-snappy);
+}
+
+.developer-button:hover:not(:disabled) {
+  background: var(--crest-hover);
+}
+
+.developer-button:active:not(:disabled) {
+  background: rgb(var(--crest-primary-rgb) / 0.12);
+  transform: scale(0.94);
+}
+
+.developer-button.active {
+  background: rgb(var(--crest-primary-rgb) / 0.12);
+  color: var(--crest-primary);
+}
+
+.developer-button.tinted {
+  color: var(--crest-accent);
+}
+
+.developer-button:disabled {
+  opacity: var(--crest-opacity-disabled);
+}
+
+.developer-divider {
+  flex: none;
+  width: 1px;
+  height: var(--developer-divider-height);
+  margin: 0 var(--developer-divider-padding);
+  background: var(--crest-subtle-border);
+}
+
+.developer-address {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: var(--crest-primary);
+  font: 500 13px/1 ui-monospace, "SF Mono", monospace;
+  outline: none;
+  text-overflow: ellipsis;
+}
+
+.developer-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--developer-item-spacing);
+}
+
+.developer-actions[hidden],
+.developer-button[hidden] {
+  display: none;
+}
+
+/* A viewport preview shows the card's own ground round the scaled page. */
+#page.developer-previewing,
+.page-card.developer-previewing {
+  background: color-mix(in srgb, var(--sidebar), white 50%);
+}
+
+/* --- Developer popovers: crestPopover's solid flyout surface --- */
+
+.developer-popover {
+  position: fixed;
+  z-index: var(--z-feedback);
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--menu-background);
+  box-shadow: inset 0 0 0 0.5px var(--menu-border), var(--menu-shadow);
+  color: var(--crest-primary);
+  font: 13px/1.3 var(--crest-font-ui);
+}
+
+.developer-viewport-fields {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 160px;
+  margin: 0;
+}
+
+.developer-field {
+  box-sizing: border-box;
+  width: 0;
+  flex: 1 1 0;
+  height: 22px;
+  padding: 0 5px;
+  border: 1px solid var(--crest-subtle-border);
+  border-radius: 5px;
+  background: var(--crest-canvas);
+  color: var(--crest-primary);
+  font: 13px/1 ui-monospace, "SF Mono", monospace;
+}
+
+.developer-times {
+  color: var(--crest-secondary);
+}
+
+.developer-capture-options {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 236px;
+}
+
+.developer-capture-preview {
+  display: grid;
+  height: 112px;
+  padding: 22px;
+  box-sizing: border-box;
+  border-radius: 12px;
+  background: linear-gradient(to bottom right, rgb(88 86 214), rgb(175 82 222), rgb(50 173 230));
+}
+
+.developer-capture-preview-page {
+  border-radius: 6px;
+  background: rgb(0 0 0 / 0.72);
+  box-shadow: 0 6px 12px rgb(0 0 0 / 0.35);
+}
+
+.developer-capture-option {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 28px;
+  border: 0;
+  border-radius: 7px;
+  background: rgb(var(--crest-primary-rgb) / 0.08);
+  color: var(--crest-primary);
+  font: 13px/1 var(--crest-font-ui);
+}
+
+.developer-capture-option:hover {
+  background: rgb(var(--crest-primary-rgb) / 0.12);
+}
+
+.developer-capture-option.prominent {
+  background: var(--crest-accent);
+  color: white;
+}
+
+.developer-capture-option.prominent:hover {
+  background: color-mix(in srgb, var(--crest-accent), black 10%);
+}
+
+/* --- Capture Page's selection --- */
+
+.region-capture {
+  position: fixed;
+  z-index: var(--z-peek);
+  cursor: crosshair;
+  outline: none;
+}
+
+.region-capture-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.region-capture-instruction {
+  position: absolute;
+  left: 50%;
+  bottom: 28px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 42px;
+  padding: 0 18px;
+  border-radius: 21px;
+  transform: translateX(-50%);
+  background: var(--crest-window-background);
+  box-shadow: 0 4px 14px rgb(0 0 0 / 0.16);
+  color: var(--crest-primary);
+  font: 600 13px/1 var(--crest-font-ui);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* --- Tab and folder preview cards (Shared/Features/TabPreview/) ---
+   BrowserTabPreviewSurface: 280 wide, holding what it shows the sidebar's
+   layer inset from its sides, its corners parallel to the sidebar's layers
+   inside it, on Crest's flyout surface with the soft shadow of its notices. */
+
+.tab-preview-card {
+  position: fixed;
+  z-index: var(--z-feedback);
+  box-sizing: border-box;
+  width: 280px;
+  padding: var(--sidebar-layer-inset);
+  border-radius: calc(var(--sidebar-row-radius) + var(--sidebar-layer-inset));
+  background: var(--menu-background);
+  box-shadow: inset 0 0 0 0.5px var(--menu-border), 0 6px 14px rgb(0 0 0 / var(--crest-opacity-control-shadow));
+  color: var(--crest-primary);
+  font: 13px/1.25 var(--crest-font-ui);
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .tab-preview-card { box-shadow: inset 0 0 0 0.5px var(--menu-border); }
+}
+
+.tab-preview-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: var(--sidebar-container-padding);
+}
+
+.tab-preview-favicon {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-top: 1px;
+}
+
+.tab-preview-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.tab-preview-title {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 600;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.tab-preview-site {
+  overflow: hidden;
+  color: var(--crest-secondary);
+  font-size: 10px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.tab-preview-picture {
+  display: block;
+  width: 100%;
+  margin-top: calc(8px - var(--sidebar-container-padding));
+  border-radius: var(--sidebar-row-radius);
+  box-shadow: 0 0 0 0.5px var(--crest-subtle-border);
+  object-fit: cover;
+  object-position: top;
+}
+
+.tab-preview-card[data-kind="folder"] {
+  padding-bottom: calc(var(--sidebar-layer-inset) - var(--tab-row-separation) / 2);
+}
+
+.folder-preview-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+  height: var(--tab-row-height);
+  margin: 0 0 calc(var(--sidebar-top-section-spacing) - var(--tab-row-separation) / 2);
+  padding: 0 10px;
+  border-radius: var(--sidebar-row-radius);
+  background: rgb(var(--crest-primary-rgb) / 0.05);
+  font-size: var(--sidebar-body-size);
+}
+
+.folder-preview-glass {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 16px;
+  color: var(--crest-secondary);
+}
+
+.folder-preview-input {
+  flex: 1 1 0;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--crest-primary);
+  font: inherit;
+  outline: none;
+}
+
+.folder-preview-input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.folder-preview-clear {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--crest-secondary);
+}
+
+.folder-preview-clear[hidden] {
+  display: none;
+}
+
+.folder-preview-list {
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.folder-preview-empty {
+  padding: 8px 0;
+  color: var(--crest-secondary);
+  font-size: 12px;
+  text-align: center;
+}

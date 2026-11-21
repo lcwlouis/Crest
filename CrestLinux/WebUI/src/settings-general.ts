@@ -4,10 +4,12 @@
 // link preferences that decide how new and moved tabs behave.
 //
 // Left out on Linux: the default browser row (the desktop's own setting),
-// translation, which Linux's engine does not offer, and the sidebar widgets.
+// translation, which Linux's engine does not offer, and the software update widget,
+// which Linux has no updater for.
 
 import { SavedTabClosePolicy, StartupBehavior } from "../generated/crest_contracts.js";
 import type { AppPreferences, LinkBehavior } from "../generated/crest_contracts.js";
+import { NowPlayingSetting } from "./now-playing.js";
 import { SpaceGroups } from "./space-groups.js";
 import type { SettingsContext } from "./settings.js";
 import { group, picker, row, toggle } from "./settings-form.js";
@@ -100,5 +102,6 @@ export function tabsPage(context: SettingsContext): (HTMLElement | null)[] {
         ]),
         group("Split View", [appToggle(context, "Focus follows pointer", "splitFocusFollowsMouse")]),
         group("Switching", [appToggle(context, "Show recent tabs while switching", "showsRecentTabs")]),
+        group("Sidebar widgets", [row("Now Playing", toggle(NowPlayingSetting.isEnabled, (isOn) => NowPlayingSetting.set(isOn)))]),
     ];
 }

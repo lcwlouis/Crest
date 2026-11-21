@@ -1,0 +1,260 @@
+/* The sidebar's widget deck and its Now Playing card, as the Mac's
+   BrowserSidebarWidgetDeck, BrowserSidebarWidgetCard and
+   BrowserNowPlayingSidebarWidget draw them (BrowserSidebarWidgetDeckStyle). */
+
+:root {
+  --widget-layer-peek: 6px;                 /* layerPeek */
+  --widget-section-spacing: 6px;            /* nowPlayingSectionSpacing */
+  --widget-artwork-size: 50px;              /* artworkSize */
+  --widget-artwork-radius: 6px;             /* artworkCornerRadius */
+  --widget-favicon-size: 22px;              /* faviconSize */
+  --widget-focal-diameter: 32px;            /* focalControlDiameter */
+  --widget-quiet-diameter: 24px;            /* quietControlDiameter */
+  --widget-hit-target: var(--crest-min-hit-target);
+  --widget-stepper-width: 24px;             /* sideStepperRailWidth */
+  --widget-dot-diameter: 5px;               /* indicatorDotDiameter */
+  --widget-card-radius: var(--sidebar-row-radius);
+}
+
+.widget-deck {
+  position: relative;
+  flex: none;
+  margin: var(--crest-space-s) var(--sidebar-layer-inset) var(--crest-space-xs);
+}
+
+.widget-deck[hidden] {
+  display: none;
+}
+
+.widget-stack {
+  display: grid;
+  padding-bottom: calc(var(--widget-layer-peek) * var(--widget-depth, 0));
+}
+
+/* Every card shares the front card's cell; the ones under it are scaled
+   down from the top and pushed below it so their edges peek out. */
+.widget-card {
+  position: relative;
+  grid-area: 1 / 1;
+  box-sizing: border-box;
+  padding: var(--crest-space-m);
+  border-radius: var(--widget-card-radius);
+  background: var(--crest-surface);
+  box-shadow:
+    inset 0 0 0 0.5px rgb(var(--crest-primary-rgb) / 0.12),
+    0 0.5px 1px rgb(0 0 0 / 0.22),
+    0 3px 8px rgb(0 0 0 / var(--crest-opacity-control-shadow));
+  transform-origin: top center;
+  transition: transform 280ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 280ms ease;
+}
+
+.widget-card[data-depth="1"] {
+  transform: translateY(var(--widget-layer-peek)) scale(0.965);
+  opacity: 0.9;
+  box-shadow: inset 0 0 0 0.5px rgb(var(--crest-primary-rgb) / 0.08);
+}
+
+.widget-card[data-depth="2"] {
+  transform: translateY(calc(var(--widget-layer-peek) * 2)) scale(0.93);
+  opacity: 0.75;
+  box-shadow: inset 0 0 0 0.5px rgb(var(--crest-primary-rgb) / 0.06);
+}
+
+.widget-owner {
+  display: block;
+  width: 100%;
+  min-height: var(--widget-quiet-diameter);
+  margin-top: calc(var(--crest-space-xs) * -1);
+  padding: 0 calc(var(--widget-quiet-diameter) + var(--crest-space-xs)) 0 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: var(--crest-text-subheadline);
+  font-weight: 600;
+  text-align: start;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.widget-dismiss {
+  position: absolute;
+  top: calc(var(--crest-space-m) - var(--crest-space-xs));
+  right: var(--crest-space-m);
+}
+
+.widget-media {
+  display: flex;
+  align-items: center;
+  gap: var(--crest-space-s);
+  width: 100%;
+  margin-top: var(--widget-section-spacing);
+  padding: 0;
+  border: none;
+  border-radius: var(--crest-radius-compact);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+}
+
+.widget-media:hover {
+  background: var(--crest-hover);
+}
+
+.widget-artwork {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--widget-artwork-size);
+  height: var(--widget-artwork-size);
+  overflow: hidden;
+  border-radius: var(--widget-artwork-radius);
+}
+
+.widget-artwork img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.widget-artwork.placeholder {
+  color: var(--crest-secondary);
+  background: rgb(var(--crest-primary-rgb) / 0.1);
+  box-shadow: inset 0 0 0 0.5px rgb(var(--crest-primary-rgb) / 0.1);
+}
+
+.widget-media-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--crest-space-2xs);
+  min-width: 0;
+}
+
+.widget-media-title {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: var(--crest-text-callout);
+  font-weight: 600;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.widget-media-detail {
+  overflow: hidden;
+  color: var(--crest-secondary);
+  font-size: var(--crest-text-footnote);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.widget-transport {
+  display: flex;
+  align-items: center;
+  margin-top: var(--widget-section-spacing);
+}
+
+.widget-transport-center {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: var(--crest-space-s);
+}
+
+.widget-quiet,
+.widget-quiet-slot {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--widget-hit-target);
+  height: var(--widget-hit-target);
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: var(--crest-secondary);
+}
+
+.widget-quiet:hover {
+  background: var(--crest-hover);
+  color: var(--crest-primary);
+}
+
+.widget-quiet:active {
+  background: var(--crest-selection);
+}
+
+.widget-favicon img {
+  width: var(--widget-favicon-size);
+  height: var(--widget-favicon-size);
+  object-fit: contain;
+}
+
+.widget-play {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--widget-focal-diameter);
+  height: var(--widget-focal-diameter);
+  margin: calc((var(--widget-hit-target) - var(--widget-focal-diameter)) / 2);
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--crest-chrome-surface);
+  box-shadow: inset 0 0 0 0.5px var(--crest-subtle-border);
+  color: var(--crest-primary);
+}
+
+.widget-play:hover {
+  background: var(--crest-hover);
+}
+
+.widget-play:active {
+  background: var(--crest-selection);
+}
+
+/* The stepper sits on the deck's trailing edge, over the pane's boundary. */
+.widget-stepper {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: calc((var(--widget-stepper-width) - var(--sidebar-layer-inset)) / -2 - var(--sidebar-layer-inset));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: var(--widget-stepper-width);
+}
+
+.widget-stepper-dot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--widget-stepper-width);
+  height: 16px;
+  padding: 0;
+  border: none;
+  background: none;
+}
+
+.widget-stepper-dot::after {
+  width: var(--widget-dot-diameter);
+  height: var(--widget-dot-diameter);
+  border-radius: 50%;
+  background: rgb(var(--crest-primary-rgb) / 0.3);
+  content: "";
+}
+
+.widget-stepper-dot.selected::after {
+  background: rgb(var(--crest-primary-rgb) / 0.72);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .widget-card {
+    transition: none;
+  }
+}
