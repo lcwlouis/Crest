@@ -128,10 +128,18 @@ Object.assign(paths, {
     "arrow.down": '<path d="M12 5v14"/><path d="M6 13l6 6 6-6"/>',
     "arrow.counterclockwise": '<path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3"/><path d="M4.5 4v4h4"/>',
     "square.on.square": '<rect x="8" y="8" width="13" height="13" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/>',
+    gearshape:
+        '<circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/><circle cx="12" cy="12" r="6.5"/>',
+    "hand.raised": '<path d="M8 13V5.5a1.5 1.5 0 0 1 3 0V11M11 10V4a1.5 1.5 0 0 1 3 0v7M14 10.5V5.5a1.5 1.5 0 0 1 3 0V13c0 4.5-2.5 8-6.5 8C7 21 5 18 4 15l-1-3a1.5 1.5 0 0 1 2.8-1L8 14"/>',
+    "shield.lefthalf.filled": '<path d="M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6z"/><path d="M12 3v18c-4.6-1-8-4.5-8-9V6z" fill="currentColor"/>',
+    "switch.2": '<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>',
+    "arrow.up.right": '<path d="M7 17L17 7"/><path d="M8 7h9v9"/>',
+    "chevron.down": '<path d="M6 9l6 6 6-6"/>',
+    "square.and.arrow.down": '<path d="M12 3v11"/><path d="M8 10l4 4 4-4"/><path d="M8 8H6a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-9a2 2 0 0 0-2-2h-2"/>',
     "rectangle.portrait.and.arrow.right": '<path d="M13 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h7"/><path d="M10 12h11"/><path d="M17.5 8.5L21 12l-3.5 3.5"/>',
 });
 for (const name of [
-    "briefcase", "person", "house", "graduationcap", "paintbrush", "gamecontroller", "sun.max", "sun.horizon", "moon", "star",
+    "gearshape", "briefcase", "person", "house", "graduationcap", "paintbrush", "gamecontroller", "sun.max", "sun.horizon", "moon", "star",
     "bolt", "flame", "drop", "key", "crown", "leaf", "mountain.2", "heart",
 ]) {
     paths[`${name}.fill`] = paths[name]!;
