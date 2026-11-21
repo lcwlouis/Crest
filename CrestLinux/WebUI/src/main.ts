@@ -315,7 +315,10 @@ const tabPreview: TabPreviewLayer = new TabPreviewLayer({
     sidebar: root,
     tabRow: (space, tab) => sidebar.tabRow(space, tab, 0),
 });
-DeviceAppearance.listen(() => tabPictures.follow());
+DeviceAppearance.listen(() => {
+    tabPictures.follow();
+    nowPlaying.render();
+});
 
 const peek: Peek = new Peek({
     model,
