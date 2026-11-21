@@ -9,7 +9,10 @@ import type {
     FolderState,
     Guid,
     HistoryEntryState,
+    LinkPreferences,
     PageState,
+    SetupDraft,
+    SetupFlowState,
     SidebarList,
     SpaceDeletionState,
     SpaceState,
@@ -17,6 +20,7 @@ import type {
     TabPlacement,
     TabState,
     WindowState,
+    WorkspaceKind,
 } from "../generated/crest_contracts.js";
 
 export interface Space {
@@ -57,10 +61,14 @@ function reorder<T>(entries: T[], order: readonly Guid[] | null, id: (entry: T) 
 
 export interface Workspace {
     readonly id: Guid;
+    /** What the workspace is: the person's own, or a private one, which keeps nothing. */
+    readonly kind: WorkspaceKind;
     spaces: Map<Guid, Space>;
     order: Guid[];
     /** The Spaces this workspace is deleting, which stay until their data is erased. */
     deletions: readonly SpaceDeletionState[];
+    /** Whether the workspace still holds a first launch's disposable Spaces. */
+    isDisposableSeed: boolean;
 }
 
 export class Model {
@@ -69,14 +77,33 @@ export class Model {
     readonly pages = new Map<Guid, PageState>();
     /** Every download the core's ledger records, in its order, as the Mac's CoreState keeps them. */
     downloads: DownloadState[] = [];
+    /** How links open, Peek's included, once the core said. */
+    linkPreferences: LinkPreferences | null = null;
+    /** Setup on this device, or null while none is open. */
+    setupFlow: SetupFlowState | null = null;
+    /** The manual setup this device holds, or null while none is in progress. */
+    setupDraft: SetupDraft | null = null;
+    /** Whether this device has completed setup, once the core said. */
+    setupCompleted: boolean | null = null;
 
     apply(changes: readonly Change[]): void {
         for (const change of changes) this.applyOne(change);
     }
 
-    /** The first persistent workspace the core holds open. */
+    /** The workspace this page draws, as `drawWorkspace` named it, when it is not the person's own. */
+    private drawnWorkspaceId: Guid | null = null;
+
+    /** The workspace this page draws: the one it named, or the first persistent workspace the core holds open. */
     get workspace(): Workspace | undefined {
+        const drawn = this.drawnWorkspaceId ? this.workspaces.get(this.drawnWorkspaceId) : undefined;
+        if (drawn) return drawn;
+        for (const workspace of this.workspaces.values()) if (workspace.kind === "Persistent") return workspace;
         return this.workspaces.values().next().value;
+    }
+
+    /** Makes `workspaceId` the workspace this page draws, as a private window draws its own. */
+    drawWorkspace(workspaceId: Guid): void {
+        this.drawnWorkspaceId = workspaceId;
     }
 
     /** The page that shows `tabId`, if the engine has one. */
@@ -88,22 +115,35 @@ export class Model {
     private applyOne(change: Change): void {
         switch (change.kind) {
             case "WorkspaceOpened": {
-                const { workspaceId, session } = change.value;
+                const { workspaceId, kind, session } = change.value;
                 const spaces = new Map<Guid, Space>();
                 for (const space of session.spaces) spaces.set(space.id, spaceFrom(space));
                 this.workspaces.set(workspaceId, {
                     id: workspaceId,
+                    kind,
                     spaces,
                     order: session.spaces.map((space) => space.id),
                     deletions: session.spaceDeletions,
+                    isDisposableSeed: session.disposableSeedMarker !== null,
                 });
                 break;
             }
             case "WorkspaceChanged": {
                 const workspace = this.workspaces.get(change.value.workspaceId);
-                if (workspace) workspace.deletions = change.value.spaceDeletions;
+                if (!workspace) break;
+                workspace.deletions = change.value.spaceDeletions;
+                workspace.isDisposableSeed = change.value.isDisposableSeed;
                 break;
             }
+            case "SetupFlowChanged":
+                this.setupFlow = change.value.flow;
+                break;
+            case "SetupDraftChanged":
+                this.setupDraft = change.value.draft;
+                break;
+            case "SetupCompletedChanged":
+                this.setupCompleted = change.value.completed;
+                break;
             case "WorkspaceClosed":
                 this.workspaces.delete(change.value.workspaceId);
                 break;
@@ -201,6 +241,9 @@ export class Model {
                 else this.downloads.splice(Math.min(Math.max(position, 0), this.downloads.length), 0, download);
                 break;
             }
+            case "LinkPreferencesChanged":
+                this.linkPreferences = change.value.preferences;
+                break;
             case "DownloadsRemoved": {
                 const removed = new Set(change.value.downloadIds);
                 this.downloads = this.downloads.filter((download) => !removed.has(download.id));

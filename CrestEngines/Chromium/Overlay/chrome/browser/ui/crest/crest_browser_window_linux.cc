@@ -55,8 +55,11 @@ constexpr base::TimeDelta kPageEscapeHoldGuard = base::Milliseconds(2000);
 // app-level NSEvent monitor and Chromium's native accelerators (the
 // intermittent "needs two presses" behavior).
 bool HandleCrestShortcut(const input::NativeWebKeyboardEvent& event, bool page_declined) {
-  // Only fire on the raw key-down; ignore synthesized char and key-up events.
-  if (event.GetType() != input::NativeWebKeyboardEvent::Type::kRawKeyDown) {
+  // Only fire on the raw key-down; ignore synthesized char events. A key-up
+  // goes on to Crest, which hears a modifier's release (the recent tabs
+  // switcher ends on it), and never takes it from the page.
+  if (event.GetType() != input::NativeWebKeyboardEvent::Type::kRawKeyDown &&
+      event.GetType() != input::NativeWebKeyboardEvent::Type::kKeyUp) {
     return false;
   }
   crest::LinuxUI* ui = crest::GetLinuxUI();

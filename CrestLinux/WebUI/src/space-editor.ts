@@ -42,7 +42,7 @@ export interface SpaceEditorHost {
 }
 
 /** A plain glyph a Space's icon can wear (BrowserSpaceSimpleSymbol). */
-const simpleSymbols: readonly { readonly symbol: string; readonly title: string }[] = [
+export const simpleSymbols: readonly { readonly symbol: string; readonly title: string }[] = [
     { symbol: "briefcase.fill", title: "Work" },
     { symbol: "person.fill", title: "Personal" },
     { symbol: "house.fill", title: "Home" },
@@ -76,7 +76,7 @@ function same(a: unknown, b: unknown): boolean {
     return JSON.stringify(a) === JSON.stringify(b);
 }
 
-function hex(color: BrandColor): string {
+export function hex(color: BrandColor): string {
     const channel = (value: number): string =>
         Math.round(Math.min(Math.max(value, 0), 1) * 255)
             .toString(16)
@@ -84,7 +84,7 @@ function hex(color: BrandColor): string {
     return `#${channel(color.red)}${channel(color.green)}${channel(color.blue)}`;
 }
 
-function brandColor(value: string): BrandColor {
+export function brandColor(value: string): BrandColor {
     const channel = (at: number): number => Math.round((parseInt(value.slice(at, at + 2), 16) / 255) * 1000) / 1000;
     return { red: channel(1), green: channel(3), blue: channel(5), alpha: 1 };
 }
@@ -102,7 +102,7 @@ function schemeStartingPoint(look: SpaceBranding): SpaceScheme | undefined {
 }
 
 /** `look` starting over from `house`, keeping its own strengths unless they were a scheme's (SpaceHouse.applying). */
-function wearingHouse(house: SpaceHouse, look: SpaceBranding): SpaceBranding {
+export function wearingHouse(house: SpaceHouse, look: SpaceBranding): SpaceBranding {
     const { name, look: houseLook } = SpaceHouse.facts[house];
     const fromScheme = schemeStartingPoint(look) !== undefined;
     return {
@@ -127,7 +127,7 @@ function wearingHouse(house: SpaceHouse, look: SpaceBranding): SpaceBranding {
 }
 
 /** Whether `look` still wears `house` unchanged (SpaceHouse.isWorn). */
-function wearsHouse(house: SpaceHouse, look: SpaceBranding): boolean {
+export function wearsHouse(house: SpaceHouse, look: SpaceBranding): boolean {
     const houseLook = SpaceHouse.facts[house].look;
     return (
         look.hasCustomAppearance !== true &&

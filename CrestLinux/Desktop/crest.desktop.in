@@ -1,0 +1,14 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Crest
+GenericName=Web Browser
+Comment=Browse the web in Spaces
+Exec=@EXEC@ %U
+Icon=crest
+Terminal=false
+StartupNotify=true
+StartupWMClass=Crest
+Categories=Network;WebBrowser;
+MimeType=text/html;application/xhtml+xml;x-scheme-handler/http;x-scheme-handler/https;
+Keywords=web;browser;internet;

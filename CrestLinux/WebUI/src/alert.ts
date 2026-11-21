@@ -31,7 +31,8 @@ function element<K extends keyof HTMLElementTagNameMap>(tag: K, className: strin
     return node;
 }
 
-export function showAlert(content: AlertContent): void {
+/** Shows the alert; the function it answers closes it unanswered, as a question that no longer waits. */
+export function showAlert(content: AlertContent): () => void {
     const release = holdOverlay();
     const restoreFocus = document.activeElement;
     const layer = element("div", "alert-layer");
@@ -100,4 +101,5 @@ export function showAlert(content: AlertContent): void {
     } else {
         (buttons.querySelector(".alert-button.cancel") as HTMLElement | null)?.focus();
     }
+    return () => finish(undefined);
 }

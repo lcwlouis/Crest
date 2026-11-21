@@ -1,8 +1,8 @@
 // Crest's host on Linux: the hooks crest_chrome_host.mm implements for the
 // Mac, over a shell Chromium draws itself. The Mac host hands the engine
 // binding to Crest's Swift UI, which creates the core; here the browser
-// process creates the core (CoreHost) and opens Crest's window (LinuxWindow),
-// whose sidebar is the chrome://crest WebUI.
+// process creates the core (CoreHost) and opens Crest's first window
+// (LinuxWindow), drawn by the chrome://crest WebUI, which opens the rest.
 //
 // This is the first step of the Linux shell. Hooks whose Mac behavior needs a
 // Crest UI that Linux does not draw yet keep Chromium's own behavior or
@@ -11,14 +11,17 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "base/auto_reset.h"
 #include "base/check.h"
 #include "base/command_line.h"
+#include "base/environment.h"
 #include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/memory/raw_ptr.h"
 #include "base/no_destructor.h"
+#include "base/strings/string_util.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
@@ -40,6 +43,8 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/drop_data.h"
 #include "extensions/common/extension.h"
+#include "net/base/filename_util.h"
+#include "url/gurl.h"
 #include "ui/views/widget/widget.h"
 
 namespace {
@@ -49,9 +54,15 @@ struct HostState {
   bool disposing = false;
   bool quitting = false;
   raw_ptr<crest::LinuxUI> ui = nullptr;
+  // The profile Crest's WebUI runs in, Chromium's bootstrap profile.
+  raw_ptr<Profile> ui_profile = nullptr;
   // A permission request being answered; Chromium raises it again while it
   // takes the answer, and that request already has one.
   raw_ptr<const permissions::PermissionPrompt::Delegate> answering_permission = nullptr;
+  // Links and files a launch handed Crest before a browser window's WebUI
+  // could take them, as the Mac shell keeps its pending opens until the
+  // launch finished.
+  std::vector<std::string> pending_opens;
 };
 
 HostState& State() {
@@ -64,19 +75,38 @@ HostState& State() {
 // Browsers themselves.
 class LinuxShell final : public crest::EngineBinding::Shell {
  public:
-  // TODO(linux): a Browser the engine creates for itself (chrome.windows.create,
-  // an app window) joins the window the person is using, as on the Mac. Until
-  // the Linux window answers for its Spaces, no Space hosts one.
+  // The core places a Browser the engine creates for itself
+  // (chrome.windows.create, an app window), over the windows as the person
+  // last used them, as the Mac's shell asks it: the window in use, or a new
+  // one the core names.
   std::optional<crest::EngineBinding::WindowPlacement> ReserveWindow(const std::string& profile,
                                                                       bool own_window) override {
-    return std::nullopt;
+    crest::CoreHost* host = crest::CoreHost::Get();
+    if (!host || State().quitting) return std::nullopt;
+    const auto place = host->PlaceEngineWindow(profile, own_window, crest::LinuxWindow::Stacked());
+    if (!place) return std::nullopt;
+    return crest::EngineBinding::WindowPlacement{.window = place->window, .space = place->space};
   }
 
-  void PresentWindow(const crest::EngineBinding::WindowPlacement& placement, bool focused) override {}
-
-  void ReleasePage(const std::string& page) override {
-    if (crest::LinuxWindow* window = crest::LinuxWindow::Current()) window->ReleasePage(page);
+  // An open window shows the Space its new tabs join. A window the core
+  // named for them opens on that Space, and they wait until its WebUI has
+  // opened it in the core, which refuses tabs for a window that is not open.
+  bool PresentWindow(const crest::EngineBinding::WindowPlacement& placement, bool focused) override {
+    if (State().quitting) return true;
+    if (crest::LinuxWindow* window = crest::LinuxWindow::Find(placement.window)) {
+      crest::ShowSpace(*window, placement.space);
+      if (focused) window->Present();
+      return true;
+    }
+    if (!State().ui_profile) return true;
+    crest::LinuxWindow::Open(State().ui_profile, crest::LinuxWindow::Kind::kBrowser, placement.window,
+                             "window=" + base::ToLowerASCII(placement.window) +
+                                 "&space=" + base::ToLowerASCII(placement.space),
+                             focused);
+    return false;
   }
+
+  void ReleasePage(const std::string& page) override { crest::LinuxWindow::ReleaseEverywhere(page); }
 
   // TODO(linux): docked DevTools, extension side panels and popups live in
   // the page's card, which the Linux window does not draw yet.
@@ -84,6 +114,50 @@ class LinuxShell final : public crest::EngineBinding::Shell {
   void ReleaseProfile(const std::string& profile) override {}
   void RetractSidePanels(Profile* profile, const std::string& extension_id, std::optional<int> tab_id) override {}
 };
+
+// The addresses a launch's command line hands Crest, in order: a link as it
+// was written, and a file, absolute or relative to `current_directory`, as
+// its file: URL. The core decides which of them Crest opens.
+std::vector<std::string> LaunchAddresses(const base::CommandLine& command_line,
+                                         const base::FilePath& current_directory) {
+  std::vector<std::string> addresses;
+  for (const base::CommandLine::StringType& argument : command_line.GetArgs()) {
+    if (argument.empty()) continue;
+    const GURL url(argument);
+    if (url.is_valid() && url.has_scheme()) {
+      addresses.push_back(url.spec());
+      continue;
+    }
+    base::FilePath path(argument);
+    if (!path.IsAbsolute()) {
+      if (current_directory.empty()) continue;
+      path = current_directory.Append(path);
+    }
+    const GURL file = net::FilePathToFileURL(path);
+    if (file.is_valid()) addresses.push_back(file.spec());
+  }
+  return addresses;
+}
+
+// The directory the first launch started in, which its relative file
+// arguments are in. The shell's record of it is read: asking the system
+// would block the UI thread.
+base::FilePath LaunchDirectory() {
+  std::optional<std::string> directory = base::Environment::Create()->GetVar("PWD");
+  return directory && !directory->empty() ? base::FilePath(*directory) : base::FilePath();
+}
+
+// Hands the opens that waited to the browser window in use, once its WebUI
+// opened it in the core.
+void OpenPending() {
+  auto& state = State();
+  if (state.pending_opens.empty() || !state.started || state.disposing) return;
+  crest::LinuxWindow* window = crest::LinuxWindow::Active();
+  if (!window || !window->kind().browses || window->id().empty()) return;
+  std::vector<std::string> urls = std::move(state.pending_opens);
+  state.pending_opens.clear();
+  if (!crest::OpenExternalLinks(*window, urls)) state.pending_opens = std::move(urls);
+}
 
 base::FilePath StorageDirectory(Profile* profile) {
   // Beside Chromium's profiles, in the user data directory the launch names.
@@ -119,14 +193,25 @@ void EnsureCrestUIStarted(Browser* browser) {
     LOG(ERROR) << error;
   }
   RegisterCrestUI();
-  LinuxWindow::Open(browser->GetProfile());
+  state.ui_profile = browser->GetProfile();
+  // The frames the browser windows kept, which the windows the launch
+  // reopens come back at.
+  LinuxWindow::LoadFrames(StorageDirectory(browser->GetProfile()).Append("WindowFrames.json"));
+  // Links and files the launch itself was handed open once its first window
+  // opened in the core.
+  state.pending_opens = LaunchAddresses(*base::CommandLine::ForCurrentProcess(), LaunchDirectory());
+  // The launch's first window, whose WebUI opens the rest the core reopens.
+  LinuxWindow::Open(browser->GetProfile(), LinuxWindow::Kind::kBrowser, std::string(), std::string(),
+                    /*activates=*/true);
 }
 
 void CrestWindowClosed() {
   auto& state = State();
-  if (state.disposing) return;
+  if (state.disposing || LinuxWindow::AnyBrowsing()) return;
   state.disposing = true;
   state.quitting = true;
+  // Quick Windows go with the last browser window, as a quit closes them.
+  LinuxWindow::CloseAll();
   // The core has stopped accepting work: the binding lets every page go,
   // closes its Browsers and releases the profiles, then the core saves and
   // closes its session file.
@@ -145,13 +230,47 @@ bool CanCreateEngineBrowser(Profile* profile) {
 
 views::Widget* WindowForBrowser(const Browser* browser) {
   if (!State().started) return nullptr;
-  // Crest on Linux has one window so far; every Browser shows in it.
-  LinuxWindow* window = LinuxWindow::Current();
+  const std::string kept_for = EngineBinding::Get().Browsers().WindowOf(browser);
+  LinuxWindow* window = kept_for.empty() ? LinuxWindow::Active() : LinuxWindow::Find(kept_for);
   return window ? window->widget() : nullptr;
 }
 
-// TODO(linux): Crest's quit preparation (downloads, unsaved pages) asks
-// through Crest's own dialogs, which the Linux shell does not draw yet.
+void WindowAdopted(const std::string& window) {
+  if (State().disposing) return;
+  EngineBinding::Get().Browsers().WindowOpened(window);
+  OpenPending();
+}
+
+bool OpenExternalURLs(const std::vector<std::string>& urls) {
+  if (!IsEnabled() || !State().started || State().disposing) return false;
+  LinuxWindow* window = LinuxWindow::Active();
+  return window && window->kind().browses && !window->id().empty() && OpenExternalLinks(*window, urls);
+}
+
+// crest-second-launch.patch calls this from
+// StartupBrowserCreator::ProcessCommandLineAlreadyRunning. Once Crest's UI
+// started, its windows are the only ones a launch opens: the links and files
+// go where the core routes them, and a launch with none brings the window in
+// use forward, as a Dock click does on the Mac.
+bool OpenSecondLaunch(const base::CommandLine& command_line, const base::FilePath& current_directory) {
+  auto& state = State();
+  if (!IsEnabled() || !state.started) return false;
+  if (state.disposing || state.quitting) return true;
+  std::vector<std::string> urls = LaunchAddresses(command_line, current_directory);
+  if (urls.empty()) {
+    if (LinuxWindow* window = LinuxWindow::Active()) window->Present();
+    return true;
+  }
+  // With no browser window's WebUI to take them yet, they wait for the next
+  // window that opens in the core.
+  if (!OpenExternalURLs(urls)) state.pending_opens.insert(state.pending_opens.end(), urls.begin(), urls.end());
+  return true;
+}
+
+// TODO(linux): only the Mac's application menu asks this. A Linux quit is the
+// last browser window's close, which its WebUI prepares through the core
+// (PrepareToQuit); a quit Chromium starts itself, such as the session ending,
+// is not prepared yet.
 bool DeferQuit() {
   return IsEnabled() && State().started && !State().quitting && State().ui && State().ui->DeferQuit();
 }

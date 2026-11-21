@@ -67,3 +67,34 @@ node CrestLinux/WebUI/build.mjs ~/Chromium/crest-ui
 ```
 
 Crest keeps its session in `Crest/` inside the user data directory.
+
+## Open links from other apps
+
+A second launch hands its command line to the running Crest through
+Chromium's process singleton (`Linux/Patches/crest-second-launch.patch`,
+which `apply-chromium-host-linux.py` applies over the host's patches). Crest
+asks its core whether it takes each link or file and where it opens, as the
+Mac does with the links macOS hands it. A launch with nothing to open brings
+the window in use forward.
+
+`CrestLinux/Desktop/install-desktop-entry.sh` installs Crest's desktop entry
+and icon for the current user, with the same switches as above, so the
+desktop lists Crest as a browser that opens HTTP and HTTPS links and HTML
+files:
+
+```sh
+CrestLinux/Desktop/install-desktop-entry.sh \
+  --chrome ~/Chromium/crest-src/out/CrestBaseline/chrome \
+  --core-library $PWD/CrestCore/src/CrestCore.Native/bin/Release/net10.0/linux-x64/native/CrestCore.Native.so \
+  --ui-dir ~/Chromium/crest-ui --user-data-dir ~/.config/crest-dev
+```
+
+It does not change the default browser. To make Crest the default, run:
+
+```sh
+xdg-settings set default-web-browser crest.desktop
+xdg-mime default crest.desktop x-scheme-handler/http x-scheme-handler/https text/html
+```
+
+`xdg-settings get default-web-browser` names the current default, which the
+same commands restore. `--uninstall` removes the entry and icon.

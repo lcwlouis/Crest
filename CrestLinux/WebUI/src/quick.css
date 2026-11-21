@@ -1,0 +1,164 @@
+/* A Quick Window, laid out with the Mac's BrowserQuickWindowLayout (tokens.css
+   names it): the toolbar across the top, then the page's card. */
+
+body.quick-window {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+/* Over the backdrop the page's card paints around itself. */
+#toolbar {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--quick-window-toolbar-spacing);
+  height: calc(var(--quick-window-control-height) + var(--page-frame-inset) * 2);
+  padding: 0 var(--quick-window-padding-x);
+  background: var(--sidebar);
+}
+
+body.quick-window #page {
+  margin: 0 var(--page-frame-inset) var(--page-frame-inset);
+}
+
+.quick-navigation {
+  display: flex;
+  flex: none;
+  gap: var(--nav-control-spacing);
+}
+
+/* The address field holds the Space the window browses in, the page's lock,
+   its address and Reload, on the address field's surface. */
+.quick-address {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 7px;
+  min-width: var(--quick-window-address-min-width);
+  height: var(--quick-window-control-height);
+  box-sizing: border-box;
+  padding: 0 2px 0 4px;
+  border-radius: var(--address-radius);
+  background: var(--crest-chrome-surface);
+}
+
+.quick-address:hover {
+  background: var(--crest-hover);
+}
+
+/* A loading page fills the field from its leading edge, as the sidebar's does. */
+.quick-address::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: var(--space-tint);
+  opacity: 0;
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform var(--crest-dur-loading-progress) var(--crest-ease-smooth),
+    opacity var(--crest-dur-loading-progress) var(--crest-ease-smooth);
+}
+
+.quick-address.loading::before {
+  opacity: var(--address-loading-fill-opacity);
+  transform: scaleX(0.5);
+}
+
+.quick-space-chip {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: var(--crest-radius-compact);
+  background: none;
+}
+
+.quick-space-chip:hover {
+  background: var(--crest-hover);
+}
+
+.quick-space-chip:active {
+  background: var(--crest-chrome-surface);
+}
+
+.quick-secure {
+  display: inline-flex;
+  flex: none;
+  color: var(--muted);
+}
+
+.quick-secure:empty {
+  display: none;
+}
+
+.quick-address input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: none;
+  outline: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-overflow: ellipsis;
+}
+
+.quick-address input::placeholder {
+  color: var(--muted);
+}
+
+.quick-reload {
+  flex: none;
+}
+
+/* Open In, in the toolbar's size: the Peek's destination control. */
+.quick-open-in {
+  flex: none;
+  width: auto;
+  max-width: 220px;
+  height: var(--quick-window-control-height);
+  border-radius: calc(var(--quick-window-control-height) / 2);
+  box-shadow: none;
+}
+
+.quick-open-in .peek-open-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 0 10px 0 12px;
+  border: none;
+  background: none;
+  color: inherit;
+  font-size: var(--crest-text-body) !important;
+  white-space: nowrap;
+}
+
+.quick-open-in .peek-open-primary span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.quick-open-in .peek-open-menu {
+  width: 32px;
+  border: none;
+  background: none;
+  color: inherit;
+}
+
+body.quick-window #status {
+  left: 16px;
+  bottom: 12px;
+  width: auto;
+}

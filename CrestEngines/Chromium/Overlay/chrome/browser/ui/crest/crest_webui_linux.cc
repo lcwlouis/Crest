@@ -7,17 +7,20 @@
 
 #include "base/base64.h"
 #include "base/command_line.h"
+#include "base/environment.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/memory/ref_counted_memory.h"
 #include "base/memory/weak_ptr.h"
+#include "base/nix/xdg_util.h"
 #include "base/no_destructor.h"
 #include "base/path_service.h"
 #include "base/scoped_observation.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/task/thread_pool.h"
 #include "base/values.h"
 #include "components/input/native_web_keyboard_event.h"
@@ -32,8 +35,13 @@
 #include "ui/shell_dialogs/selected_file_info.h"
 #include "url/gurl.h"
 #include "chrome/browser/ui/crest/crest_core_host_linux.h"
+#include "chrome/browser/ui/crest/crest_credentials_linux.h"
 #include "chrome/browser/ui/crest/crest_engine_binding.h"
+#include "chrome/browser/ui/crest/crest_engine_profiles.h"
+#include "chrome/browser/ui/crest/crest_linux_ui.h"
 #include "chrome/browser/ui/crest/crest_linux_window.h"
+#include "chrome/browser/ui/crest/crest_password_import_linux.h"
+#include "chrome/browser/ui/crest/crest_secret_service_linux.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_data_source.h"
@@ -61,9 +69,9 @@ base::FilePath UIDirectory() {
 
 // The file `path` names in the UI directory, never outside it.
 scoped_refptr<base::RefCountedMemory> ReadUIFile(const base::FilePath& directory, const std::string& path) {
-  std::string relative = path.empty() ? "index.html" : path;
-  const size_t query = relative.find_first_of("?#");
-  if (query != std::string::npos) relative.resize(query);
+  // The query and fragment name no file: chrome://crest/?window=… is the page.
+  std::string relative = path.substr(0, path.find_first_of("?#"));
+  if (relative.empty()) relative = "index.html";
   const base::FilePath file = directory.AppendASCII(relative);
   if (file.ReferencesParent() || !directory.IsParent(file)) return nullptr;
   std::string contents;
@@ -126,10 +134,6 @@ struct Shortcut {
   bool reserved = false;
 };
 
-std::vector<Shortcut>& Shortcuts() {
-  static base::NoDestructor<std::vector<Shortcut>> shortcuts;
-  return *shortcuts;
-}
 
 // --- Downloads (Linux shell) ------------------------------------------------
 // The sidebar's Downloads list opens a finished file and shows it in its
@@ -202,21 +206,174 @@ class DownloadSaveDialog final : public ui::SelectFileDialog::Listener {
 
 // --- End of downloads -------------------------------------------------------
 
+// --- Setup (Linux shell) ----------------------------------------------------
+// Setup imports from the browsers installed here, which keep their data in
+// the person's home folder and its XDG config folder; when it cannot read a
+// browser's data where it looked, the person picks the browser's data folder,
+// as the Mac's BrowserImportFilePicker asks for it.
+
+// The folder picker for one browser's data, which deletes itself once
+// answered. Answers the folder, or none when the person cancels or no dialog
+// can be shown.
+class ImportFolderDialog final : public ui::SelectFileDialog::Listener {
+ public:
+  using Answer = base::OnceCallback<void(base::FilePath folder)>;
+
+  static void Show(content::WebContents* contents, const std::u16string& title, const base::FilePath& folder,
+                   Answer answer) {
+    auto* listener = new ImportFolderDialog(std::move(answer));
+    listener->dialog_ = ui::SelectFileDialog::Create(listener, nullptr);
+    if (!listener->dialog_) {
+      listener->Finish(base::FilePath());
+      return;
+    }
+    listener->dialog_->SelectFile(ui::SelectFileDialog::SELECT_FOLDER, title, folder, nullptr, 0,
+                                  base::FilePath::StringType(), contents->GetTopLevelNativeWindow());
+  }
+
+  // ui::SelectFileDialog::Listener:
+  void FileSelected(const ui::SelectedFileInfo& file, int index) override { Finish(file.path()); }
+  void FileSelectionCanceled() override { Finish(base::FilePath()); }
+
+ private:
+  explicit ImportFolderDialog(Answer answer) : answer_(std::move(answer)) {}
+  ~ImportFolderDialog() override {
+    if (dialog_) dialog_->ListenerDestroyed();
+  }
+
+  void Finish(const base::FilePath& folder) {
+    std::move(answer_).Run(folder);
+    delete this;
+  }
+
+  Answer answer_;
+  scoped_refptr<ui::SelectFileDialog> dialog_;
+};
+
+// The answer of a query the core answered away from the UI thread.
+struct AwayAnswer {
+  crest_status_t status = CREST_INTERNAL_ERROR;
+  std::vector<uint8_t> bytes;
+};
+
+// Asks the core `query` on the thread this runs on.
+AwayAnswer AskAway(std::vector<uint8_t> query) {
+  AwayAnswer answer;
+  if (CoreHost* host = CoreHost::Get()) answer.status = host->QueryAway(query, answer.bytes);
+  return answer;
+}
+
+// Which of `folders` are folders on this computer, in their order.
+base::ListValue ExistingFolders(std::vector<std::string> folders) {
+  base::ListValue existing;
+  for (const std::string& folder : folders) {
+    if (base::DirectoryExists(base::FilePath::FromUTF8Unsafe(folder))) existing.Append(folder);
+  }
+  return existing;
+}
+
+// --- End of setup -----------------------------------------------------------
+
+// --- Passwords (Linux shell) ------------------------------------------------
+// Crest's saved passwords live in the Secret Service (crest_credentials_linux),
+// and setup reads other browsers' (crest_password_import_linux); the WebUI
+// keeps the vault's rules over both, as the Mac's Swift keeps them over its
+// Keychain store. Every call into the Secret Service runs on its sequence.
+
+base::ListValue CredentialItemsValue(const std::vector<CredentialItem>& items) {
+  base::ListValue list;
+  for (const CredentialItem& item : items) {
+    base::DictValue entry;
+    entry.Set("account", item.account);
+    entry.Set("metadata", item.metadata);
+    entry.Set("synchronizable", item.synchronizable);
+    if (item.secret) entry.Set("secret", *item.secret);
+    list.Append(std::move(entry));
+  }
+  return list;
+}
+
+// The password stores the WebUI names, as the core found them; none when one
+// is not {id, profileName, path}.
+std::optional<std::vector<PasswordImportStore>> PasswordStores(const base::Value& value) {
+  if (!value.is_list()) return std::nullopt;
+  std::vector<PasswordImportStore> stores;
+  for (const base::Value& entry : value.GetList()) {
+    const base::DictValue* fields = entry.GetIfDict();
+    const std::string* id = fields ? fields->FindString("id") : nullptr;
+    const std::string* profile = fields ? fields->FindString("profileName") : nullptr;
+    const std::string* path = fields ? fields->FindString("path") : nullptr;
+    if (!id || !profile || !path) return std::nullopt;
+    PasswordImportStore store;
+    store.id = *id;
+    store.profile_name = *profile;
+    store.path = *path;
+    stores.push_back(std::move(store));
+  }
+  return stores;
+}
+
+// What the WebUI reads of an import's logins: {logins: [...]} or {failure}.
+base::DictValue PasswordImportValue(const PasswordImportResult& result) {
+  base::DictValue answer;
+  if (result.failure) {
+    answer.Set("failure", PasswordImportFailureName(*result.failure));
+    return answer;
+  }
+  base::ListValue logins;
+  for (const ImportedLogin& login : result.logins) {
+    base::DictValue entry;
+    entry.Set("profileId", login.profile_id);
+    entry.Set("profileName", login.profile_name);
+    entry.Set("url", login.origin_url);
+    if (login.password) {
+      entry.Set("username", login.username);
+      entry.Set("password", *login.password);
+    }
+    logins.Append(std::move(entry));
+  }
+  answer.Set("logins", std::move(logins));
+  return answer;
+}
+
+// --- End of passwords -------------------------------------------------------
+
 class CrestUIHandler;
-// The window's main WebUI, which takes the window's keys and owns its state,
-// and the floating surfaces' page, which only draws what the main one sends.
-CrestUIHandler* g_handler = nullptr;
-CrestUIHandler* g_float = nullptr;
+
+// Every page of chrome://crest open now. Each window has two: its main WebUI,
+// which takes the window's keys and decides what it shows, and its floating
+// surfaces' page, which only draws what the main one sends.
+std::vector<CrestUIHandler*>& Handlers() {
+  static base::NoDestructor<std::vector<CrestUIHandler*>> handlers;
+  return *handlers;
+}
+
+CrestUIHandler* MainHandler(const LinuxWindow& window);
+CrestUIHandler* FloatHandler(const LinuxWindow& window);
+
+// The id the WebUI sent, in GuidText's spelling, which the binding and the
+// windows key by; empty when it is not one.
+std::string WindowKey(const base::Value& value) {
+  const std::optional<engine::Guid> id = value.is_string() ? ParseGuid(value.GetString()) : std::nullopt;
+  return id ? GuidText(*id) : std::string();
+}
 
 // Relays the core to the page and the page's messages to the core.
 class CrestUIHandler final : public content::WebUIMessageHandler, public CoreHost::Observer {
  public:
-  CrestUIHandler() = default;
+  CrestUIHandler() { Handlers().push_back(this); }
   CrestUIHandler(const CrestUIHandler&) = delete;
   CrestUIHandler& operator=(const CrestUIHandler&) = delete;
-  ~CrestUIHandler() override {
-    if (g_handler == this) g_handler = nullptr;
-    if (g_float == this) g_float = nullptr;
+  ~CrestUIHandler() override { std::erase(Handlers(), this); }
+
+  content::WebContents* contents() { return web_ui()->GetWebContents(); }
+  const std::vector<Shortcut>& shortcuts() const { return shortcuts_; }
+
+  // Fires `event` to the page; false while it cannot hear it.
+  bool Fire(const std::string& event, const base::Value& value) {
+    if (!IsJavascriptAllowed()) return false;
+    FireWebUIListener(event, value);
+    return true;
   }
 
   // content::WebUIMessageHandler:
@@ -228,11 +385,15 @@ class CrestUIHandler final : public content::WebUIMessageHandler, public CoreHos
     web_ui()->RegisterMessageCallback(
         "query", base::BindRepeating(&CrestUIHandler::HandleCall, base::Unretained(this), Call::kQuery));
     web_ui()->RegisterMessageCallback(
+        "queryAway", base::BindRepeating(&CrestUIHandler::HandleCall, base::Unretained(this), Call::kQueryAway));
+    web_ui()->RegisterMessageCallback(
         "pageRequest", base::BindRepeating(&CrestUIHandler::HandleCall, base::Unretained(this), Call::kPageRequest));
     web_ui()->RegisterMessageCallback(
         "showPage", base::BindRepeating(&CrestUIHandler::HandleShowPage, base::Unretained(this)));
     web_ui()->RegisterMessageCallback(
         "setPageBounds", base::BindRepeating(&CrestUIHandler::HandleSetPageBounds, base::Unretained(this)));
+    web_ui()->RegisterMessageCallback(
+        "setPageLayout", base::BindRepeating(&CrestUIHandler::HandleSetPageLayout, base::Unretained(this)));
     web_ui()->RegisterMessageCallback(
         "floatReady", base::BindRepeating(&CrestUIHandler::HandleFloatReady, base::Unretained(this)));
     web_ui()->RegisterMessageCallback(
@@ -243,6 +404,23 @@ class CrestUIHandler final : public content::WebUIMessageHandler, public CoreHos
         "setShortcuts", base::BindRepeating(&CrestUIHandler::HandleSetShortcuts, base::Unretained(this)));
     web_ui()->RegisterMessageCallback(
         "setOverlay", base::BindRepeating(&CrestUIHandler::HandleSetOverlay, base::Unretained(this)));
+    // Windows (Linux shell).
+    web_ui()->RegisterMessageCallback(
+        "adoptWindow", base::BindRepeating(&CrestUIHandler::HandleAdoptWindow, base::Unretained(this)));
+    web_ui()->RegisterMessageCallback(
+        "openWindow", base::BindRepeating(&CrestUIHandler::HandleOpenWindow, base::Unretained(this)));
+    web_ui()->RegisterMessageCallback(
+        "closeWindow", base::BindRepeating(&CrestUIHandler::HandleCloseWindow, base::Unretained(this)));
+    web_ui()->RegisterMessageCallback(
+        "requestClose", base::BindRepeating(&CrestUIHandler::HandleRequestClose, base::Unretained(this)));
+    web_ui()->RegisterMessageCallback(
+        "presentWindow", base::BindRepeating(&CrestUIHandler::HandlePresentWindow, base::Unretained(this)));
+    web_ui()->RegisterMessageCallback(
+        "useWindow", base::BindRepeating(&CrestUIHandler::HandleUseWindow, base::Unretained(this)));
+    web_ui()->RegisterMessageCallback(
+        "setWindowTitle", base::BindRepeating(&CrestUIHandler::HandleSetWindowTitle, base::Unretained(this)));
+    web_ui()->RegisterMessageCallback(
+        "stackedWindows", base::BindRepeating(&CrestUIHandler::HandleStackedWindows, base::Unretained(this)));
     // Downloads (Linux shell).
     web_ui()->RegisterMessageCallback(
         "openDownload", base::BindRepeating(&CrestUIHandler::HandleOpenDownload, base::Unretained(this)));
@@ -250,6 +428,43 @@ class CrestUIHandler final : public content::WebUIMessageHandler, public CoreHos
         "showDownloadInFolder", base::BindRepeating(&CrestUIHandler::HandleShowDownloadInFolder, base::Unretained(this)));
     web_ui()->RegisterMessageCallback(
         "chooseDownloadPath", base::BindRepeating(&CrestUIHandler::HandleChooseDownloadPath, base::Unretained(this)));
+    // Setup (Linux shell).
+    web_ui()->RegisterMessageCallback(
+        "homeFolders", base::BindRepeating(&CrestUIHandler::HandleHomeFolders, base::Unretained(this)));
+    web_ui()->RegisterMessageCallback(
+        "chooseImportFolder", base::BindRepeating(&CrestUIHandler::HandleChooseImportFolder, base::Unretained(this)));
+    web_ui()->RegisterMessageCallback(
+        "existingFolders", base::BindRepeating(&CrestUIHandler::HandleExistingFolders, base::Unretained(this)));
+    // Passwords (Linux shell).
+    web_ui()->RegisterMessageCallback(
+        "credentialItems", base::BindRepeating(&CrestUIHandler::HandleCredentialItems, base::Unretained(this)));
+    web_ui()->RegisterMessageCallback(
+        "upsertCredential", base::BindRepeating(&CrestUIHandler::HandleUpsertCredential, base::Unretained(this)));
+    web_ui()->RegisterMessageCallback(
+        "deleteCredential", base::BindRepeating(&CrestUIHandler::HandleDeleteCredential, base::Unretained(this)));
+    web_ui()->RegisterMessageCallback(
+        "copyPassword", base::BindRepeating(&CrestUIHandler::HandleCopyPassword, base::Unretained(this)));
+    web_ui()->RegisterMessageCallback(
+        "passwordImportCandidates",
+        base::BindRepeating(&CrestUIHandler::HandlePasswordImportCandidates, base::Unretained(this)));
+    web_ui()->RegisterMessageCallback(
+        "readImportPasswords", base::BindRepeating(&CrestUIHandler::HandleReadImportPasswords, base::Unretained(this)));
+    web_ui()->RegisterMessageCallback(
+        "releasePrivateProfiles",
+        base::BindRepeating(&CrestUIHandler::HandleReleasePrivateProfiles, base::Unretained(this)));
+  }
+
+  // args: the profile ids of a closed private window's Spaces. The engine
+  // lets each go, closing its pages and destroying the off-the-record
+  // profile, as the Mac's private window releases its profiles when it
+  // closes. A profile that keeps data on disk is never released here.
+  void HandleReleasePrivateProfiles(const base::ListValue& args) {
+    EngineBinding& binding = EngineBinding::Get();
+    for (const base::Value& value : args) {
+      const std::string id = WindowKey(value);
+      Profile* profile = id.empty() ? nullptr : binding.Profiles().Find(id);
+      if (profile && profile->IsOffTheRecord()) binding.ReleaseProfile(id);
+    }
   }
 
   void OnJavascriptDisallowed() override { observation_.Reset(); }
@@ -263,14 +478,12 @@ class CrestUIHandler final : public content::WebUIMessageHandler, public CoreHos
   }
 
  private:
-  enum class Call { kDispatch, kQuery, kPageRequest };
+  enum class Call { kDispatch, kQuery, kQueryAway, kPageRequest };
 
   // The page started: it hears every batch the core published so far, in
   // order, then each new one as it comes.
   void HandleReady(const base::ListValue& args) {
     AllowJavascript();
-    // The page that starts the core's line is the window's main WebUI.
-    g_handler = this;
     CoreHost* host = CoreHost::Get();
     base::ListValue history;
     if (host) {
@@ -291,6 +504,15 @@ class CrestUIHandler final : public content::WebUIMessageHandler, public CoreHos
       RejectJavascriptCallback(callback, base::Value(host ? "The message is not base64." : "Crest's core is not running."));
       return;
     }
+    // A query the core answers without waiting on its other work, such as
+    // reading another browser's files, runs away from the UI thread.
+    if (call == Call::kQueryAway) {
+      base::ThreadPool::PostTaskAndReplyWithResult(
+          FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_BLOCKING},
+          base::BindOnce(&AskAway, std::move(*message)),
+          base::BindOnce(&CrestUIHandler::AnswerAway, weak_factory_.GetWeakPtr(), callback.Clone()));
+      return;
+    }
     std::vector<uint8_t> out;
     crest_status_t status = CREST_INTERNAL_ERROR;
     switch (call) {
@@ -298,6 +520,7 @@ class CrestUIHandler final : public content::WebUIMessageHandler, public CoreHos
         status = host->Dispatch(*message, out);
         break;
       case Call::kQuery:
+      case Call::kQueryAway:
         status = host->Query(*message, out);
         break;
       case Call::kPageRequest:
@@ -310,10 +533,20 @@ class CrestUIHandler final : public content::WebUIMessageHandler, public CoreHos
     ResolveJavascriptCallback(callback, base::Value(std::move(answer)));
   }
 
+  // Answers a query the core answered away from the UI thread, as HandleCall
+  // answers one.
+  void AnswerAway(base::Value callback, AwayAnswer answer) {
+    if (!IsJavascriptAllowed()) return;
+    base::DictValue fields;
+    fields.Set("status", answer.status);
+    fields.Set("bytes", Encode(answer.bytes));
+    ResolveJavascriptCallback(callback, base::Value(std::move(fields)));
+  }
+
   // args: the core's page id. Shows that page beside the sidebar.
   void HandleShowPage(const base::ListValue& args) {
     if (args.empty() || !args[0].is_string()) return;
-    LinuxWindow* window = LinuxWindow::Current();
+    LinuxWindow* window = Window();
     if (!window) return;
     // No id: the shown tab has no page (the Start Page), which the WebUI
     // draws in the page's card itself.
@@ -338,16 +571,53 @@ class CrestUIHandler final : public content::WebUIMessageHandler, public CoreHos
       values[index] = static_cast<int>(args[index].GetDouble());
     }
     if (values[2] < 0 || values[3] < 0) return;
-    if (LinuxWindow* window = LinuxWindow::Current()) {
+    if (LinuxWindow* window = Window()) {
       window->SetPageBounds(gfx::Rect(values[0], values[1], values[2], values[3]));
     }
+  }
+
+  // args: one list per page, [core page id, x, y, width, height, whether it
+  // stays over the raised WebUI, corner radius], the later over the earlier,
+  // then the id of the page in use (empty when none is). Shows those pages
+  // and no other: the cards of a split, and a Peek's page over them.
+  void HandleSetPageLayout(const base::ListValue& args) {
+    if (args.size() != 2 || !args[0].is_list() || !args[1].is_string()) return;
+    LinuxWindow* window = Window();
+    if (!window) return;
+    std::vector<LinuxWindow::PageSlot> slots;
+    for (const base::Value& entry : args[0].GetList()) {
+      const base::ListValue* fields = entry.GetIfList();
+      if (!fields || fields->size() != 7 || !(*fields)[0].is_string()) return;
+      const std::optional<engine::Guid> page = ParseGuid((*fields)[0].GetString());
+      if (!page) return;
+      int values[4];
+      for (size_t index = 0; index < 4; ++index) {
+        const base::Value& value = (*fields)[index + 1];
+        if (!value.is_int() && !value.is_double()) return;
+        values[index] = static_cast<int>(value.GetDouble());
+      }
+      if (values[2] < 0 || values[3] < 0) return;
+      const base::Value& radius = (*fields)[6];
+      slots.push_back(LinuxWindow::PageSlot{
+          .page = GuidText(*page),
+          .bounds = gfx::Rect(values[0], values[1], values[2], values[3]),
+          .above = (*fields)[5].GetIfBool().value_or(false),
+          .corner_radius = radius.is_int() || radius.is_double() ? static_cast<float>(radius.GetDouble()) : 0});
+    }
+    std::string focused;
+    if (!args[1].GetString().empty()) {
+      const std::optional<engine::Guid> page = ParseGuid(args[1].GetString());
+      if (!page) return;
+      focused = GuidText(*page);
+    }
+    window->SetPageLayout(slots, focused);
   }
 
   // The floating surfaces' page started; it hears what the main WebUI sends.
   void HandleFloatReady(const base::ListValue& args) {
     AllowJavascript();
-    g_float = this;
-    if (g_handler) g_handler->Fire("crest-float-ready", base::Value());
+    LinuxWindow* window = Window();
+    if (CrestUIHandler* main = window ? MainHandler(*window) : nullptr) main->Fire("crest-float-ready", base::Value());
   }
 
   // From the main WebUI. args: x, y, width, height (empty hides), whether the
@@ -360,25 +630,24 @@ class CrestUIHandler final : public content::WebUIMessageHandler, public CoreHos
       values[index] = static_cast<int>(args[index].GetDouble());
     }
     if (values[2] < 0 || values[3] < 0) return;
-    if (g_float) g_float->Fire("crest-float-state", base::Value(args[5].GetString()));
-    if (LinuxWindow* window = LinuxWindow::Current()) {
-      window->SetFloat(gfx::Rect(values[0], values[1], values[2], values[3]), args[4].GetIfBool().value_or(false));
+    LinuxWindow* window = Window();
+    if (!window) return;
+    if (CrestUIHandler* surfaces = FloatHandler(*window)) {
+      surfaces->Fire("crest-float-state", base::Value(args[5].GetString()));
     }
+    window->SetFloat(gfx::Rect(values[0], values[1], values[2], values[3]), args[4].GetIfBool().value_or(false));
   }
 
   // From the floating surfaces' page: what the person did there, as JSON
   // text, for the main WebUI to act on.
   void HandleFloatEvent(const base::ListValue& args) {
     if (args.size() != 1 || !args[0].is_string()) return;
-    if (g_handler) g_handler->Fire("crest-float-event", base::Value(args[0].GetString()));
+    LinuxWindow* window = Window();
+    if (CrestUIHandler* main = window ? MainHandler(*window) : nullptr) {
+      main->Fire("crest-float-event", base::Value(args[0].GetString()));
+    }
   }
 
- public:
-  void Fire(const std::string& event, const base::Value& value) {
-    if (IsJavascriptAllowed()) FireWebUIListener(event, value);
-  }
-
- private:
   // args: one list per key, [key, ctrl, alt, meta, shift (-1 when it does
   // not matter), reserved].
   void HandleSetShortcuts(const base::ListValue& args) {
@@ -396,29 +665,91 @@ class CrestUIHandler final : public content::WebUIMessageHandler, public CoreHos
       shortcut.reserved = (*fields)[5].GetIfBool().value_or(false);
       shortcuts.push_back(std::move(shortcut));
     }
-    Shortcuts() = std::move(shortcuts);
+    shortcuts_ = std::move(shortcuts);
   }
 
- public:
-  // Hands the WebUI a key it claimed, to perform.
-  bool FireShortcut(base::DictValue key) {
-    if (!IsJavascriptAllowed()) return false;
-    FireWebUIListener("crest-shortcut", key);
-    return true;
-  }
-
-  bool FireCommand(const std::string& command) {
-    if (!IsJavascriptAllowed()) return false;
-    FireWebUIListener("crest-command", base::Value(command));
-    return true;
-  }
-
- private:
   // args: whether the WebUI draws a floating surface over the page now.
   void HandleSetOverlay(const base::ListValue& args) {
     if (args.size() != 1 || !args[0].is_bool()) return;
-    if (LinuxWindow* window = LinuxWindow::Current()) window->SetOverlay(args[0].GetBool());
+    if (LinuxWindow* window = Window()) window->SetOverlay(args[0].GetBool());
   }
+
+  // --- Windows (Linux shell) ------------------------------------------------
+
+  // The window this page draws, or null once it closed.
+  LinuxWindow* Window() { return LinuxWindow::Drawing(contents()); }
+
+  // args: the core's id of the window the WebUI opened for its window, once
+  // the core opened it. The engine's Browsers for that window find it.
+  void HandleAdoptWindow(const base::ListValue& args) {
+    const std::string id = args.size() == 1 ? WindowKey(args[0]) : std::string();
+    LinuxWindow* window = Window();
+    if (id.empty() || !window) return;
+    AllowJavascript();
+    window->Adopt(id);
+    WindowAdopted(id);
+    // A window opened behind, or one another came in front of while its
+    // WebUI started, hears it is not the one in use.
+    window->TellUse();
+  }
+
+  // args: the kind of window ("browser" or "quick"), the core's id of a
+  // browser window or empty, its WebUI's parameters as a query, and whether
+  // it comes forward. A browser window already open under the id comes
+  // forward instead.
+  void HandleOpenWindow(const base::ListValue& args) {
+    if (args.size() != 4 || !args[0].is_string() || !args[1].is_string() || !args[2].is_string() ||
+        !args[3].is_bool()) {
+      return;
+    }
+    const LinuxWindow::Kind* kind = LinuxWindow::Kind::Named(args[0].GetString());
+    const std::string id = args[1].GetString().empty() ? std::string() : WindowKey(args[1]);
+    if (!kind || (!args[1].GetString().empty() && id.empty())) return;
+    if (LinuxWindow* open = LinuxWindow::Find(id)) {
+      if (args[3].GetBool()) open->Present();
+      return;
+    }
+    // It opens over the window that asked for it, as a Quick Window opens
+    // over the window it promotes into.
+    LinuxWindow::Open(Profile::FromWebUI(web_ui()), *kind, id, args[2].GetString(), args[3].GetBool(), Window());
+  }
+
+  // The WebUI agreed to its window closing, or closes it itself.
+  void HandleCloseWindow(const base::ListValue& args) {
+    if (LinuxWindow* window = Window()) window->Close();
+  }
+
+  // Closes the window as the person's close does, which asks the WebUI.
+  void HandleRequestClose(const base::ListValue& args) {
+    if (LinuxWindow* window = Window()) window->widget()->Close();
+  }
+
+  void HandlePresentWindow(const base::ListValue& args) {
+    if (LinuxWindow* window = Window()) window->Present();
+  }
+
+  // The person used the window's WebUI: the window is the one in use, though
+  // the window manager may not have activated it.
+  void HandleUseWindow(const base::ListValue& args) {
+    if (LinuxWindow* window = Window()) window->TakeUse();
+  }
+
+  // args: the window's title, as the desktop's window list names it.
+  void HandleSetWindowTitle(const base::ListValue& args) {
+    if (args.size() != 1 || !args[0].is_string()) return;
+    if (LinuxWindow* window = Window()) window->SetTitle(base::UTF8ToUTF16(args[0].GetString()));
+  }
+
+  // args: callback id. Answers the open browser windows' core ids, the one
+  // used last first, as the core's queries over stacked windows take them.
+  void HandleStackedWindows(const base::ListValue& args) {
+    AllowJavascript();
+    base::ListValue ids;
+    for (const std::string& id : LinuxWindow::Stacked()) ids.Append(base::ToLowerASCII(id));
+    ResolveJavascriptCallback(args[0], base::Value(std::move(ids)));
+  }
+
+  // --- End of windows -------------------------------------------------------
 
   // --- Downloads (Linux shell) ----------------------------------------------
 
@@ -474,23 +805,283 @@ class CrestUIHandler final : public content::WebUIMessageHandler, public CoreHos
 
   // --- End of downloads -----------------------------------------------------
 
+  // --- Setup (Linux shell) --------------------------------------------------
+
+  // args: callback id. Answers {home, config}: the person's home folder and
+  // their XDG config folder, where the browsers setup imports from keep
+  // their data.
+  void HandleHomeFolders(const base::ListValue& args) {
+    AllowJavascript();
+    std::unique_ptr<base::Environment> environment = base::Environment::Create();
+    base::DictValue folders;
+    folders.Set("home", base::GetHomeDir().AsUTF8Unsafe());
+    folders.Set("config", base::nix::GetXDGDirectory(environment.get(), base::nix::kXdgConfigHomeEnvVar,
+                                                     base::nix::kDotConfigDir)
+                              .AsUTF8Unsafe());
+    ResolveJavascriptCallback(args[0], base::Value(std::move(folders)));
+  }
+
+  // args: callback id, the picker's title, the folder it opens at. Answers
+  // the folder the person chose, or null when they cancelled.
+  void HandleChooseImportFolder(const base::ListValue& args) {
+    AllowJavascript();
+    if (args.size() != 3 || !args[1].is_string() || !args[2].is_string()) {
+      RejectJavascriptCallback(args[0], base::Value("chooseImportFolder takes a title and a folder."));
+      return;
+    }
+    ImportFolderDialog::Show(web_ui()->GetWebContents(), base::UTF8ToUTF16(args[1].GetString()),
+                             base::FilePath::FromUTF8Unsafe(args[2].GetString()),
+                             base::BindOnce(&CrestUIHandler::AnswerImportFolder, weak_factory_.GetWeakPtr(),
+                                            args[0].Clone()));
+  }
+
+  void AnswerImportFolder(base::Value callback, base::FilePath folder) {
+    if (!IsJavascriptAllowed()) return;
+    ResolveJavascriptCallback(callback, folder.empty() ? base::Value() : base::Value(folder.AsUTF8Unsafe()));
+  }
+
+  // args: callback id, a list of paths. Answers those that are folders here,
+  // which setup lists as browsers whose data it could not read where it
+  // looked, so the person can pick the data folder. The disk is asked away
+  // from the UI thread.
+  void HandleExistingFolders(const base::ListValue& args) {
+    AllowJavascript();
+    if (args.size() != 2 || !args[1].is_list()) {
+      RejectJavascriptCallback(args[0], base::Value("existingFolders takes a list of paths."));
+      return;
+    }
+    std::vector<std::string> folders;
+    for (const base::Value& folder : args[1].GetList()) {
+      if (folder.is_string()) folders.push_back(folder.GetString());
+    }
+    base::ThreadPool::PostTaskAndReplyWithResult(
+        FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
+        base::BindOnce(&ExistingFolders, std::move(folders)),
+        base::BindOnce(&CrestUIHandler::AnswerExistingFolders, weak_factory_.GetWeakPtr(), args[0].Clone()));
+  }
+
+  void AnswerExistingFolders(base::Value callback, base::ListValue folders) {
+    if (!IsJavascriptAllowed()) return;
+    ResolveJavascriptCallback(callback, base::Value(std::move(folders)));
+  }
+
+  // --- End of setup ---------------------------------------------------------
+
+  // --- Passwords (Linux shell) ----------------------------------------------
+
+  // args: callback id, a Space's service, an account (empty for all of the
+  // service's), whether to read the passwords. Answers the items, each
+  // {account, metadata, synchronizable, secret when read}; rejects when the
+  // Secret Service cannot be asked or refuses.
+  void HandleCredentialItems(const base::ListValue& args) {
+    AllowJavascript();
+    if (args.size() != 4 || !args[1].is_string() || !args[2].is_string() || !args[3].is_bool()) {
+      RejectJavascriptCallback(args[0], base::Value("credentialItems takes a service, an account and whether to read."));
+      return;
+    }
+    SecretServiceSequence()->PostTaskAndReplyWithResult(
+        FROM_HERE,
+        base::BindOnce(&CredentialStore::Items, args[1].GetString(), args[2].GetString(), args[3].GetBool()),
+        base::BindOnce(&CrestUIHandler::AnswerCredentialItems, weak_factory_.GetWeakPtr(), args[0].Clone()));
+  }
+
+  void AnswerCredentialItems(base::Value callback, std::optional<std::vector<CredentialItem>> items) {
+    if (!IsJavascriptAllowed()) return;
+    if (!items) {
+      RejectJavascriptCallback(callback, base::Value("The Secret Service could not be read."));
+      return;
+    }
+    ResolveJavascriptCallback(callback, base::Value(CredentialItemsValue(*items)));
+  }
+
+  // args: callback id, a Space's service, the item {account, metadata,
+  // synchronizable, secret}. Answers true once it is stored.
+  void HandleUpsertCredential(const base::ListValue& args) {
+    AllowJavascript();
+    const base::DictValue* fields = args.size() == 3 && args[1].is_string() ? args[2].GetIfDict() : nullptr;
+    const std::string* account = fields ? fields->FindString("account") : nullptr;
+    const std::string* metadata = fields ? fields->FindString("metadata") : nullptr;
+    const std::string* secret = fields ? fields->FindString("secret") : nullptr;
+    const std::optional<bool> synchronizable = fields ? fields->FindBool("synchronizable") : std::nullopt;
+    if (!account || !metadata || !secret || !synchronizable) {
+      RejectJavascriptCallback(args[0], base::Value("upsertCredential takes a service and an item."));
+      return;
+    }
+    CredentialItem item;
+    item.account = *account;
+    item.metadata = *metadata;
+    item.secret = *secret;
+    item.synchronizable = *synchronizable;
+    SecretServiceSequence()->PostTaskAndReplyWithResult(
+        FROM_HERE, base::BindOnce(&CredentialStore::Upsert, args[1].GetString(), std::move(item)),
+        base::BindOnce(&CrestUIHandler::AnswerCredentialWrite, weak_factory_.GetWeakPtr(), args[0].Clone()));
+  }
+
+  // args: callback id, a Space's service, an account, or empty for every
+  // item of the service. Answers true once they are gone.
+  void HandleDeleteCredential(const base::ListValue& args) {
+    AllowJavascript();
+    if (args.size() != 3 || !args[1].is_string() || !args[2].is_string()) {
+      RejectJavascriptCallback(args[0], base::Value("deleteCredential takes a service and an account."));
+      return;
+    }
+    SecretServiceSequence()->PostTaskAndReplyWithResult(
+        FROM_HERE, base::BindOnce(&CredentialStore::Delete, args[1].GetString(), args[2].GetString()),
+        base::BindOnce(&CrestUIHandler::AnswerCredentialWrite, weak_factory_.GetWeakPtr(), args[0].Clone()));
+  }
+
+  void AnswerCredentialWrite(base::Value callback, bool written) {
+    if (!IsJavascriptAllowed()) return;
+    if (!written) {
+      RejectJavascriptCallback(callback, base::Value("The Secret Service did not take the change."));
+      return;
+    }
+    ResolveJavascriptCallback(callback, base::Value(true));
+  }
+
+  // args: callback id, a password, the seconds it stays on the clipboard.
+  // Answers whether it was copied.
+  void HandleCopyPassword(const base::ListValue& args) {
+    AllowJavascript();
+    if (args.size() != 3 || !args[1].is_string() || (!args[2].is_int() && !args[2].is_double())) {
+      RejectJavascriptCallback(args[0], base::Value("copyPassword takes a password and a lifetime."));
+      return;
+    }
+    const bool copied = CopyPasswordForAWhile(args[1].GetString(), base::Seconds(args[2].GetDouble()));
+    ResolveJavascriptCallback(args[0], base::Value(copied));
+  }
+
+  // args: callback id, the password stores the core found. Answers
+  // {logins: [{profileId, profileName, url}]} or {failure}.
+  void HandlePasswordImportCandidates(const base::ListValue& args) {
+    AllowJavascript();
+    std::optional<std::vector<PasswordImportStore>> stores =
+        args.size() == 2 ? PasswordStores(args[1]) : std::nullopt;
+    if (!stores) {
+      RejectJavascriptCallback(args[0], base::Value("passwordImportCandidates takes the password stores."));
+      return;
+    }
+    base::ThreadPool::PostTaskAndReplyWithResult(
+        FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
+        base::BindOnce(&ReadImportCandidates, std::move(*stores)),
+        base::BindOnce(&CrestUIHandler::AnswerPasswordImport, weak_factory_.GetWeakPtr(), args[0].Clone()));
+  }
+
+  // args: callback id, the browser's Safe Storage name (ImportSource's
+  // safeStorageService), the password stores the core found. Answers
+  // {logins: [{profileId, profileName, url, username, password}]} or
+  // {failure}.
+  void HandleReadImportPasswords(const base::ListValue& args) {
+    AllowJavascript();
+    std::optional<std::vector<PasswordImportStore>> stores =
+        args.size() == 3 && args[1].is_string() ? PasswordStores(args[2]) : std::nullopt;
+    if (!stores) {
+      RejectJavascriptCallback(args[0], base::Value("readImportPasswords takes a Safe Storage name and the stores."));
+      return;
+    }
+    SecretServiceSequence()->PostTaskAndReplyWithResult(
+        FROM_HERE, base::BindOnce(&ReadImportPasswords, std::move(*stores), args[1].GetString()),
+        base::BindOnce(&CrestUIHandler::AnswerPasswordImport, weak_factory_.GetWeakPtr(), args[0].Clone()));
+  }
+
+  void AnswerPasswordImport(base::Value callback, PasswordImportResult result) {
+    if (!IsJavascriptAllowed()) return;
+    ResolveJavascriptCallback(callback, base::Value(PasswordImportValue(result)));
+  }
+
+  // --- End of passwords -----------------------------------------------------
+
+  // The keys this page's window takes for Crest, as the page registered them.
+  std::vector<Shortcut> shortcuts_;
   base::ScopedObservation<CoreHost, CoreHost::Observer> observation_{this};
   base::WeakPtrFactory<CrestUIHandler> weak_factory_{this};
 };
 
 }  // namespace
 
-bool ClaimShortcut(const input::NativeWebKeyboardEvent& event, bool page_declined) {
-  if (!g_handler || event.GetType() != input::NativeWebKeyboardEvent::Type::kRawKeyDown) return false;
+namespace {
+
+CrestUIHandler* MainHandler(const LinuxWindow& window) {
+  content::WebContents* contents = window.ui_contents();
+  for (CrestUIHandler* handler : Handlers()) {
+    if (contents && handler->contents() == contents) return handler;
+  }
+  return nullptr;
+}
+
+CrestUIHandler* FloatHandler(const LinuxWindow& window) {
+  content::WebContents* contents = window.float_contents();
+  for (CrestUIHandler* handler : Handlers()) {
+    if (contents && handler->contents() == contents) return handler;
+  }
+  return nullptr;
+}
+
+// Fires `event` to the main WebUI of `window`; false when it cannot hear it.
+bool Tell(LinuxWindow& window, const std::string& event, const base::Value& value) {
+  CrestUIHandler* handler = MainHandler(window);
+  return handler && handler->Fire(event, value);
+}
+
+// Tells the WebUI the modifiers still held once a page's view saw one of them
+// released, which the WebUI cannot see while the page has the keyboard, as
+// the Mac's switcher watches flagsChanged.
+void ReportModifierRelease(CrestUIHandler& handler, const input::NativeWebKeyboardEvent& event) {
+  int modifiers = event.GetModifiers();
+  switch (event.windows_key_code) {
+    case ui::VKEY_CONTROL:
+    case ui::VKEY_LCONTROL:
+    case ui::VKEY_RCONTROL:
+      modifiers &= ~blink::WebInputEvent::kControlKey;
+      break;
+    case ui::VKEY_SHIFT:
+    case ui::VKEY_LSHIFT:
+    case ui::VKEY_RSHIFT:
+      modifiers &= ~blink::WebInputEvent::kShiftKey;
+      break;
+    case ui::VKEY_MENU:
+    case ui::VKEY_LMENU:
+    case ui::VKEY_RMENU:
+      modifiers &= ~blink::WebInputEvent::kAltKey;
+      break;
+    case ui::VKEY_LWIN:
+    case ui::VKEY_RWIN:
+      modifiers &= ~blink::WebInputEvent::kMetaKey;
+      break;
+    default:
+      return;
+  }
+  base::DictValue held;
+  held.Set("ctrlKey", (modifiers & blink::WebInputEvent::kControlKey) != 0);
+  held.Set("altKey", (modifiers & blink::WebInputEvent::kAltKey) != 0);
+  held.Set("metaKey", (modifiers & blink::WebInputEvent::kMetaKey) != 0);
+  held.Set("shiftKey", (modifiers & blink::WebInputEvent::kShiftKey) != 0);
+  handler.Fire("crest-modifiers", base::Value(std::move(held)));
+}
+
+}  // namespace
+
+bool ClaimShortcut(LinuxWindow& window, const input::NativeWebKeyboardEvent& event, bool page_declined) {
+  CrestUIHandler* handler = MainHandler(window);
+  if (!handler) return false;
+  if (event.GetType() == input::NativeWebKeyboardEvent::Type::kKeyUp) {
+    // Heard once, before the page; a key-up is never Crest's to take.
+    if (!page_declined) ReportModifierRelease(*handler, event);
+    return false;
+  }
+  if (event.GetType() != input::NativeWebKeyboardEvent::Type::kRawKeyDown) return false;
   const int modifiers = event.GetModifiers();
   const bool ctrl = modifiers & blink::WebInputEvent::kControlKey;
   const bool alt = modifiers & blink::WebInputEvent::kAltKey;
   const bool meta = modifiers & blink::WebInputEvent::kMetaKey;
   const bool shift = modifiers & blink::WebInputEvent::kShiftKey;
-  if (!ctrl && !alt && !meta) return false;
   const std::string key = KeyName(event.windows_key_code);
   if (key.empty()) return false;
-  for (const Shortcut& shortcut : Shortcuts()) {
+  // A key without Ctrl, Alt or Meta stays the page's, but for Escape, which
+  // closes a Peek before its page sees it, as the Mac's Peek keyboard
+  // monitor takes it.
+  if (!ctrl && !alt && !meta && key != "Escape") return false;
+  for (const Shortcut& shortcut : handler->shortcuts()) {
     if (!page_declined && !shortcut.reserved) continue;
     if (shortcut.key != key && !(shortcut.key == "+" && key == "=")) continue;
     if (shortcut.ctrl != ctrl || shortcut.alt != alt || shortcut.meta != meta) continue;
@@ -501,13 +1092,47 @@ bool ClaimShortcut(const input::NativeWebKeyboardEvent& event, bool page_decline
     fired.Set("altKey", alt);
     fired.Set("metaKey", meta);
     fired.Set("shiftKey", shift);
-    return g_handler->FireShortcut(std::move(fired));
+    return handler->Fire("crest-shortcut", base::Value(std::move(fired)));
   }
   return false;
 }
 
-void PerformCommand(const std::string& command) {
-  if (g_handler) g_handler->FireCommand(command);
+void PerformCommand(LinuxWindow& window, const std::string& command) {
+  Tell(window, "crest-command", base::Value(command));
+}
+
+void ReportPageFocused(LinuxWindow& window, const std::string& page) {
+  Tell(window, "crest-page-focused", base::Value(page));
+}
+
+void ReportPageLeft(LinuxWindow& window, const std::string& page) {
+  Tell(window, "crest-page-left", base::Value(page));
+}
+
+void ReportPageFree(LinuxWindow& window, const std::string& page) {
+  Tell(window, "crest-page-free", base::Value(page));
+}
+
+void ReportPageArrived(LinuxWindow& window, const std::string& page) {
+  Tell(window, "crest-page-arrived", base::Value(page));
+}
+
+void ReportWindowActive(LinuxWindow& window, bool active) {
+  Tell(window, "crest-window-active", base::Value(active));
+}
+
+bool AskToClose(LinuxWindow& window, bool last) {
+  return Tell(window, "crest-close-requested", base::Value(last));
+}
+
+void ShowSpace(LinuxWindow& window, const std::string& space) {
+  Tell(window, "crest-show-space", base::Value(space));
+}
+
+bool OpenExternalLinks(LinuxWindow& window, const std::vector<std::string>& urls) {
+  base::ListValue links;
+  for (const std::string& url : urls) links.Append(url);
+  return Tell(window, "crest-open-external", base::Value(std::move(links)));
 }
 
 CrestUIConfig::CrestUIConfig() : DefaultWebUIConfig(content::kChromeUIScheme, kCrestUIHost) {}
