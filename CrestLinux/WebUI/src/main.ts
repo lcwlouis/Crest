@@ -25,6 +25,7 @@ import { FloatSurfaces } from "./surfaces.js";
 import { TabIcons } from "./icons.js";
 import type { Guid, Intent, LaunchEnvironment, PageState, TabState } from "../generated/crest_contracts.js";
 import { Model } from "./model.js";
+import { PageMenu } from "./pagemenu.js";
 import { PageStates } from "./page-states.js";
 import type { Space, Workspace } from "./model.js";
 import { InlineRename } from "./rename.js";
@@ -205,6 +206,13 @@ const commands = new Commands({
     toggleUtility: (surface) => utilities.toggleSurface(surface),
 });
 
+// The rows Crest adds to the context menu Chromium shows over a page.
+const pageMenu = new PageMenu({
+    model,
+    windowId: () => windowId,
+    send: (intent) => void dispatch(intent).catch(report),
+    report,
+});
 // The surfaces floating over the page.
 const surfaces = new FloatSurfaces();
 const findBar = new FindBar(shownPage, report, surfaces);
@@ -371,6 +379,7 @@ function render(): void {
         reload.title = loading ? "Stop" : "Reload";
     }
     showAddress(page);
+    pageMenu.follow(page);
     // The list's search field stands in the address field's place, as on the Mac.
     address.hidden = utilities.isOpen;
     sidebar.render();

@@ -1,0 +1,52 @@
+# Crest's rows in the context menu Chromium shows over a page on Linux, and
+# the engine rows Crest's flows replace, as native-host.patch does for the
+# Mac's menu in render_view_context_menu_mac_cocoa.mm.
+
+--- a/chrome/browser/ui/views/renderer_context_menu/render_view_context_menu_views.h
++++ b/chrome/browser/ui/views/renderer_context_menu/render_view_context_menu_views.h
+@@ -81,6 +81,12 @@
+   // View observer of the submenu view and widget. SubmenuViewObserver is used
+   // to observe bounds changes.
+   std::unique_ptr<SubmenuViewObserver> submenu_view_observer_;
++
++#if BUILDFLAG(IS_LINUX)
++  // Crest: the rows Crest puts in a menu over its pages, and the engine rows
++  // it runs itself.
++  std::unique_ptr<RenderViewContextMenuObserver> crest_rows_;
++#endif
+ };
+ 
+ #endif  // CHROME_BROWSER_UI_VIEWS_RENDERER_CONTEXT_MENU_RENDER_VIEW_CONTEXT_MENU_VIEWS_H_
+--- a/chrome/browser/ui/views/renderer_context_menu/render_view_context_menu_views.cc
++++ b/chrome/browser/ui/views/renderer_context_menu/render_view_context_menu_views.cc
+@@ -42,6 +42,10 @@
+ #include "ui/views/view_observer.h"
+ #include "ui/views/widget/widget.h"
+ 
++#if BUILDFLAG(IS_LINUX)
++#include "chrome/browser/ui/crest/crest_linux_ui.h"
++#endif
++
+ using content::WebContents;
+ 
+ class RenderViewContextMenuViews::SubmenuViewObserver
+@@ -414,6 +418,19 @@
+     return;
+   }
+ 
++#if BUILDFLAG(IS_LINUX)
++  // Crest's own rows go in, and the engine's rows its flows replace come out,
++  // as the Mac's menu takes them (render_view_context_menu_mac_cocoa.mm).
++  if (!crest_rows_) {
++    crest_rows_ = crest::AdaptPageMenu(*source_web_contents_, params_,
++                                       menu_model_);
++    if (crest_rows_) {
++      observers_.AddObserver(crest_rows_.get());
++      toolkit_delegate()->RebuildMenu();
++    }
++  }
++#endif
++
+   // Don't show empty menus.
+   if (menu_model().GetItemCount() == 0) {
+     return;

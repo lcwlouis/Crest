@@ -13,6 +13,8 @@
 #include "content/public/browser/web_ui_controller.h"
 #include "content/public/browser/webui_config.h"
 
+class GURL;
+
 namespace input {
 struct NativeWebKeyboardEvent;
 }
@@ -50,6 +52,19 @@ bool ClaimShortcut(const input::NativeWebKeyboardEvent& event, bool page_decline
 // Asks the WebUI to perform one of its commands (a ShortcutCommand name), as
 // Chromium's own browser window asks for the location field.
 void PerformCommand(const std::string& command);
+
+// The name of the search engine a selection on `page` (a binding key) searches
+// with, which the WebUI names for the page the window shows; empty for any
+// other page, which offers no search.
+std::u16string SelectionSearchEngine(const std::string& page);
+
+// Asks the WebUI to search for `text` from `page` in a new tab of the page's
+// Space, as the Mac's page menu does. False when no WebUI listens.
+bool SearchSelection(const std::string& page, const std::u16string& text);
+
+// Asks the WebUI for the core's clean copy of `url` (LinkToCopy), which the
+// WebUI hands back to go on the clipboard. False when no WebUI listens.
+bool CopyLink(const GURL& url);
 
 }  // namespace crest
 

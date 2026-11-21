@@ -18,6 +18,7 @@
 #include "base/scoped_observation.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/task/thread_pool.h"
 #include "base/values.h"
 #include "components/input/native_web_keyboard_event.h"
@@ -41,7 +42,10 @@
 #include "content/public/browser/webui_config_map.h"
 #include "content/public/common/url_constants.h"
 #include "services/network/public/mojom/content_security_policy.mojom.h"
+#include "ui/base/clipboard/clipboard_buffer.h"
+#include "ui/base/clipboard/scoped_clipboard_writer.h"
 #include "ui/gfx/geometry/rect.h"
+#include "url/gurl.h"
 
 namespace crest {
 
@@ -129,6 +133,19 @@ struct Shortcut {
 std::vector<Shortcut>& Shortcuts() {
   static base::NoDestructor<std::vector<Shortcut>> shortcuts;
   return *shortcuts;
+}
+
+// The search engine a selection on the page the window shows searches with,
+// as the WebUI last named it for that page.
+struct SelectionSearch {
+  // The page's binding key.
+  std::string page;
+  std::u16string engine;
+};
+
+SelectionSearch& ShownSelectionSearch() {
+  static base::NoDestructor<SelectionSearch> search;
+  return *search;
 }
 
 // --- Downloads (Linux shell) ------------------------------------------------
@@ -241,6 +258,10 @@ class CrestUIHandler final : public content::WebUIMessageHandler, public CoreHos
         "floatEvent", base::BindRepeating(&CrestUIHandler::HandleFloatEvent, base::Unretained(this)));
     web_ui()->RegisterMessageCallback(
         "setShortcuts", base::BindRepeating(&CrestUIHandler::HandleSetShortcuts, base::Unretained(this)));
+    web_ui()->RegisterMessageCallback(
+        "setSelectionSearch", base::BindRepeating(&CrestUIHandler::HandleSetSelectionSearch, base::Unretained(this)));
+    web_ui()->RegisterMessageCallback(
+        "copyLink", base::BindRepeating(&CrestUIHandler::HandleCopyLink, base::Unretained(this)));
     web_ui()->RegisterMessageCallback(
         "setOverlay", base::BindRepeating(&CrestUIHandler::HandleSetOverlay, base::Unretained(this)));
     // Downloads (Linux shell).
@@ -399,6 +420,25 @@ class CrestUIHandler final : public content::WebUIMessageHandler, public CoreHos
     Shortcuts() = std::move(shortcuts);
   }
 
+  // args: the page the window shows (empty for none) and the name of the
+  // engine a selection on it searches with.
+  void HandleSetSelectionSearch(const base::ListValue& args) {
+    if (args.size() != 2 || !args[0].is_string() || !args[1].is_string()) return;
+    const std::optional<engine::Guid> page = ParseGuid(args[0].GetString());
+    ShownSelectionSearch() = SelectionSearch{.page = page ? GuidText(*page) : std::string(),
+                                             .engine = base::UTF8ToUTF16(args[1].GetString())};
+  }
+
+  // args: the core's clean copy of an address the page's menu copies.
+  void HandleCopyLink(const base::ListValue& args) {
+    if (args.size() != 1 || !args[0].is_string()) return;
+    const GURL url(args[0].GetString());
+    if (!url.is_valid()) return;
+    // The writer puts the text on the clipboard as it goes.
+    ui::ScopedClipboardWriter writer(ui::ClipboardBuffer::kCopyPaste);
+    writer.WriteText(base::UTF8ToUTF16(url.spec()));
+  }
+
  public:
   // Hands the WebUI a key it claimed, to perform.
   bool FireShortcut(base::DictValue key) {
@@ -410,6 +450,18 @@ class CrestUIHandler final : public content::WebUIMessageHandler, public CoreHos
   bool FireCommand(const std::string& command) {
     if (!IsJavascriptAllowed()) return false;
     FireWebUIListener("crest-command", base::Value(command));
+    return true;
+  }
+
+  bool FireSearchSelection(base::DictValue search) {
+    if (!IsJavascriptAllowed()) return false;
+    FireWebUIListener("crest-search-selection", search);
+    return true;
+  }
+
+  bool FireCopyLink(const GURL& url) {
+    if (!IsJavascriptAllowed()) return false;
+    FireWebUIListener("crest-copy-link", base::Value(url.spec()));
     return true;
   }
 
@@ -508,6 +560,24 @@ bool ClaimShortcut(const input::NativeWebKeyboardEvent& event, bool page_decline
 
 void PerformCommand(const std::string& command) {
   if (g_handler) g_handler->FireCommand(command);
+}
+
+std::u16string SelectionSearchEngine(const std::string& page) {
+  const SelectionSearch& search = ShownSelectionSearch();
+  return !page.empty() && search.page == page ? search.engine : std::u16string();
+}
+
+bool SearchSelection(const std::string& page, const std::u16string& text) {
+  if (!g_handler) return false;
+  base::DictValue search;
+  // The sidebar spells ids in lower case.
+  search.Set("pageId", base::ToLowerASCII(page));
+  search.Set("text", text);
+  return g_handler->FireSearchSelection(std::move(search));
+}
+
+bool CopyLink(const GURL& url) {
+  return g_handler && url.is_valid() && g_handler->FireCopyLink(url);
 }
 
 CrestUIConfig::CrestUIConfig() : DefaultWebUIConfig(content::kChromeUIScheme, kCrestUIHost) {}
