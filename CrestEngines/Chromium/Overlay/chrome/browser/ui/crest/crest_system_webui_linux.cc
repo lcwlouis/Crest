@@ -48,7 +48,7 @@ class SystemUIHandler final : public content::WebUIMessageHandler {
     web_ui()->RegisterMessageCallback(
         "relayoutInspector", base::BindRepeating(&SystemUIHandler::HandleRelayoutInspector, base::Unretained(this)));
     web_ui()->RegisterMessageCallback(
-        "showsNotifications", base::BindRepeating(&SystemUIHandler::HandleShowsNotifications, base::Unretained(this)));
+        "isFrontWindow", base::BindRepeating(&SystemUIHandler::HandleIsFrontWindow, base::Unretained(this)));
     web_ui()->RegisterMessageCallback(
         "showNotification", base::BindRepeating(&SystemUIHandler::HandleShowNotification, base::Unretained(this)));
     web_ui()->RegisterMessageCallback(
@@ -83,23 +83,23 @@ class SystemUIHandler final : public content::WebUIMessageHandler {
   // The page listens for what the desktop tells it.
   void HandleSystemReady(const base::ListValue& args) { AllowJavascript(); }
 
-  // Whether this page draws the browser window used last, the one that
-  // shows the desktop's notifications. Every window's page hears each
-  // notification the engine posts; that one alone shows and takes it down,
-  // so each shows once.
-  bool ShowsNotifications() {
+  // Whether this page draws the browser window used last. Every window's
+  // page hears each presentation the engine makes; that one alone answers
+  // what must be answered once, such as a notification to show or a media
+  // session to follow.
+  bool IsFrontWindow() {
     LinuxWindow* window = Window();
     if (!window || window->ui_contents() != web_ui()->GetWebContents()) return false;
     const std::vector<std::string> stacked = LinuxWindow::Stacked();
     return !stacked.empty() && stacked.front() == window->id();
   }
 
-  // args: callback id. Answers whether this page's window shows the
-  // notifications.
-  void HandleShowsNotifications(const base::ListValue& args) {
+  // args: callback id. Answers whether this page draws the browser window
+  // used last.
+  void HandleIsFrontWindow(const base::ListValue& args) {
     AllowJavascript();
     if (args.size() != 1) return;
-    ResolveJavascriptCallback(args[0], base::Value(ShowsNotifications()));
+    ResolveJavascriptCallback(args[0], base::Value(IsFrontWindow()));
   }
 
   // args: callback id, a key the page names the notification by, its title,
@@ -114,7 +114,7 @@ class SystemUIHandler final : public content::WebUIMessageHandler {
       RejectJavascriptCallback(args[0], base::Value("showNotification takes a key, a title, a site, a body and silence."));
       return;
     }
-    if (!ShowsNotifications()) {
+    if (!IsFrontWindow()) {
       ResolveJavascriptCallback(args[0], base::Value("elsewhere"));
       return;
     }
@@ -135,7 +135,7 @@ class SystemUIHandler final : public content::WebUIMessageHandler {
 
   // args: the key of a notification the page showed, which goes.
   void HandleCloseNotification(const base::ListValue& args) {
-    if (args.size() != 1 || !args[0].is_string() || !ShowsNotifications()) return;
+    if (args.size() != 1 || !args[0].is_string() || !IsFrontWindow()) return;
     DesktopNotifications::Get().Close(args[0].GetString());
   }
 

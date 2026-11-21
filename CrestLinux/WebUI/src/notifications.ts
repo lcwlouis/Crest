@@ -16,12 +16,12 @@
 
 import {
     closeNotification,
+    isFrontWindow,
     listenToNotificationClicks,
     pageRequest,
     presentThisWindow,
     query,
     showNotification,
-    showsNotifications,
 } from "./bridge.js";
 import type {
     EnginePresentation,
@@ -96,7 +96,7 @@ export class WebNotifications {
      */
     private async show(key: string): Promise<void> {
         const entry = this.posted.get(key);
-        if (!entry || !(await showsNotifications())) return;
+        if (!entry || !(await isFrontWindow())) return;
         const allowed = await this.allows(entry);
         // Withdrawn or posted again while the core answered.
         if (this.posted.get(key) !== entry) return;

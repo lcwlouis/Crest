@@ -527,11 +527,12 @@ export interface NotificationDelivery {
 }
 
 /**
- * Whether this page's window shows the desktop's notifications: the browser
- * window used last does, so each notification shows once.
+ * Whether this page draws the browser window used last. Every window hears
+ * each of the engine's presentations; that one alone answers what must be
+ * answered once, such as a notification to show or a media session to follow.
  */
-export function showsNotifications(): Promise<boolean> {
-    return send<boolean>("showsNotifications");
+export function isFrontWindow(): Promise<boolean> {
+    return send<boolean>("isFrontWindow");
 }
 
 /**
