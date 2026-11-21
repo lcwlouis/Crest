@@ -1,7 +1,7 @@
 // Settings' pages, as the Mac's BrowserSettingsDestination lists them: each
 // page's name, title, subtitle, the words a search finds it by, its symbol
 // and the tincture its sidebar tile wears. Pages Linux does not have yet
-// (Engines, Sync, Extensions, Feature Flags, Agents) are left out.
+// (Engines, Sync, Feature Flags, Agents) are left out.
 
 import type { EngineCapability, PaletteSettingsPage, Tincture } from "../generated/crest_contracts.js";
 
@@ -108,6 +108,16 @@ export const SettingsDestination = {
         "key",
         "IronPatina",
     ),
+    extensions: destination(
+        "extensions",
+        "Extensions",
+        "Space extensions and permissions",
+        "extensions permissions Chromium Chrome Web Store install copies Spaces",
+        "puzzlepiece.extension",
+        "MeadowMoss",
+        "Extensions",
+        "Extensions",
+    ),
     advanced: destination("advanced", "Advanced", "Import, export, and runtime", "import export backup portability data records", "switch.2", "StormGunmetal"),
     about: destination(
         "about",
@@ -130,6 +140,7 @@ export const primaryDestinations: readonly SettingsDestination[] = [
     SettingsDestination.privacy,
     SettingsDestination.adBlocking,
     SettingsDestination.passwords,
+    SettingsDestination.extensions,
 ];
 
 /** The sidebar's last group, below the Spaces. */

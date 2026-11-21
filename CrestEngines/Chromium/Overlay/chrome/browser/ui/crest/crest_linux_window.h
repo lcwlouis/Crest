@@ -20,6 +20,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "base/memory/raw_ptr.h"
@@ -35,7 +36,10 @@
 class Profile;
 namespace base { class FilePath; }
 namespace content { class WebContents; }
-namespace views { class WebView; }
+namespace views {
+class View;
+class WebView;
+}  // namespace views
 
 namespace crest {
 
@@ -174,6 +178,16 @@ class LinuxWindow final : public views::WidgetObserver {
   // gives it the keyboard.
   void SetFloat(const gfx::Rect& bounds, bool focus);
 
+  // The page in use, among those the window shows; empty when none is.
+  const std::string& focused_page() const { return focused_page_; }
+  // Hosts `view`, an extension's document the shell shows in the window
+  // (crest_extensions_linux): an action's popup over everything, or a side
+  // panel, which stacks as a page does, under the WebUI while it is raised.
+  // The view places itself; the window owns it from now on.
+  views::View* AddExtensionView(std::unique_ptr<views::View> view, bool popup);
+  // Destroys a view AddExtensionView added.
+  void RemoveExtensionView(views::View* view);
+
  private:
   LinuxWindow(Profile* profile, const Kind& kind, std::string id);
 
@@ -290,6 +304,8 @@ class LinuxWindow final : public views::WidgetObserver {
   std::vector<Slot> slots_;
   // The page in use, among those shown.
   std::string focused_page_;
+  // The extensions' views the window hosts, and whether each is a popup.
+  std::vector<std::pair<raw_ptr<views::View>, bool>> extension_views_;
   // Where ShowPage places its page, and whether the window shows that one
   // page rather than a layout the WebUI gave.
   gfx::Rect single_bounds_;

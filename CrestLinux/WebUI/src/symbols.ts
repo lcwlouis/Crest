@@ -165,6 +165,15 @@ Object.assign(paths, {
     "key.horizontal": '<circle cx="8" cy="12" r="4.5"/><path d="M12.5 12H21v3M18 12v2.5"/>',
     "wand.and.stars": '<path d="M4 20L15 9"/><path d="M14 4v3M12.5 5.5h3M19 9v3M17.5 10.5h3M18 3v2M17 4h2"/>',
     "person.badge.key": '<circle cx="10" cy="7.5" r="3.5"/><path d="M3 20a7 7 0 0 1 10-6.3"/><circle cx="17" cy="15" r="2.5"/><path d="M17 17.5V21M17 19.5h2"/>',
+    // Extensions: their controls, side panels and the install review.
+    "puzzlepiece.extension":
+        '<path d="M5 8h3.5a2 2 0 1 1 4 0H16v3.5a2 2 0 1 1 0 4V19h-3.5a2 2 0 1 0-4 0H5v-3.5a2 2 0 1 0 0-4z"/>',
+    "puzzlepiece.extension.fill":
+        '<path d="M5 8h3.5a2 2 0 1 1 4 0H16v3.5a2 2 0 1 1 0 4V19h-3.5a2 2 0 1 0-4 0H5v-3.5a2 2 0 1 0 0-4z" fill="currentColor"/>',
+    "sidebar.right": '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/>',
+    "checkmark.seal.fill":
+        '<path d="M12 2.5l2.4 1.8 3-.2.9 2.9 2.4 1.8-1 2.8 1 2.8-2.4 1.8-.9 2.9-3-.2L12 21.5l-2.4-1.8-3 .2-.9-2.9-2.4-1.8 1-2.8-1-2.8 2.4-1.8.9-2.9 3 .2z" fill="currentColor"/><path class="symbol-knockout" d="M8.5 12l2.5 2.5 4.5-5"/>',
+    "plus.app": '<rect x="3" y="3" width="18" height="18" rx="4"/><path d="M12 8v8M8 12h8"/>',
 });
 // Now Playing's glyphs (now-playing).
 Object.assign(paths, {
@@ -182,6 +191,10 @@ for (const name of [
     "gearshape", "briefcase", "person", "house", "graduationcap", "paintbrush", "gamecontroller", "sun.max", "sun.horizon", "moon", "star",
     "bolt", "flame", "drop", "key", "crown", "leaf", "mountain.2", "heart", "pin", "bookmark", "rectangle.stack",
 ]) {
+    paths[`${name}.fill`] = paths[name]!;
+}
+// The extensions' filled glyphs draw as their outlines.
+for (const name of ["pin.slash", "hand.raised"]) {
     paths[`${name}.fill`] = paths[name]!;
 }
 

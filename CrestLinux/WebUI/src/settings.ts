@@ -30,8 +30,8 @@ import { sfSymbol } from "./symbols.js";
 
 // MARK: - Types
 
-/** The Space page's own pages (BrowserSettingsSpacePage.Section); Extensions waits for Linux. */
-export type SpaceSection = "appearance" | "browsing" | "privacy" | "passwords";
+/** The Space page's own pages (BrowserSettingsSpacePage.Section). */
+export type SpaceSection = "appearance" | "browsing" | "privacy" | "passwords" | "extensions";
 
 export type SettingsRoute =
     | { readonly kind: "page"; readonly name: string }
@@ -77,6 +77,7 @@ const spaceSections: readonly { readonly section: SpaceSection; readonly title: 
     { section: "browsing", title: "Browsing" },
     { section: "privacy", title: "Privacy" },
     { section: "passwords", title: "Passwords" },
+    { section: "extensions", title: "Extensions" },
 ];
 
 /** Whether `key` is Settings' own: Ctrl+, as the Mac's Command-comma. */

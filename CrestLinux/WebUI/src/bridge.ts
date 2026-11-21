@@ -610,3 +610,73 @@ export function listenToNotificationClicks(onClick: (key: string) => void): void
     listen("crest-notification-clicked", (key) => onClick(key as string));
     chrome.send("systemReady");
 }
+
+// --- Extensions (Linux shell) -------------------------------------------------
+// An extension's popup and side panel are views of the window the browser
+// process hosts (crest_extensions_linux), placed where this page says, as the
+// Mac's shell hosts them beside the page's view (CrestChromiumHost.h).
+
+/** A control's place in this page, in CSS pixels, which a popup hangs from. */
+export interface ExtensionAnchor {
+    readonly x: number;
+    readonly y: number;
+    readonly width: number;
+    readonly height: number;
+}
+
+function anchorArgs(anchor: ExtensionAnchor): number[] {
+    return [Math.round(anchor.x), Math.round(anchor.y), Math.round(anchor.width), Math.round(anchor.height)];
+}
+
+/**
+ * Runs `extensionId`'s action on the page `pageId`, or with no page, in the
+ * Space whose profile is `profileId`, from the control at `anchor`. Answers
+ * whether it ran.
+ */
+export function runExtension(extensionId: string, pageId: Guid | null, profileId: Guid | null, anchor: ExtensionAnchor): Promise<boolean> {
+    return send("runExtension", extensionId, pageId ?? "", profileId ?? "", ...anchorArgs(anchor));
+}
+
+/**
+ * Tells the window where each extension's own control is, for a popup the
+ * extension opens itself; the entry with an empty id is where any other
+ * extension's opens.
+ */
+export function setExtensionAnchors(anchors: ReadonlyMap<string, ExtensionAnchor>): void {
+    chrome.send("setExtensionAnchors", [...anchors].map(([extensionId, anchor]) => [extensionId, ...anchorArgs(anchor)]));
+}
+
+/** Makes `extensionId`'s side panel for the page `pageId`'s tab, hidden until placed. Answers whether it could. */
+export function openSidePanel(extensionId: string, pageId: Guid): Promise<boolean> {
+    return send("openSidePanel", extensionId, pageId);
+}
+
+/** Places the page `pageId`'s side panel, in CSS pixels; an empty rectangle hides it. */
+export function placeSidePanel(pageId: Guid, place: ExtensionAnchor): void {
+    chrome.send("placeSidePanel", [pageId, ...anchorArgs(place)]);
+}
+
+/** Lets the page `pageId`'s side panel go. */
+export function closeSidePanel(pageId: Guid): void {
+    chrome.send("closeSidePanel", [pageId]);
+}
+
+/** What the window tells this page about its extensions' surfaces. */
+export interface ExtensionEvents {
+    /** `extensionId`'s popup closed on its own. */
+    popupClosed(extensionId: string): void;
+    /** The page `pageId`'s side panel for `extensionId` went away on its own. */
+    sidePanelClosed(pageId: Guid, extensionId: string): void;
+    /** A key ran `extensionId`'s action, which runs as a click on its control. */
+    actionKey(extensionId: string): void;
+}
+
+/** Hears what the window tells this page about its extensions' surfaces. */
+export function listenToExtensions(events: ExtensionEvents): void {
+    listen("crest-extension-popup-closed", (extensionId) => events.popupClosed(extensionId as string));
+    listen("crest-side-panel-closed", (closed) => {
+        const { pageId, extensionId } = closed as { pageId: string; extensionId: string };
+        events.sidePanelClosed(pageId.toLowerCase(), extensionId);
+    });
+    listen("crest-extension-action", (extensionId) => events.actionKey(extensionId as string));
+}

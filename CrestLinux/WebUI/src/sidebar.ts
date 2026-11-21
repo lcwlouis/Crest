@@ -41,6 +41,8 @@ export interface SidebarHost {
     readonly rename: InlineRename;
     /** The archive, history and downloads lists, which take the tabs' place while one is open. */
     readonly utilities: Utilities;
+    /** The Space's pinned extensions, drawn above its pinned tabs (extension-strip.ts). */
+    readonly extensionStrip?: (space: Space) => HTMLElement | null;
 }
 
 export function element<K extends keyof HTMLElementTagNameMap>(
@@ -158,7 +160,8 @@ export class Sidebar {
         tabs.append(this.seam(workspace, space));
         tabs.append(this.newTabRow());
         this.appendList(tabs, space, "Current", null);
-        this.page.replaceChildren(...(pinned ? [pinned] : []), header, tabs);
+        const strip = this.host.extensionStrip?.(space) ?? null;
+        this.page.replaceChildren(...(strip ? [strip] : []), ...(pinned ? [pinned] : []), header, tabs);
         tabs.scrollTop = scroll;
     }
 
