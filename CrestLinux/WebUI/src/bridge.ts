@@ -516,3 +516,40 @@ export function readImportPasswords(safeStorage: string, stores: readonly Passwo
 export function relayoutInspector(pageId: Guid): void {
     chrome.send("relayoutInspector", [pageId]);
 }
+
+/** What the desktop shows of a web notification. */
+export interface NotificationDelivery {
+    readonly title: string;
+    /** The site that posted it. */
+    readonly site: string;
+    readonly body: string;
+    readonly silent: boolean;
+}
+
+/**
+ * Whether this page's window shows the desktop's notifications: the browser
+ * window used last does, so each notification shows once.
+ */
+export function showsNotifications(): Promise<boolean> {
+    return send<boolean>("showsNotifications");
+}
+
+/**
+ * Shows `delivery` through the desktop's notifications under `key`, in place
+ * of what shows under it. Answers whether the desktop took it, or that
+ * another window shows the notifications.
+ */
+export function showNotification(key: string, delivery: NotificationDelivery): Promise<"shown" | "declined" | "elsewhere"> {
+    return send("showNotification", key, delivery.title, delivery.site, delivery.body, delivery.silent);
+}
+
+/** Takes down the notification shown under `key`. */
+export function closeNotification(key: string): void {
+    chrome.send("closeNotification", [key]);
+}
+
+/** Hears the person click a notification this page's window showed, by its key. */
+export function listenToNotificationClicks(onClick: (key: string) => void): void {
+    listen("crest-notification-clicked", (key) => onClick(key as string));
+    chrome.send("systemReady");
+}

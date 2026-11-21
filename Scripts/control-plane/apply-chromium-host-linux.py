@@ -61,7 +61,8 @@ def derive(directory, split):
     # On a source the privacy patches already changed, these give the same
     # result as the Mac order, where the host's patch comes first.
     return [directory / "native-host-linux.patch", directory / "content-filter-linux.patch",
-            ENGINE / "Linux/Patches/crest-host-linux-deps.patch"]
+            ENGINE / "Linux/Patches/crest-host-linux-deps.patch",
+            ENGINE / "Linux/Patches/crest-host-linux-notifications.patch"]
 
 
 def run(patches, source, *flags):

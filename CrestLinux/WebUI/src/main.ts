@@ -30,6 +30,7 @@ import { Model } from "./model.js";
 import { Onboarding } from "./onboarding.js";
 import { CredentialPrompts } from "./credential-prompts.js";
 import { PageStates } from "./page-states.js";
+import { WebNotifications } from "./notifications.js";
 import type { Space, Workspace } from "./model.js";
 import { InlineRename } from "./rename.js";
 import { element, Sidebar, symbol } from "./sidebar.js";
@@ -272,6 +273,12 @@ const surfaces = new FloatSurfaces();
 const findBar = new FindBar(shownPage, report, surfaces);
 const prompts = new Prompts({ model, page: shownPage }, surfaces);
 const pageStates = new PageStates({ model, tab: shownTab, page: shownPage, report }, surfaces);
+const webNotifications = new WebNotifications({
+    model,
+    windowId: () => windows.windowId,
+    send: (intent) => void dispatch(intent).catch(report),
+    report,
+});
 const credentialPrompts = new CredentialPrompts({ model, page: shownPage, zoom: (pageId) => commands.zoomOf(pageId) }, surfaces);
 listenToFloat(
     (event) => {
@@ -543,6 +550,7 @@ async function start(): Promise<void> {
                 if (presentation.kind === "InspectorLayoutChanged") relayoutInspector(presentation.value.pageId);
                 pageStates.present(presentation);
                 credentialPrompts.present(presentation);
+                webNotifications.present(presentation);
             } catch (error) {
                 console.error(error);
             }
