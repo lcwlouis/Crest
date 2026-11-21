@@ -33,6 +33,8 @@ import { SidebarMenus } from "./sidebar-menus.js";
 import { SpaceActions } from "./space-actions.js";
 import { SpaceEditor } from "./space-editor.js";
 import { DownloadDestinations } from "./download-destinations.js";
+import { SiteControls } from "./site-controls.js";
+import { SitePermissionSessions } from "./site-permissions.js";
 import { Utilities } from "./utilities.js";
 import { applyDeviceAppearance } from "./device-appearance.js";
 import { Preferences } from "./preferences.js";
@@ -40,6 +42,8 @@ import { isSettingsKey, Settings, settingsShortcut } from "./settings.js";
 import { settingsPages, spaceSectionPages } from "./settings-pages.js";
 
 const model = new Model();
+/** Each page's side of the site permission choices: its engine and its blocked pop-ups. */
+const sitePermissions = new SitePermissionSessions(model);
 const preferences = new Preferences();
 applyDeviceAppearance();
 const icons = new TabIcons(() => render());
@@ -124,10 +128,14 @@ back.innerHTML = symbol(icon.back);
 forward.innerHTML = symbol(icon.forward);
 navigation.append(back, forward, reload);
 // The address field shows where the page is; clicking it opens the command
-// bar over the shown tab, as the Mac's address field grows into it.
-const address = element("button", "address");
+// bar over the shown tab, as the Mac's address field grows into it. Its
+// trailing slot holds Site Controls while the page shows a site.
+const addressField = element("div", "address");
+const address = element("button", "address-text");
 address.addEventListener("click", () => palette.open("current", address.dataset.url ?? ""));
-root.append(navigation, address);
+const siteControls = new SiteControls({ model, sessions: sitePermissions, page: shownPage, report });
+addressField.append(address, siteControls.trigger);
+root.append(navigation, addressField);
 const rename = new InlineRename(() => render());
 const sendChecked = (intent: Intent): Promise<boolean> =>
     dispatch(intent).then(
@@ -372,7 +380,7 @@ function render(): void {
     }
     showAddress(page);
     // The list's search field stands in the address field's place, as on the Mac.
-    address.hidden = utilities.isOpen;
+    addressField.hidden = utilities.isOpen;
     sidebar.render();
 }
 
@@ -383,7 +391,7 @@ function render(): void {
 function showAddress(page: PageState | undefined): void {
     const url = page?.live.address ?? page?.live.url ?? null;
     address.dataset.url = url ?? "";
-    address.classList.toggle("loading", page?.live.isLoading ?? false);
+    addressField.classList.toggle("loading", page?.live.isLoading ?? false);
     let host = "";
     try {
         host = url ? new URL(url).host || url : "";
@@ -391,7 +399,7 @@ function showAddress(page: PageState | undefined): void {
         host = url ?? "";
     }
     address.textContent = host.replace(/^www\./, "") || "Search or enter address";
-    address.classList.toggle("empty", host.length === 0);
+    addressField.classList.toggle("empty", host.length === 0);
     address.title = url ?? "";
 }
 
@@ -491,6 +499,8 @@ async function start(): Promise<void> {
             followShownPage();
             findBar.follow();
             prompts.apply(changes);
+            sitePermissions.apply(changes);
+            siteControls.apply(changes);
             pageStates.apply(changes);
             downloadDestinations.apply(changes);
             spaces.apply(changes);
@@ -502,6 +512,7 @@ async function start(): Promise<void> {
                 const presentation = decodePresentation(bytes);
                 if (presentation.kind === "FindFinished") findBar.finished(presentation.value);
                 pageStates.present(presentation);
+                sitePermissions.present(presentation);
             } catch (error) {
                 console.error(error);
             }

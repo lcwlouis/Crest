@@ -1589,7 +1589,8 @@ bool EnginePage::Answer(const engine::ShowBlockedPopups&) {
   if (!blocker || !blocker->GetBlockedPopupsCount()) {
     return false;
   }
-  blocker->ShowAllBlockedPopups();
+  // Each opens as a window this page opened, as its own window.open would.
+  binding_->OpenBlockedPopups(*this, [blocker] { blocker->ShowAllBlockedPopups(); });
   presented_blocked_popups_ = 0;
   return true;
 }

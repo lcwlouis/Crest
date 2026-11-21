@@ -145,6 +145,37 @@ for (const name of [
     paths[`${name}.fill`] = paths[name]!;
 }
 
+// The glyphs Site Controls show: its trigger, a page's connection, the site
+// permissions (SitePermission.symbol), a blocked pop-up's status, the
+// permission choices and the site data actions.
+Object.assign(paths, {
+    "slider.horizontal.3":
+        '<path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/>',
+    "lock.fill": '<rect x="5" y="11" width="14" height="10" rx="2" fill="currentColor"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+    "lock.open.fill": '<rect x="5" y="11" width="14" height="10" rx="2" fill="currentColor"/><path d="M8 11V7a4 4 0 0 1 7.6-1.8"/>',
+    "lock.trianglebadge.exclamationmark.fill":
+        '<rect x="3" y="11" width="11" height="10" rx="2" fill="currentColor"/><path d="M5.5 11V7.5a3 3 0 0 1 6 0V11"/><path d="M18 11l4.5 9h-9z"/><path d="M18 14.5v2.5M18 18.8v.01"/>',
+    "exclamationmark.lock.fill":
+        '<rect x="5" y="11" width="14" height="10" rx="2" fill="currentColor"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/><path class="symbol-knockout" d="M12 13.5v3.5M12 19v.01"/>',
+    "exclamationmark.octagon.fill":
+        '<path d="M8 2.5h8l5.5 5.5v8L16 21.5H8L2.5 16V8z" fill="currentColor"/><path class="symbol-knockout" d="M12 7.5v5.5M12 16.3v.01"/>',
+    video: '<rect x="2" y="6" width="14" height="12" rx="2"/><path d="M16 10l6-3v10l-6-3"/>',
+    mic: '<rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v4"/>',
+    "video.and.waveform": '<rect x="2" y="6" width="12" height="12" rx="2"/><path d="M14 10l4-2v8l-4-2"/><path d="M21 9v6"/>',
+    location: '<path d="M3 11l18-8-8 18-2-8z"/>',
+    bell: '<path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4z"/><path d="M10 21h4"/>',
+    "macwindow.on.rectangle": '<rect x="7" y="3" width="14" height="11" rx="2"/><path d="M7 7h14"/><path d="M3 9v10a2 2 0 0 0 2 2h11"/>',
+    "macwindow.badge.plus": '<rect x="2" y="4" width="15" height="13" rx="2"/><path d="M2 8h15"/><path d="M19 14v7M15.5 17.5h7"/>',
+    "arrow.up.forward.app": '<rect x="3" y="3" width="18" height="18" rx="4"/><path d="M10 14l6-6"/><path d="M10 8h6v6"/>',
+    "rectangle.inset.filled.and.person.filled":
+        '<rect x="2" y="4" width="20" height="14" rx="2"/><circle cx="12" cy="10" r="2.5"/><path d="M8 16a4 4 0 0 1 8 0"/>',
+    "questionmark.circle": '<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6"/><path d="M12 17v.01"/>',
+    nosign: '<circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/>',
+    "person.crop.circle.badge.xmark":
+        '<path d="M20.5 10.5A9 9 0 1 0 12 21"/><circle cx="12" cy="9.5" r="3"/><path d="M6.5 18a6 6 0 0 1 7-3"/><path d="M16.5 16.5l5 5M21.5 16.5l-5 5"/>',
+    "chevron.down": '<path d="M6 9l6 6 6-6"/>',
+});
+
 /** The paths of the SF Symbol `name` on a 24-point grid, or none when it has no glyph here. */
 export function sfSymbolPaths(name: string): string {
     return paths[name] ?? "";
