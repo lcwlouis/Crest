@@ -16,6 +16,7 @@
 
 class Browser;
 class RenderViewContextMenuObserver;
+namespace base { class CommandLine; class FilePath; }
 namespace content { struct ContextMenuParams; class WebContents; }
 namespace input { struct NativeWebKeyboardEvent; }
 namespace ui { class SimpleMenuModel; }
@@ -104,6 +105,13 @@ void WindowAdopted(const std::string& window);
 // of the window in use asks the core where each goes, and opens it there or
 // in a Quick Window. False before a WebUI can take them.
 bool OpenExternalURLs(const std::vector<std::string>& urls);
+
+// A second launch's command line, which Chromium's ProcessSingleton hands the
+// running browser: its links and files, relative to `current_directory`, open
+// through the core as links from another app do, and a launch with none
+// brings the window in use forward. True when Crest took it, so Chromium
+// opens no window of its own.
+bool OpenSecondLaunch(const base::CommandLine& command_line, const base::FilePath& current_directory);
 
 }  // namespace crest
 

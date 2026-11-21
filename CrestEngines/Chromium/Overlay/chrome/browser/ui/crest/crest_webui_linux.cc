@@ -43,6 +43,7 @@
 #include "chrome/browser/ui/crest/crest_credentials_linux.h"
 #include "chrome/browser/ui/crest/crest_engine_binding.h"
 #include "chrome/browser/ui/crest/crest_engine_page.h"
+#include "chrome/browser/ui/crest/crest_engine_profiles.h"
 #include "chrome/browser/ui/crest/crest_extensions_linux.h"
 #include "chrome/browser/ui/crest/crest_linux_ui.h"
 #include "chrome/browser/ui/crest/crest_linux_window.h"
@@ -534,6 +535,22 @@ class CrestUIHandler final : public content::WebUIMessageHandler, public CoreHos
         base::BindRepeating(&CrestUIHandler::HandlePasswordImportCandidates, base::Unretained(this)));
     web_ui()->RegisterMessageCallback(
         "readImportPasswords", base::BindRepeating(&CrestUIHandler::HandleReadImportPasswords, base::Unretained(this)));
+    web_ui()->RegisterMessageCallback(
+        "releasePrivateProfiles",
+        base::BindRepeating(&CrestUIHandler::HandleReleasePrivateProfiles, base::Unretained(this)));
+  }
+
+  // args: the profile ids of a closed private window's Spaces. The engine
+  // lets each go, closing its pages and destroying the off-the-record
+  // profile, as the Mac's private window releases its profiles when it
+  // closes. A profile that keeps data on disk is never released here.
+  void HandleReleasePrivateProfiles(const base::ListValue& args) {
+    EngineBinding& binding = EngineBinding::Get();
+    for (const base::Value& value : args) {
+      const std::string id = WindowKey(value);
+      Profile* profile = id.empty() ? nullptr : binding.Profiles().Find(id);
+      if (profile && profile->IsOffTheRecord()) binding.ReleaseProfile(id);
+    }
   }
 
   void OnJavascriptDisallowed() override { observation_.Reset(); }
@@ -1192,11 +1209,53 @@ CrestUIHandler* HandlerForPage(const std::string& page) {
   return in_use;
 }
 
+// Tells the WebUI the modifiers still held once a page's view saw one of them
+// released, which the WebUI cannot see while the page has the keyboard, as
+// the Mac's switcher watches flagsChanged.
+void ReportModifierRelease(CrestUIHandler& handler, const input::NativeWebKeyboardEvent& event) {
+  int modifiers = event.GetModifiers();
+  switch (event.windows_key_code) {
+    case ui::VKEY_CONTROL:
+    case ui::VKEY_LCONTROL:
+    case ui::VKEY_RCONTROL:
+      modifiers &= ~blink::WebInputEvent::kControlKey;
+      break;
+    case ui::VKEY_SHIFT:
+    case ui::VKEY_LSHIFT:
+    case ui::VKEY_RSHIFT:
+      modifiers &= ~blink::WebInputEvent::kShiftKey;
+      break;
+    case ui::VKEY_MENU:
+    case ui::VKEY_LMENU:
+    case ui::VKEY_RMENU:
+      modifiers &= ~blink::WebInputEvent::kAltKey;
+      break;
+    case ui::VKEY_LWIN:
+    case ui::VKEY_RWIN:
+      modifiers &= ~blink::WebInputEvent::kMetaKey;
+      break;
+    default:
+      return;
+  }
+  base::DictValue held;
+  held.Set("ctrlKey", (modifiers & blink::WebInputEvent::kControlKey) != 0);
+  held.Set("altKey", (modifiers & blink::WebInputEvent::kAltKey) != 0);
+  held.Set("metaKey", (modifiers & blink::WebInputEvent::kMetaKey) != 0);
+  held.Set("shiftKey", (modifiers & blink::WebInputEvent::kShiftKey) != 0);
+  handler.Fire("crest-modifiers", base::Value(std::move(held)));
+}
+
 }  // namespace
 
 bool ClaimShortcut(LinuxWindow& window, const input::NativeWebKeyboardEvent& event, bool page_declined) {
   CrestUIHandler* handler = MainHandler(window);
-  if (!handler || event.GetType() != input::NativeWebKeyboardEvent::Type::kRawKeyDown) return false;
+  if (!handler) return false;
+  if (event.GetType() == input::NativeWebKeyboardEvent::Type::kKeyUp) {
+    // Heard once, before the page; a key-up is never Crest's to take.
+    if (!page_declined) ReportModifierRelease(*handler, event);
+    return false;
+  }
+  if (event.GetType() != input::NativeWebKeyboardEvent::Type::kRawKeyDown) return false;
   const int modifiers = event.GetModifiers();
   const bool ctrl = modifiers & blink::WebInputEvent::kControlKey;
   const bool alt = modifiers & blink::WebInputEvent::kAltKey;

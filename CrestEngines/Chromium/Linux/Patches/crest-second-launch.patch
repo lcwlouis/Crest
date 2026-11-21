@@ -1,0 +1,30 @@
+# A second launch hands its command line to the running browser through
+# Chromium's ProcessSingleton. Crest's Linux host opens its links and files
+# where the core routes them, as the Mac host takes macOS's open requests.
+
+--- a/chrome/browser/ui/startup/startup_browser_creator.cc
++++ b/chrome/browser/ui/startup/startup_browser_creator.cc
+@@ -39,6 +39,9 @@
+ #if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
+ #include "chrome/browser/ui/crest/crest_chrome_hooks.h"
+ #endif
++#if BUILDFLAG(IS_LINUX)
++#include "chrome/browser/ui/crest/crest_linux_ui.h"
++#endif
+ #include "chrome/browser/app_mode/app_mode_utils.h"
+ #include "chrome/browser/apps/app_service/app_service_proxy.h"
+ #include "chrome/browser/apps/app_service/app_service_proxy_factory.h"
+@@ -1593,6 +1596,13 @@
+     const base::CommandLine& command_line,
+     const base::FilePath& cur_dir,
+     const StartupProfilePathInfo& profile_path_info) {
++#if BUILDFLAG(IS_LINUX)
++  // Crest opens a second launch's links and files where its core routes
++  // them, in its own windows.
++  if (crest::OpenSecondLaunch(command_line, cur_dir)) {
++    return;
++  }
++#endif
+   if (profile_path_info.mode == StartupProfileMode::kError) {
+     return;
+   }

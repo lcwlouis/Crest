@@ -46,6 +46,9 @@ import { SiteControls } from "./site-controls.js";
 import { SitePermissionSessions } from "./site-permissions.js";
 import { PageCards } from "./page-cards.js";
 import { Peek } from "./peek.js";
+import { blankWindowSpaceId, openBlankWorkspace } from "./blank-window.js";
+import { drawsPrivateWindow, openPrivateWorkspace, privateBrowsingNotice } from "./private-window.js";
+import { RecentTabSwitcher } from "./recent-tabs.js";
 import { Utilities } from "./utilities.js";
 import { Windows } from "./windows.js";
 import { applyDeviceAppearance } from "./device-appearance.js";
@@ -87,7 +90,13 @@ function say(text: string): void {
 
 /** Opens the session the core keeps, or on a first launch the core's own first session. */
 async function openSession(): Promise<Guid> {
-    const open = model.workspace;
+    // The private window draws the private workspace instead.
+    if (drawsPrivateWindow) return openPrivateWorkspace(model);
+    // The blank window draws a workspace that borrows the Space it opened for.
+    if (blankWindowSpaceId) return openBlankWorkspace(model, blankWindowSpaceId);
+    // Another window may hold only the private workspace open: this one opens the person's own.
+    const persistent = (): Workspace | undefined => [...model.workspaces.values()].find((workspace) => workspace.kind === "Persistent");
+    const open = persistent();
     if (open) return open.id;
     try {
         await dispatch({ kind: "OpenWorkspace", value: { kind: "Persistent", seed: null } });
@@ -104,7 +113,7 @@ async function openSession(): Promise<Guid> {
         await dispatch({ kind: "OpenWorkspace", value: { kind: "Persistent", seed: null } });
     }
     // Read again: the dispatches above changed the model.
-    const opened: Workspace | undefined = model.workspaces.values().next().value;
+    const opened = persistent();
     if (!opened) throw new Error("The core opened no workspace.");
     return opened.id;
 }
@@ -302,6 +311,13 @@ const commands = new Commands({
         close: () => peek.close(),
     },
     windows,
+    recentTabs: new RecentTabSwitcher({
+        icons,
+        preferences,
+        windowId: () => windows.windowId,
+        space: shownSpace,
+        send: (intent) => void dispatch(intent).catch(report),
+    }),
 });
 
 // The rows Crest adds to the context menu Chromium shows over a page.
@@ -388,6 +404,8 @@ const startMark = element("div", "start-mark");
 startMark.innerHTML =
     '<svg viewBox="0 0 64 64" aria-hidden="true"><path d="M32 4l24 9v17c0 15-10 26-24 30C18 56 8 45 8 30V13z" fill="var(--space-tint)"/><path d="M32 16l4 9 9 1-7 6 2 9-8-5-8 5 2-9-7-6 9-1z" fill="white" opacity="0.9"/></svg>';
 startPage.append(startMark, element("h1", "start-title", "Start Page"));
+// A private session says what it is not keeping.
+if (drawsPrivateWindow) startPage.append(privateBrowsingNotice());
 const startBar = element("div", "start-bar");
 startPage.append(startBar);
 startPage.hidden = true;

@@ -26,6 +26,7 @@ import {
     setWindowTitle,
     stackedWindows,
 } from "./bridge.js";
+import { CloseGate } from "./close-gate.js";
 import { foregroundTone, spaceIcon } from "./crest.js";
 import { applyDeviceAppearance } from "./device-appearance.js";
 import { Menu } from "./menu.js";
@@ -54,6 +55,8 @@ class QuickWindow {
     /** Whether the page moved to a tab or closed itself, which leaves nothing to archive. */
     private settled = false;
     private closing = false;
+    /** Asks the core whether the window's page may go before the person's close. */
+    private readonly closeGate = new CloseGate();
     /** Whether the window has read the core and chosen its page. */
     private started = false;
     private archiveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -80,7 +83,7 @@ class QuickWindow {
             window.addEventListener(event, () => this.recordActivity(), { passive: true });
         }
         listenToWindow({
-            closeRequested: () => void this.close(true),
+            closeRequested: () => void this.closeAsked(),
             activeChanged: (active) => {
                 if (active) this.recordActivity();
             },
@@ -143,6 +146,7 @@ class QuickWindow {
 
     private follow(changes: readonly Change[]): void {
         this.model.apply(changes);
+        this.closeGate.apply(changes);
         for (const change of changes) {
             if (change.kind === "TransientPageClosed" && change.value.pageId === this.pageId) {
                 // The page closed itself, which closes the window.
@@ -166,8 +170,11 @@ class QuickWindow {
         this.render();
     }
 
+    /** The workspace that holds the window's Space: the private one for a private window's Quick Window. */
     private workspace(): Workspace | undefined {
-        return this.model.workspace;
+        const spaceId = this.spaceId;
+        const holding = spaceId ? [...this.model.workspaces.values()].find((workspace) => workspace.spaces.has(spaceId)) : undefined;
+        return holding ?? this.model.workspace;
     }
 
     private space(): Space | undefined {
@@ -436,6 +443,17 @@ class QuickWindow {
         if (adopts) this.pageId = null;
         presentWindow(target);
         await this.close(false);
+    }
+
+    /**
+     * The person closed the window: the core asks its page whether it may go
+     * first, as the Mac's Quick Window does, unless it moved to a tab or went.
+     */
+    private async closeAsked(): Promise<void> {
+        const page = this.page();
+        if (this.closing || this.closeGate.isAsking) return;
+        if (!this.settled && page && !(await this.closeGate.mayClosePages([page.id]))) return;
+        await this.close(true);
     }
 
     /**

@@ -717,6 +717,30 @@ body.has-page #page {
   width: 100%;
 }
 
+/* BrowserStartPagePrivateBrowsingNotice */
+.start-private-notice {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  max-width: 460px;
+  text-align: center;
+}
+
+.start-private-title {
+  display: inline-flex;
+  gap: var(--crest-space-xs);
+  align-items: center;
+  font-size: var(--crest-text-headline);
+  font-weight: 600;
+}
+
+.start-private-message {
+  margin: 0;
+  color: var(--crest-secondary);
+  font-size: var(--crest-text-callout);
+}
+
 .palette-card.embedded {
   width: 100%;
   margin: 0;

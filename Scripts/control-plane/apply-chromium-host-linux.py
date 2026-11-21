@@ -33,7 +33,8 @@ HEADERS += [REPO / "CrestCore/native/ContentFilter/include/crest_content_filter.
 # Linux-only host patches, each applied on its own once the host's are in, so
 # a source that already has the host takes a new one without a new prepare.
 LINUX_HOST_PATCHES = [ENGINE / "Linux/Patches/page-context-menu.patch",
-                      ENGINE / "Linux/Patches/feature-overrides.patch"]
+                      ENGINE / "Linux/Patches/feature-overrides.patch",
+                      ENGINE / "Linux/Patches/crest-second-launch.patch"]
 
 
 def dry_run(patch, source, *flags):

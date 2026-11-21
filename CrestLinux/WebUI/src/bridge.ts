@@ -263,6 +263,14 @@ export function registerShortcuts(
     updateShortcuts(shortcuts);
 }
 
+/** The modifiers still held when a page's view saw one released, which this page cannot see itself. */
+export type HeldModifiers = Omit<HostKey, "key">;
+
+/** Hears the modifiers still held each time a page's view saw one released. */
+export function listenToModifierRelease(onRelease: (held: HeldModifiers) => void): void {
+    listen("crest-modifiers", (held) => onRelease(held as HeldModifiers));
+}
+
 /** Tells the window which keys are Crest's again, as `registerShortcuts` first did. */
 export function updateShortcuts(shortcuts: readonly (readonly [string, boolean, boolean, boolean, number, boolean])[]): void {
     chrome.send("setShortcuts", shortcuts.map((shortcut) => [...shortcut]));
@@ -379,6 +387,11 @@ export function openWindow(kind: WindowKind, windowId: Guid | null, parameters: 
 /** Brings the browser window `windowId` names forward, when it is open. */
 export function presentWindow(windowId: Guid): void {
     openWindow("browser", windowId, {}, true);
+}
+
+/** Lets the engine release the off-the-record profiles `profileIds` of a closed private window. */
+export function releasePrivateProfiles(profileIds: readonly Guid[]): void {
+    chrome.send("releasePrivateProfiles", [...profileIds]);
 }
 
 /** Brings this page's window forward. */

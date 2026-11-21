@@ -943,8 +943,8 @@ bool LinuxWindow::UI::WasMaximizedBeforeFullscreen(views::Widget* window) {
   return false;
 }
 
-// TODO(linux): Crest's quit preparation (downloads, unsaved pages) asks
-// through Crest's own dialogs, which the Linux WebUI does not draw yet.
+// TODO(linux): the last browser window's close prepares the quit through the
+// core in its WebUI; nothing on Linux asks this yet.
 bool LinuxWindow::UI::DeferQuit() {
   return false;
 }
