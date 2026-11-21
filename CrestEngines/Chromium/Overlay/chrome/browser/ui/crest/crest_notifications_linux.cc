@@ -12,6 +12,7 @@
 #include "dbus/message.h"
 #include "dbus/object_path.h"
 #include "dbus/object_proxy.h"
+#include "third_party/skia/include/core/SkColor.h"
 
 namespace crest {
 
@@ -97,6 +98,37 @@ void DesktopNotifications::Show(const std::string& key,
     hints.OpenDictEntry(&hint);
     hint.AppendString("suppress-sound");
     hint.AppendVariantOfBool(true);
+    hints.CloseContainer(&hint);
+  }
+  if (!delivery.icon.drawsNothing()) {
+    // The site's icon as the specification's raw image: width, height, row
+    // stride, alpha, bits per sample, channels and RGBA bytes, unpremultiplied.
+    const SkBitmap& icon = delivery.icon;
+    std::vector<uint8_t> rgba;
+    rgba.reserve(static_cast<size_t>(icon.width()) * icon.height() * 4);
+    for (int y = 0; y < icon.height(); ++y) {
+      for (int x = 0; x < icon.width(); ++x) {
+        const SkColor color = icon.getColor(x, y);
+        rgba.insert(rgba.end(), {static_cast<uint8_t>(SkColorGetR(color)), static_cast<uint8_t>(SkColorGetG(color)),
+                                 static_cast<uint8_t>(SkColorGetB(color)), static_cast<uint8_t>(SkColorGetA(color))});
+      }
+    }
+    dbus::MessageWriter hint(nullptr);
+    hints.OpenDictEntry(&hint);
+    hint.AppendString("image-data");
+    dbus::MessageWriter variant(nullptr);
+    hint.OpenVariant("(iiibiiay)", &variant);
+    dbus::MessageWriter image(nullptr);
+    variant.OpenStruct(&image);
+    image.AppendInt32(icon.width());
+    image.AppendInt32(icon.height());
+    image.AppendInt32(icon.width() * 4);
+    image.AppendBool(true);
+    image.AppendInt32(8);
+    image.AppendInt32(4);
+    image.AppendArrayOfBytes(rgba);
+    variant.CloseContainer(&image);
+    hint.CloseContainer(&variant);
     hints.CloseContainer(&hint);
   }
   writer.CloseContainer(&hints);

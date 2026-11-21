@@ -48,6 +48,13 @@ std::string PageKey(const base::Value& value) {
   return id ? GuidText(*id) : std::string();
 }
 
+// The PNG `base64` holds, or an empty bitmap when it holds none.
+SkBitmap DecodedIcon(const std::string& base64) {
+  if (base64.empty()) return SkBitmap();
+  std::optional<std::vector<uint8_t>> png = base::Base64Decode(base64);
+  return png ? gfx::PNGCodec::Decode(*png) : SkBitmap();
+}
+
 // The page the core's id `value` names, or nullptr.
 content::WebContents* PageContents(const base::Value& value) {
   const std::string page = PageKey(value);
@@ -188,15 +195,17 @@ class SystemUIHandler final : public content::WebUIMessageHandler {
   }
 
   // args: callback id, a key the page names the notification by, its title,
-  // the site that posted it, its body, whether it is silent. Answers
+  // the site that posted it, its body, whether it is silent, the site's icon
+  // as a base64 PNG (empty for none). Answers
   // "shown", "declined" when the desktop did not take it, or "elsewhere"
   // when another window shows the notifications. A click fires
   // crest-notification-clicked with the key to this page.
   void HandleShowNotification(const base::ListValue& args) {
     AllowJavascript();
-    if (args.size() != 6 || !args[1].is_string() || !args[2].is_string() || !args[3].is_string() ||
-        !args[4].is_string() || !args[5].is_bool()) {
-      RejectJavascriptCallback(args[0], base::Value("showNotification takes a key, a title, a site, a body and silence."));
+    if (args.size() != 7 || !args[1].is_string() || !args[2].is_string() || !args[3].is_string() ||
+        !args[4].is_string() || !args[5].is_bool() || !args[6].is_string()) {
+      RejectJavascriptCallback(args[0],
+                               base::Value("showNotification takes a key, a title, a site, a body, silence and an icon."));
       return;
     }
     if (!IsFrontWindow()) {
@@ -209,7 +218,8 @@ class SystemUIHandler final : public content::WebUIMessageHandler {
         DesktopNotifications::Delivery{.title = args[2].GetString(),
                                        .site = args[3].GetString(),
                                        .body = args[4].GetString(),
-                                       .silent = args[5].GetBool()},
+                                       .silent = args[5].GetBool(),
+                                       .icon = DecodedIcon(args[6].GetString())},
         base::BindOnce(&SystemUIHandler::AnswerShown, weak_factory_.GetWeakPtr(), args[0].Clone()),
         base::BindOnce(&DeliverClick, weak_factory_.GetWeakPtr(), key));
   }

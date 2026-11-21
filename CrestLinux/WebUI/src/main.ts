@@ -345,6 +345,7 @@ const prompts = new Prompts({ model, page: shownPage }, surfaces);
 const pageStates = new PageStates({ model, tab: shownTab, page: shownPage, report }, surfaces);
 const webNotifications = new WebNotifications({
     model,
+    iconOf: (tabId) => icons.imageOf(tabId),
     windowId: () => windows.windowId,
     send: (intent) => void dispatch(intent).catch(report),
     report,
@@ -607,6 +608,7 @@ async function start(): Promise<void> {
             prompts.apply(changes);
             pageStates.apply(changes);
             credentialPrompts.apply(changes);
+            webNotifications.apply(changes);
             downloadDestinations.apply(changes);
             spaces.apply(changes);
             spaceEditor.follow();

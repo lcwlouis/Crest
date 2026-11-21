@@ -19,6 +19,7 @@
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/no_destructor.h"
+#include "third_party/skia/include/core/SkBitmap.h"
 
 namespace dbus {
 class Bus;
@@ -38,6 +39,8 @@ class DesktopNotifications final {
     std::string site;
     std::string body;
     bool silent = false;
+    // The site's icon, or an empty bitmap for none.
+    SkBitmap icon;
   };
 
   static DesktopNotifications& Get();

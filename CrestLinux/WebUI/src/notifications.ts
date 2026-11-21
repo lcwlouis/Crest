@@ -10,9 +10,11 @@
 // Every window's page hears every notification; the browser window used
 // last is the one that shows them, and the others leave them to it.
 //
-// TODO(linux): the Mac also takes down what shows once the core stops letting
-// a Space or profile show a site's notifications (followNotificationAccess),
-// and shows the site's icon; Linux shows neither yet.
+// Once the core may no longer let a Space or profile show a site's
+// notifications (a permission, a Space's settings or lock, or deleted data
+// changed), what shows is asked again and what no longer may show goes, as
+// the Mac's followNotificationAccess and removeWebNotificationsNoLongerShown
+// take it down. A page's notification shows the icon its tab wears.
 
 import {
     closeNotification,
@@ -24,6 +26,7 @@ import {
     showNotification,
 } from "./bridge.js";
 import type {
+    Change,
     EnginePresentation,
     Guid,
     Intent,
@@ -36,10 +39,15 @@ import type { Model } from "./model.js";
 
 export interface WebNotificationHost {
     readonly model: Model;
+    /** The image a tab wears, as a data URL, which its page's notifications show. */
+    readonly iconOf: (tabId: Guid) => string | null;
     readonly windowId: () => Guid;
     readonly send: (intent: Intent) => void;
     readonly report: (error: unknown) => void;
 }
+
+/** The changes after which the core may no longer let a Space or profile show a site's notifications. */
+const accessChanges = new Set<Change["kind"]>(["SitePermissionsChanged", "SpaceSettingsChanged", "SpaceLockChanged", "DataDeleted"]);
 
 /** A notification the engine posted, until it is clicked, declined or withdrawn. */
 type Posted =
@@ -90,6 +98,27 @@ export class WebNotifications {
     }
 
     /**
+     * Takes down what shows once the core no longer lets it show, after a
+     * change to what decides it: a page's goes, and a profile's is declined
+     * too, as it has no page to take it down.
+     */
+    apply(changes: readonly Change[]): void {
+        if (!changes.some((change) => accessChanges.has(change.kind))) return;
+        void this.recheck().catch(this.host.report);
+    }
+
+    private async recheck(): Promise<void> {
+        if (this.posted.size === 0 || !(await isFrontWindow())) return;
+        for (const [key, entry] of [...this.posted]) {
+            if (await this.allows(entry)) continue;
+            if (this.posted.get(key) !== entry) continue;
+            if (entry.kind === "profile") this.decline(key, entry);
+            else this.posted.delete(key);
+            closeNotification(key);
+        }
+    }
+
+    /**
      * Shows the notification `key` names when the core lets it show, and
      * declines it when the core or the desktop does not. The window that
      * leaves notifications to another neither shows nor declines it.
@@ -105,7 +134,9 @@ export class WebNotifications {
             return;
         }
         const { title, body, silent, origin } = entry.posted;
-        const shown = await showNotification(key, { title, site: origin.host || siteText(origin), body, silent });
+        const tabId = entry.kind === "page" ? this.host.model.pages.get(entry.posted.pageId)?.tabId : null;
+        const icon = tabId ? pngOf(this.host.iconOf(tabId)) : "";
+        const shown = await showNotification(key, { title, site: origin.host || siteText(origin), body, silent, icon });
         if (shown === "declined" && this.posted.get(key) === entry) this.decline(key, entry);
     }
 
@@ -173,6 +204,12 @@ function pageKey(pageId: Guid, notificationId: string): string {
 
 function profileKey(profileId: Guid, notificationId: string): string {
     return `profile.${profileId}.${notificationId}`;
+}
+
+/** The base64 PNG inside a data URL of a tab's icon, or empty when it holds none. */
+function pngOf(image: string | null): string {
+    const prefix = "data:image/png;base64,";
+    return image?.startsWith(prefix) ? image.slice(prefix.length) : "";
 }
 
 function siteText(origin: SiteOrigin): string {

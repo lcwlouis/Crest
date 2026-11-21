@@ -524,6 +524,8 @@ export interface NotificationDelivery {
     readonly site: string;
     readonly body: string;
     readonly silent: boolean;
+    /** The site's icon as a base64 PNG, or empty for none. */
+    readonly icon: string;
 }
 
 /**
@@ -541,7 +543,7 @@ export function isFrontWindow(): Promise<boolean> {
  * another window shows the notifications.
  */
 export function showNotification(key: string, delivery: NotificationDelivery): Promise<"shown" | "declined" | "elsewhere"> {
-    return send("showNotification", key, delivery.title, delivery.site, delivery.body, delivery.silent);
+    return send("showNotification", key, delivery.title, delivery.site, delivery.body, delivery.silent, delivery.icon);
 }
 
 /** Takes down the notification shown under `key`. */
