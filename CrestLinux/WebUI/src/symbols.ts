@@ -12,6 +12,8 @@ const paths: Record<string, string> = {
     checkmark: '<path d="M5 12.5l4.5 4.5L19 7"/>',
     "checkmark.circle.fill":
         '<circle cx="12" cy="12" r="10" fill="currentColor" stroke="none"/><path class="symbol-knockout" d="M7.5 12.5l3 3 6-6.5"/>',
+    "chevron.down": '<path d="M6 9l6 6 6-6"/>',
+    "chevron.left": '<path d="M15 18l-6-6 6-6"/>',
     "chevron.right": '<path d="M9 6l6 6-6 6"/>',
     "chevron.up": '<path d="M6 15l6-6 6 6"/>',
     ellipsis:
@@ -31,6 +33,9 @@ const paths: Record<string, string> = {
     link: '<path d="M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1 1"/><path d="M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1-1"/>',
     lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
     "lock.open": '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 7.6-1.8"/>',
+    macwindow: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 8.5h18"/><path d="M6 6.25h.01M8.5 6.25h.01"/>',
+    "macwindow.badge.plus":
+        '<path d="M13 20H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v7"/><path d="M3 8.5h18"/><path d="M6 6.25h.01M8.5 6.25h.01"/><path d="M18.5 14.5v7M15 18h7"/>',
     minus: '<path d="M5 12h14"/>',
     pencil: '<path d="M4 20l1-4L16 5l3 3L8 19z"/><path d="M14 7l3 3"/>',
     pin: '<path d="M12 16v6"/><path d="M8 3h8l-1 6 3 4v3H6v-3l3-4z"/>',
@@ -138,9 +143,32 @@ Object.assign(paths, {
     "square.and.arrow.down": '<path d="M12 3v11"/><path d="M8 10l4 4 4-4"/><path d="M8 8H6a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-9a2 2 0 0 0-2-2h-2"/>',
     "rectangle.portrait.and.arrow.right": '<path d="M13 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h7"/><path d="M10 12h11"/><path d="M17.5 8.5L21 12l-3.5 3.5"/>',
 });
+// Setup's glyphs (onboarding).
+Object.assign(paths, {
+    "chevron.up.chevron.down": '<path d="M8 9l4-4 4 4"/><path d="M8 15l4 4 4-4"/>',
+    "minus.circle.fill": '<circle cx="12" cy="12" r="9"/><path d="M8 12h8"/>',
+    "equal.circle.fill": '<circle cx="12" cy="12" r="9"/><path d="M8 10h8M8 14h8"/>',
+    "exclamationmark.circle.fill": '<circle cx="12" cy="12" r="9"/><path d="M12 7v6"/><circle cx="12" cy="16.5" r="0.5"/>',
+    "square.stack.3d.up.slash": '<path d="M12 4l8 4-8 4-8-4z"/><path d="M4 12l8 4 8-4"/><path d="M4 16l8 4 8-4"/><path d="M3 3l18 18"/>',
+    "checklist.unchecked": '<rect x="3" y="5" width="4" height="4" rx="1"/><rect x="3" y="15" width="4" height="4" rx="1"/><path d="M11 7h10M11 17h10"/>',
+    "rectangle.stack.badge.minus": '<rect x="3" y="9" width="14" height="11" rx="2"/><path d="M5 6h12"/><path d="M7 3h8"/><path d="M18 5h4"/>',
+    "book.fill": '<path d="M4 5a2 2 0 0 1 2-2h14v15H6a2 2 0 0 0-2 2z"/><path d="M4 20a2 2 0 0 0 2 1h14"/>',
+});
+// Passwords' glyphs (settings-passwords, credential-prompts).
+Object.assign(paths, {
+    eye: '<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
+    "eye.slash": '<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/><path d="M4 4l16 16"/>',
+    "doc.on.doc": '<rect x="8" y="8" width="12" height="13" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h2"/>',
+    circle: '<circle cx="12" cy="12" r="9"/>',
+    "ellipsis.circle": '<circle cx="12" cy="12" r="9"/><path d="M8 12h.01M12 12h.01M16 12h.01"/>',
+    "chevron.forward": '<path d="M9 6l6 6-6 6"/>',
+    "key.horizontal": '<circle cx="8" cy="12" r="4.5"/><path d="M12.5 12H21v3M18 12v2.5"/>',
+    "wand.and.stars": '<path d="M4 20L15 9"/><path d="M14 4v3M12.5 5.5h3M19 9v3M17.5 10.5h3M18 3v2M17 4h2"/>',
+    "person.badge.key": '<circle cx="10" cy="7.5" r="3.5"/><path d="M3 20a7 7 0 0 1 10-6.3"/><circle cx="17" cy="15" r="2.5"/><path d="M17 17.5V21M17 19.5h2"/>',
+});
 for (const name of [
     "gearshape", "briefcase", "person", "house", "graduationcap", "paintbrush", "gamecontroller", "sun.max", "sun.horizon", "moon", "star",
-    "bolt", "flame", "drop", "key", "crown", "leaf", "mountain.2", "heart",
+    "bolt", "flame", "drop", "key", "crown", "leaf", "mountain.2", "heart", "pin", "bookmark", "rectangle.stack",
 ]) {
     paths[`${name}.fill`] = paths[name]!;
 }

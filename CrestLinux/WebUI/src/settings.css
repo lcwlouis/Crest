@@ -766,3 +766,54 @@ body.space-dots .segment.shown::before {
   background: var(--space-tint);
   transform: scale(1.3);
 }
+
+/* --- Passwords (BrowserPasswordDescriptorRow, BrowserCredentialDetailView) --- */
+
+.settings-password-row {
+  gap: var(--crest-space-s);
+}
+
+.settings-password-main {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: var(--crest-space-m);
+  min-width: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+.settings-password-main .settings-row-label {
+  min-width: 0;
+}
+
+.settings-password-main .settings-row-title,
+.settings-password-main .settings-row-detail {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.settings-password-icon {
+  display: inline-flex;
+  width: 22px;
+  justify-content: center;
+  color: var(--space-tint, var(--crest-accent));
+}
+
+.settings-password-status,
+.settings-row-detail.warning {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--crest-warning);
+}
+
+.settings-password-value {
+  font-family: ui-monospace, monospace;
+  user-select: none;
+}
+
+.settings-password-value.selectable {
+  user-select: text;
+}

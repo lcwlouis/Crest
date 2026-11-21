@@ -180,4 +180,20 @@ public sealed partial class BrowserContractsTests {
         Assert.Equal([("Bar", null)], FoldersOf(spaces[0]));
         Assert.Equal(["https://d.example/"], spaces[1].Tabs.Select(tab => tab.Url));
     }
+
+    [Fact]
+    public void AMozillaProfileIsNamedFromTheProfileListInItsFolderOfProfilesOrBesideIt() {
+        // Linux keeps profiles.ini among the profiles; the Mac keeps it one
+        // folder up, beside Profiles.
+        using var linux = new BrowserDataFolder();
+        linux.Write("profiles.ini", "[Profile0]\nName=Work\nIsRelative=1\nPath=abc.default-release\n");
+        linux.Write("abc.default-release/sessionstore.jsonlz4");
+        linux.Write("Crash Reports/InstallTime");
+        using var mac = new BrowserDataFolder();
+        mac.Write("profiles.ini", "[Profile0]\nName=Home\nIsRelative=1\nPath=Profiles/xyz.default\n");
+        mac.Write("Profiles/xyz.default/sessionstore.jsonlz4");
+
+        Assert.Equal(["Work"], Found(ImportSource.Firefox, linux.Path).Profiles.Select(profile => profile.Name));
+        Assert.Equal(["Home"], Found(ImportSource.Firefox, Path.Combine(mac.Path, "Profiles")).Profiles.Select(profile => profile.Name));
+    }
 }

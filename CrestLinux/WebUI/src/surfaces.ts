@@ -50,6 +50,8 @@ export const FloatRank = {
     opening: 5,
     find: 15,
     infoBars: 17,
+    /** Crest's password prompts, by the field they fill or at the page's top. */
+    credential: 18,
     permission: 20,
     modal: 30,
     notice: 40,
