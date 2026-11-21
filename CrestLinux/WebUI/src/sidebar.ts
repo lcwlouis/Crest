@@ -16,6 +16,7 @@ import type { InlineRename } from "./rename.js";
 import type { SidebarMenus } from "./sidebar-menus.js";
 import type { SpaceActions } from "./space-actions.js";
 import { SpaceGroups } from "./space-groups.js";
+import { SidebarPresentation } from "./sidebar-presentation.js";
 import { sfSymbol, sfSymbolPaths } from "./symbols.js";
 import type { Utilities } from "./utilities.js";
 
@@ -103,10 +104,13 @@ export class Sidebar {
     private readonly host: SidebarHost;
     private readonly page = element("div", "space-page");
     private readonly switcher = element("div", "switcher");
+    /** Where the sidebar is: beside the page, floating over it, or put away. */
+    readonly presentation: SidebarPresentation;
 
     constructor(host: SidebarHost, root: HTMLElement) {
         this.host = host;
         root.append(this.page, this.switcher);
+        this.presentation = new SidebarPresentation(root);
         new ResizeObserver(() => this.render()).observe(root);
         // The sidebar's empty stretches open the Space's own menu.
         this.page.addEventListener("contextmenu", (event) => {
@@ -407,10 +411,15 @@ export class Sidebar {
             onContextMenu(segment, (at) => this.host.spaces.switcher(other, at));
             track.append(segment);
         }
-        // The lists button stays where it is, so a press on it is not cut short.
+        // The sidebar's toggle leads the strip and the lists button ends it,
+        // as on the Mac; both stay where they are, so a press on one is not cut short.
         const lists = this.host.utilities.listsButton(space);
-        if (this.switcher.lastChild === lists && this.switcher.childNodes.length === 2) this.switcher.firstChild!.replaceWith(track);
-        else this.switcher.replaceChildren(track, lists);
+        const toggle = this.presentation.toggleButton;
+        if (this.switcher.firstChild === toggle && this.switcher.lastChild === lists && this.switcher.childNodes.length === 3) {
+            this.switcher.childNodes[1]!.replaceWith(track);
+        } else {
+            this.switcher.replaceChildren(toggle, track, lists);
+        }
     }
 
     private tab(space: Space, id: Guid): TabState | undefined {
