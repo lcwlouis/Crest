@@ -24,6 +24,13 @@ MAC_ONLY = re.compile(r"(_mac\.(cc|h|mm)$|\.mm$|/cocoa/|/mac/|_cocoa\.)")
 # services (the macOS passkey sheet, the system screen-sharing picker, Mac
 # feature flags, Chrome's Mac native-messaging folders, a product bundle). They
 # keep their Mac gates; Linux gets its own behavior for them later.
+#
+# TODO(linux): screen sharing keeps Chromium's own picker on Linux, whose
+# window and screen choices go through the xdg-desktop-portal ScreenCast
+# picker on Wayland. Crest's offer (ShareSourcesOffered, ChooseShareSource)
+# needs the display_media_access_handler gate widened and
+# ScreenSharingPicker::OpenSystemPicker to start the portal's picker through
+# webrtc's PipeWire capturer (its DelegatedSourceListController) on Linux.
 KEEP_MAC_GATES = {
     "chrome/app/chrome_main_delegate.cc",
     "chrome/browser/chrome_browser_field_trials.cc",
@@ -43,9 +50,19 @@ LINUX_SHELL_SOURCES = (
     "ui/crest/crest_contracts.h",
     "ui/crest/crest_core_host_linux.cc",
     "ui/crest/crest_core_host_linux.h",
+    "ui/crest/crest_credentials_linux.cc",
+    "ui/crest/crest_credentials_linux.h",
     "ui/crest/crest_linux_ui.h",
     "ui/crest/crest_linux_window.cc",
     "ui/crest/crest_linux_window.h",
+    "ui/crest/crest_notifications_linux.cc",
+    "ui/crest/crest_notifications_linux.h",
+    "ui/crest/crest_password_import_linux.cc",
+    "ui/crest/crest_password_import_linux.h",
+    "ui/crest/crest_secret_service_linux.cc",
+    "ui/crest/crest_secret_service_linux.h",
+    "ui/crest/crest_system_webui_linux.cc",
+    "ui/crest/crest_system_webui_linux.h",
     "ui/crest/crest_webui_linux.cc",
     "ui/crest/crest_webui_linux.h",
 )
@@ -54,8 +71,13 @@ PLATFORM_SOURCES = {
     '      "ui/crest/crest_chrome_host.mm",\n': "".join(
         f'      "{name}",\n' for name in ("ui/crest/crest_chrome_host_linux.cc", *LINUX_SHELL_SOURCES)),
 }
-# What the Linux shell links beyond the Mac host's dependencies.
-LINUX_SHELL_DEPS = ("//ui/views/controls/webview",)
+# What the Linux shell links beyond the Mac host's dependencies: its page
+# views, the clipboard a copied password goes on, BoringSSL, which decrypts
+# the passwords setup imports, and D-Bus, which reaches the desktop's
+# notifications. libsecret and the system SQLite are loaded at run time, so
+# the build needs neither.
+LINUX_SHELL_DEPS = ("//ui/views/controls/webview", "//ui/base/clipboard", "//third_party/boringssl",
+                    "//components/dbus", "//dbus")
 
 
 def sections(text):

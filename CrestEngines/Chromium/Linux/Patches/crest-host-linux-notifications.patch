@@ -1,0 +1,29 @@
+# Crest's Linux host shows web notifications through its own bridge, as the
+# Mac host's native-host.patch does in the Mac bridge: the engine presents
+# each one to Crest's core, and Crest shows it through the desktop's
+# notification service (crest_notifications_linux.cc).
+
+--- a/chrome/browser/notifications/notification_platform_bridge_linux.cc
++++ b/chrome/browser/notifications/notification_platform_bridge_linux.cc
+@@ -55,6 +55,8 @@
+ #include "chrome/browser/lifetime/termination_notification.h"
+ #include "chrome/browser/notifications/notification_display_service_impl.h"
+ #include "chrome/browser/profiles/profile_manager.h"
++#include "chrome/browser/ui/crest/crest_chrome_hooks.h"  // nogncheck
++#include "chrome/browser/ui/crest/crest_engine_notifications.h"  // nogncheck
+ #include "chrome/browser/themes/theme_service.h"
+ #include "chrome/browser/themes/theme_service_factory.h"
+ #include "chrome/common/channel_info.h"
+@@ -396,6 +398,12 @@
+ // static
+ std::unique_ptr<NotificationPlatformBridge>
+ NotificationPlatformBridge::Create() {
++  // Crest shows web notifications as its own, after its core lets the page's
++  // Space show them, and a click comes back to Crest, which brings the page
++  // forward before its document hears it.
++  if (crest::IsEnabled()) {
++    return crest::CreateNotificationBridge();
++  }
+   return std::make_unique<NotificationPlatformBridgeLinux>();
+ }
+ 

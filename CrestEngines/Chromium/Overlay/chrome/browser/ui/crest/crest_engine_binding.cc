@@ -12,6 +12,7 @@
 #include "base/check.h"
 #include "base/functional/bind.h"
 #include "base/location.h"
+#include "base/logging.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/time/time.h"
 #include "chrome/browser/profiles/profile.h"
@@ -678,6 +679,11 @@ void EngineBinding::Close(const engine::ClosePage& closing) {
   std::optional<engine::PageRestoreState> restore_state;
   content::WebContents* contents = nullptr;
   bool runs_before_unload = false;
+  // The page's inspector goes with it, docked or in its own window, rather
+  // than staying attached to a target nobody can see until the engine quits.
+  if (EnginePage* page = Find(key)) {
+    page->Answer(engine::CloseInspector{.page_id = closing.page_id});
+  }
   if (auto page = pages_.extract(key)) {
     contents = page.mapped()->web_contents();
     runs_before_unload = page.mapped()->AwaitsBeforeUnload();
@@ -1708,7 +1714,11 @@ bool RouteModifiedLink(content::WebContents* source, content::OpenURLParams& par
   if (!IsEnabled() || !params.crest_link_modifiers) {
     return false;
   }
-  if (EngineBinding::Get().FollowModifiedLink(source, params)) {
+  const bool followed = EngineBinding::Get().FollowModifiedLink(source, params);
+  VLOG(1) << "A modified link click (modifiers " << params.crest_link_modifiers << ") in "
+          << (EngineBinding::Get().PageFor(source) ? "a Crest page" : "no Crest page")
+          << (followed ? " goes where the core said" : " keeps Chromium's path");
+  if (followed) {
     return true;
   }
   if (params.disposition == WindowOpenDisposition::SAVE_TO_DISK && params.crest_download_fallback &&
