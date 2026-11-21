@@ -35,6 +35,8 @@ export const Notices = {
     copied: { message: "Copied", symbol: "checkmark.circle.fill", label: null } satisfies Notice,
     /** The page's zoom, as `label` names it, such as "125%". */
     pageZoom: (label: string): Notice => ({ message: label, symbol: "textformat.size", label: `Page zoom ${label}` }),
+    /** A capture of a page that was copied or saved, as `message` says. */
+    captured: (message: string): Notice => ({ message, symbol: "checkmark.circle.fill", label: null }),
     /** An action that could not run, with `reason` saying why. */
     failure: (reason: string): Notice => ({ message: reason, symbol: "exclamationmark.triangle.fill", label: null }),
 } as const;

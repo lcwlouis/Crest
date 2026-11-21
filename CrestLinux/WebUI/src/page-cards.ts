@@ -39,6 +39,27 @@ export interface PageCardsContext {
     readonly peek: () => { readonly placement: PagePlacement; readonly inUse: boolean } | null;
     /** Whether the window shows the page `pageId`: another window may show it while this one is in the background. */
     readonly shows: (pageId: Guid) => boolean;
+    /** What a card draws above its page, such as the developer toolbar, which takes part of the card. */
+    readonly decorations?: PageDecorations;
+}
+
+/** Where a page sits in the window, in CSS pixels. */
+export interface PageFrame {
+    readonly x: number;
+    readonly y: number;
+    readonly width: number;
+    readonly height: number;
+}
+
+/**
+ * Bars a card draws with its page, as the Mac's page toolbars: each layout
+ * hands each card with a page to `frame`, which draws what it wants in the
+ * card and answers where the page goes within `frame`; `placed` follows
+ * once every card has been handed over.
+ */
+export interface PageDecorations {
+    frame(tabId: Guid, page: PageState, card: HTMLElement, frame: PageFrame): PageFrame;
+    placed(): void;
 }
 
 /** A divider drag in flight: the shares it started from and those the pointer reached. */
@@ -62,6 +83,8 @@ export class PageCards {
     private committed: { readonly groupId: Guid; readonly shares: readonly number[] } | null = null;
     /** What the window was last told, so a layout that changed nothing is not sent again. */
     private sent = "";
+    /** Where each page of the cards was placed last, by page. */
+    private readonly frames = new Map<Guid, PageFrame>();
 
     constructor(context: PageCardsContext) {
         this.context = context;
@@ -79,6 +102,11 @@ export class PageCards {
         if (cards && cards.tabIds.length > 0) return [...cards.tabIds];
         const shown = window ? this.context.shownTabId() : null;
         return shown ? [shown] : [];
+    }
+
+    /** Where the page `pageId` of one of the cards sits in the window now, if it shows. */
+    frameOf(pageId: Guid): PageFrame | undefined {
+        return this.frames.get(pageId);
     }
 
     /** Whether the window shows a split's cards side by side. */
@@ -133,15 +161,8 @@ export class PageCards {
                 if (page) {
                     const left = Math.max(box.left + x, box.left);
                     const right = Math.min(box.left + x + width, box.right);
-                    placements.push({
-                        pageId: page.id,
-                        x: left,
-                        y: box.top,
-                        width: Math.max(0, right - left),
-                        height: box.height,
-                        above: false,
-                        cornerRadius: pageCornerRadius,
-                    });
+                    const frame = this.decorate(tabId, page, card, { x: left, y: box.top, width: Math.max(0, right - left), height: box.height });
+                    placements.push({ pageId: page.id, ...frame, above: false, cornerRadius: pageCornerRadius });
                     if (tabId === shown) inUse = page.id;
                 }
                 const divider = this.dividers[index];
@@ -151,10 +172,14 @@ export class PageCards {
         } else if (shown) {
             const page = this.shownPage(shown);
             if (page) {
-                placements.push({ pageId: page.id, x: box.left, y: box.top, width: box.width, height: box.height, above: false, cornerRadius: pageCornerRadius });
+                const frame = this.decorate(shown, page, this.page, { x: box.left, y: box.top, width: box.width, height: box.height });
+                placements.push({ pageId: page.id, ...frame, above: false, cornerRadius: pageCornerRadius });
                 inUse = page.id;
             }
         }
+        this.frames.clear();
+        for (const placement of placements) this.frames.set(placement.pageId, placement);
+        this.context.decorations?.placed();
         document.body.classList.toggle("has-page", !split && placements.length > 0);
         this.moveCardContents();
         const peek = this.context.peek();
@@ -166,6 +191,11 @@ export class PageCards {
         if (layout === this.sent) return;
         this.sent = layout;
         setPageLayout(placements, inUse);
+    }
+
+    /** Where `page` goes in its card at `frame`, once what the card draws above it took its part. */
+    private decorate(tabId: Guid, page: PageState, card: HTMLElement, frame: PageFrame): PageFrame {
+        return this.context.decorations?.frame(tabId, page, card, frame) ?? frame;
     }
 
     /** The page a card shows over itself: one the engine made live that has not failed to load. */
