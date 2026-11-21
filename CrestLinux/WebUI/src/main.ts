@@ -38,6 +38,7 @@ import { SpaceEditor } from "./space-editor.js";
 import { DownloadDestinations } from "./download-destinations.js";
 import { PageCards } from "./page-cards.js";
 import { Peek } from "./peek.js";
+import { blankWindowSpaceId, openBlankWorkspace } from "./blank-window.js";
 import { drawsPrivateWindow, openPrivateWorkspace, privateBrowsingNotice } from "./private-window.js";
 import { RecentTabSwitcher } from "./recent-tabs.js";
 import { Utilities } from "./utilities.js";
@@ -78,7 +79,11 @@ function say(text: string): void {
 async function openSession(): Promise<Guid> {
     // The private window draws the private workspace instead.
     if (drawsPrivateWindow) return openPrivateWorkspace(model);
-    const open = model.workspace;
+    // The blank window draws a workspace that borrows the Space it opened for.
+    if (blankWindowSpaceId) return openBlankWorkspace(model, blankWindowSpaceId);
+    // Another window may hold only the private workspace open: this one opens the person's own.
+    const persistent = (): Workspace | undefined => [...model.workspaces.values()].find((workspace) => workspace.kind === "Persistent");
+    const open = persistent();
     if (open) return open.id;
     try {
         await dispatch({ kind: "OpenWorkspace", value: { kind: "Persistent", seed: null } });
@@ -95,7 +100,7 @@ async function openSession(): Promise<Guid> {
         await dispatch({ kind: "OpenWorkspace", value: { kind: "Persistent", seed: null } });
     }
     // Read again: the dispatches above changed the model.
-    const opened: Workspace | undefined = model.workspaces.values().next().value;
+    const opened = persistent();
     if (!opened) throw new Error("The core opened no workspace.");
     return opened.id;
 }

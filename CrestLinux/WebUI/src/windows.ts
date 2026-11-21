@@ -25,6 +25,7 @@ import {
     setWindowTitle,
     stackedWindows,
 } from "./bridge.js";
+import { blankWindowSpaceId, closeBlankWorkspace, openBlankWindow } from "./blank-window.js";
 import { CloseGate } from "./close-gate.js";
 import { addressSeparator, ExternalOpening } from "./external-opening.js";
 import type { Model, Space, Workspace } from "./model.js";
@@ -86,6 +87,10 @@ export class Windows {
     /** Pages this window asked the core and the engine to move here, until they did. */
     private readonly claiming = new Set<Guid>();
     private title = "";
+    /** The workspace this window opened over. */
+    private drawnWorkspaceId: Guid | null = null;
+    /** Whether the person closed the window, which closes once the core forgets it. */
+    private closing = false;
     /** Asks the core whether the window may close, or Crest quit, before it does. */
     private readonly closeGate = new CloseGate();
     /** What another app hands Crest through this window, opened where the core places it. */
@@ -148,6 +153,7 @@ export class Windows {
      */
     async open(workspaceId: Guid, launch: () => Promise<{ windowIds: readonly Guid[]; startupWindowId: Guid }>): Promise<void> {
         const { windowId, copyingWindowId, spaceId, tabId, fromWindowId, urls } = this.opening;
+        this.drawnWorkspaceId = workspaceId;
         if (windowId === null) {
             const plan = await launch();
             this.id = plan.startupWindowId;
@@ -161,17 +167,19 @@ export class Windows {
             }
         }
         const moving = tabId !== null && spaceId !== null;
+        // The blank window starts on the Space it borrows, without a tab.
+        const showingSpaceId = blankWindowSpaceId ?? spaceId;
         await dispatch({
             kind: "OpenWindow",
             value: {
                 windowId: this.id,
                 workspaceId,
-                // The private window keeps no record past its session.
-                saved: !drawsPrivateWindow,
+                // The private and blank windows keep no record past their session.
+                saved: !drawsPrivateWindow && !blankWindowSpaceId,
                 copyingWindowId,
-                showingSpaceId: spaceId,
+                showingSpaceId,
                 showingTabs: moving ? [{ spaceId, tabId }] : [],
-                restoresTabs: !moving,
+                restoresTabs: !moving && !blankWindowSpaceId,
             },
         });
         adoptWindow(this.id);
@@ -188,6 +196,11 @@ export class Windows {
     /** Follows the core: the window's title is what its shown tab shows, as BrowserWindowTitle names it. */
     follow(changes: readonly Change[]): void {
         this.closeGate.apply(changes);
+        // The core closed the workspace the blank window borrows: its owner no longer lends the Space.
+        if (blankWindowSpaceId && !this.closing && this.drawnWorkspaceId && !this.context.model.workspaces.has(this.drawnWorkspaceId)) {
+            closeWindow();
+            return;
+        }
         const tab = this.context.tab();
         const page = tab ? this.context.model.pageFor(tab.id) : undefined;
         const title = page?.live.title || tab?.displayTitle || "Crest";
@@ -200,6 +213,15 @@ export class Windows {
     openNewWindow(): void {
         const id = crypto.randomUUID();
         openWindow("browser", id, drawsPrivateWindow ? { window: id } : { window: id, copying: this.id }, true);
+    }
+
+    /** New Blank Window: a window over the Space this one shows, which keeps nothing; not from the private window. */
+    openBlankWindow(): void {
+        const space = this.context.space();
+        if (drawsPrivateWindow || !space) return;
+        // TODO(linux): the Mac offers no blank window over a locked Space; here
+        // the core refuses to lend it, and the window that opened closes at once.
+        openBlankWindow(space);
     }
 
     /** New Private Window: the private window, which comes forward when it is open. */
@@ -304,9 +326,12 @@ export class Windows {
                 await dispatch({ kind: "RememberWindowsForLaunch", value: { windowIds: await stackedWindows() } });
             } else {
                 if (!(await this.closeGate.mayCloseWindows([this.id]))) return;
+                this.closing = true;
                 // Closing the private window ends private browsing.
                 if (drawsPrivateWindow) await endPrivateBrowsing(this.context.model, this.id);
                 await dispatch({ kind: "CloseWindow", value: { windowId: this.id } });
+                // Closing the blank window closes the workspace it borrowed.
+                if (blankWindowSpaceId && this.drawnWorkspaceId) await closeBlankWorkspace(this.drawnWorkspaceId);
             }
         } catch (error) {
             console.error(error);

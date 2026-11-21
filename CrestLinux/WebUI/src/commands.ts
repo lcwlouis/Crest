@@ -33,7 +33,7 @@ export interface CommandContext {
     /** The Peek over the page, which Close Tab closes before the tab under it. */
     readonly peek: { readonly isOpen: boolean; close(): boolean };
     /** The windows the window opens, and its own close, which asks it first. */
-    readonly windows: { openNewWindow(): void; openQuickWindow(): void; openPrivateWindow(): void; close(): void };
+    readonly windows: { openNewWindow(): void; openQuickWindow(): void; openPrivateWindow(): void; openBlankWindow(): void; close(): void };
     /** The recent tabs while a Most Recent Tab shortcut is held. */
     readonly recentTabs: {
         readonly isHolding: boolean;
@@ -51,7 +51,7 @@ const known = new Set<string>([
     "CopyPageLinkAsMarkdown", "FindInPage", "FindNext", "FindPrevious", "ShowHistory", "ShowArchive", "ShowDownloads",
     "SplitWithNextTab", "FocusNextSplitCard", "FocusPreviousSplitCard", "RemoveTabFromSplit", "SeparateSplitTabs",
     "MoveSplitCardLeft", "MoveSplitCardRight", "NewWindow", "NewQuickWindow", "CloseWindow",
-    "MostRecentTab", "MostRecentTabBackward", "NewPrivateWindow",
+    "MostRecentTab", "MostRecentTabBackward", "NewPrivateWindow", "NewBlankWindow",
 ]);
 
 /** Whether the Linux window performs `command` at all. */
@@ -148,6 +148,8 @@ export class Commands {
                 return space ? () => this.context.windows.openQuickWindow() : null;
             case "NewPrivateWindow":
                 return () => this.context.windows.openPrivateWindow();
+            case "NewBlankWindow":
+                return space ? () => this.context.windows.openBlankWindow() : null;
             case "CloseWindow":
                 return () => this.context.windows.close();
             case "MostRecentTab":
