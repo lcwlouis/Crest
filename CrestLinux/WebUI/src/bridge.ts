@@ -507,3 +507,12 @@ export function passwordImportCandidates(stores: readonly PasswordStore[]): Prom
 export function readImportPasswords(safeStorage: string, stores: readonly PasswordStore[]): Promise<PasswordImportAnswer> {
     return send("readImportPasswords", safeStorage, [...stores]);
 }
+
+// --- System (Linux shell) -----------------------------------------------------
+// What the page asks of its window's cards and of the desktop beyond the core
+// (crest_system_webui_linux.cc).
+
+/** The inspector docked on the page `pageId` moved its split: the window places the page again. */
+export function relayoutInspector(pageId: Guid): void {
+    chrome.send("relayoutInspector", [pageId]);
+}

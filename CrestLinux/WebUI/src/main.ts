@@ -14,6 +14,7 @@ import {
     query,
     Refused,
     registerShortcuts,
+    relayoutInspector,
     updateShortcuts,
 } from "./bridge.js";
 import { Commands, shortcutTable, useShortcutBindings } from "./commands.js";
@@ -539,6 +540,7 @@ async function start(): Promise<void> {
                 const presentation = decodePresentation(bytes);
                 if (presentation.kind === "FindFinished") findBar.finished(presentation.value);
                 if (presentation.kind === "PeekRequested") peek.requested(presentation.value);
+                if (presentation.kind === "InspectorLayoutChanged") relayoutInspector(presentation.value.pageId);
                 pageStates.present(presentation);
                 credentialPrompts.present(presentation);
             } catch (error) {

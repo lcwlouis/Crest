@@ -43,7 +43,7 @@ const known = new Set<string>([
     "NextTab", "PreviousSpace", "NextSpace", "SelectNumbered", "ZoomIn", "ZoomOut", "ActualSize", "CopyPageLink",
     "CopyPageLinkAsMarkdown", "FindInPage", "FindNext", "FindPrevious", "ShowHistory", "ShowArchive", "ShowDownloads",
     "SplitWithNextTab", "FocusNextSplitCard", "FocusPreviousSplitCard", "RemoveTabFromSplit", "SeparateSplitTabs",
-    "MoveSplitCardLeft", "MoveSplitCardRight", "NewWindow", "NewQuickWindow", "CloseWindow",
+    "MoveSplitCardLeft", "MoveSplitCardRight", "NewWindow", "NewQuickWindow", "CloseWindow", "ShowWebInspector",
 ]);
 
 /** Whether the Linux window performs `command` at all. */
@@ -243,9 +243,23 @@ export class Commands {
                         .then((permission) => (permission.refusal === null ? send(step) : undefined))
                         .catch(console.error);
             }
+            case "ShowWebInspector":
+                return page ? () => void this.toggleInspector(page.id).catch(this.context.report) : null;
             default:
                 return null;
         }
+    }
+
+    /**
+     * Closes the page's inspector, or opens one docked in its card, as the
+     * Mac's Show Web Inspector does.
+     */
+    private async toggleInspector(pageId: Guid): Promise<void> {
+        if (!(await pageRequest("PageInspected", { pageId }))) {
+            await pageRequest("OpenInspector", { pageId, panel: null });
+            return;
+        }
+        await pageRequest("CloseInspector", { pageId });
     }
 
     /**

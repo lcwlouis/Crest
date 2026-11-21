@@ -52,6 +52,8 @@ LINUX_SHELL_SOURCES = (
     "ui/crest/crest_password_import_linux.h",
     "ui/crest/crest_secret_service_linux.cc",
     "ui/crest/crest_secret_service_linux.h",
+    "ui/crest/crest_system_webui_linux.cc",
+    "ui/crest/crest_system_webui_linux.h",
     "ui/crest/crest_webui_linux.cc",
     "ui/crest/crest_webui_linux.h",
 )

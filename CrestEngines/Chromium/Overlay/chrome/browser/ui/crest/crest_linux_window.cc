@@ -1,6 +1,7 @@
 #include "chrome/browser/ui/crest/crest_linux_window.h"
 
 #include <algorithm>
+#include <cmath>
 #include <functional>
 #include <map>
 #include <memory>
@@ -135,6 +136,38 @@ void SaveFramesSoon() {
   Frames().save.Start(FROM_HERE, kFrameSaveDelay, base::BindOnce(&WriteFrames));
 }
 
+// The inspectors the engine docked, by the core id of the page each
+// inspects. A page shows in one window at a time, and its inspector with it.
+std::map<std::string, base::WeakPtr<content::WebContents>>& Inspectors() {
+  static base::NoDestructor<std::map<std::string, base::WeakPtr<content::WebContents>>> inspectors;
+  return *inspectors;
+}
+
+// Where the page goes in `card` while its inspector fills the card: the area
+// the inspector's own dock side, splitter and drawer leave it, as the Mac's
+// page surface asks the engine (LayoutInspector) for its card's size.
+gfx::Rect InspectedArea(const std::string& page, const gfx::Rect& card) {
+  EnginePage* engine_page = EngineBinding::Get().Find(page);
+  if (!engine_page || card.IsEmpty()) return card;
+  const engine::InspectorLayout layout = engine_page->Answer(engine::LayoutInspector{
+      .page_id = engine_page->id(), .width = static_cast<double>(card.width()),
+      .height = static_cast<double>(card.height())});
+  if (!layout.page) return card;
+  return gfx::Rect(card.x() + static_cast<int>(std::lround(layout.page->x)),
+                   card.y() + static_cast<int>(std::lround(layout.page->y)),
+                   static_cast<int>(std::lround(layout.page->width)),
+                   static_cast<int>(std::lround(layout.page->height)));
+}
+
+// One page view the contents place: its card, and the inspector docked on
+// its page, which fills the card under the page.
+struct PagePlace {
+  raw_ptr<views::WebView> view;
+  raw_ptr<views::WebView> inspector;
+  std::string page;
+  gfx::Rect bounds;
+};
+
 // The window's contents: the WebUI fills them, and each page sits over it in
 // the bounds the WebUI last named, which the WebUI lays out again on resize.
 class Contents final : public views::View {
@@ -147,15 +180,19 @@ class Contents final : public views::View {
   raw_ptr<views::WebView> ui = nullptr;
   raw_ptr<views::WebView> floating = nullptr;
   // Each page view and where it goes; a view showing no page is hidden.
-  std::vector<std::pair<raw_ptr<views::WebView>, gfx::Rect>> pages;
+  std::vector<PagePlace> pages;
   gfx::Rect float_bounds;
 
   void Layout(PassKey) override {
     if (ui) ui->SetBoundsRect(GetLocalBounds());
-    for (auto& [view, page_bounds] : pages) {
-      gfx::Rect bounds = page_bounds;
+    for (PagePlace& place : pages) {
+      gfx::Rect bounds = place.bounds;
       bounds.Intersect(GetLocalBounds());
-      view->SetBoundsRect(bounds);
+      if (place.inspector && place.inspector->GetVisible()) {
+        place.inspector->SetBoundsRect(bounds);
+        bounds = InspectedArea(place.page, bounds);
+      }
+      place.view->SetBoundsRect(bounds);
     }
     PlaceFloating();
   }
@@ -560,6 +597,7 @@ void LinuxWindow::SetPageLayout(const std::vector<PageSlot>& layout, const std::
     } else if (showing->corner_radius != place.corner_radius) {
       showing->corner_radius = place.corner_radius;
       showing->view->holder()->SetNativeViewCornerRadii(gfx::RoundedCornersF(place.corner_radius));
+      ShowInspector(*showing);
     }
     showing->above = place.above;
     ordered.push_back(std::move(*showing));
@@ -571,12 +609,11 @@ void LinuxWindow::SetPageLayout(const std::vector<PageSlot>& layout, const std::
   }
   slots_ = std::move(ordered);
 
-  contents->pages.clear();
   for (size_t index = 0; index < slots_.size(); ++index) {
-    contents->pages.emplace_back(slots_[index].view, index < wanted.size() ? wanted[index].bounds : gfx::Rect());
+    slots_[index].bounds = index < wanted.size() ? wanted[index].bounds : gfx::Rect();
   }
+  Place();
   Restack();
-  contents->InvalidateLayout();
 
   const std::string in_use = is_wanted(focused) ? focused : std::string();
   const bool focus_moved = in_use != focused_page_;
@@ -608,21 +645,69 @@ void LinuxWindow::ShowNoPage() {
 void LinuxWindow::ReleasePage(const std::string& page) {
   Slot* slot = SlotShowing(page);
   if (!slot) return;
-  auto* contents = static_cast<Contents*>(delegate_.GetContentsView());
-  for (auto& [view, bounds] : contents->pages) {
-    if (view == slot->view) bounds = gfx::Rect();
-  }
+  slot->bounds = gfx::Rect();
   Detach(*slot);
   if (focused_page_ == page) focused_page_.clear();
-  contents->InvalidateLayout();
+  Place();
 }
 
 void LinuxWindow::SetPageBounds(const gfx::Rect& bounds) {
   single_bounds_ = bounds;
-  if (!single_ || slots_.empty() || slots_.front().page.empty()) return;
+  if (!single_ || slots_.empty() || slots_.front().page.empty() || slots_.front().bounds == bounds) return;
+  slots_.front().bounds = bounds;
+  Place();
+}
+
+void LinuxWindow::RelayoutInspector(const std::string& page) {
+  if (!SlotShowing(page)) return;
+  delegate_.GetContentsView()->InvalidateLayout();
+}
+
+// static
+void LinuxWindow::DockInspector(const std::string& page, content::WebContents* frontend) {
+  if (frontend) {
+    Inspectors()[page] = frontend->GetWeakPtr();
+  } else {
+    Inspectors().erase(page);
+  }
+  for (LinuxWindow* window : Windows()) {
+    Slot* slot = window->SlotShowing(page);
+    if (!slot) continue;
+    window->ShowInspector(*slot);
+    window->Place();
+    window->Restack();
+  }
+}
+
+// The inspector fills the card under its page, with the card's corners, so
+// the page drawn over it at the area the inspector leaves sits inside one
+// card, as the Mac's page surface holds both.
+void LinuxWindow::ShowInspector(Slot& slot) {
+  const auto found = slot.page.empty() ? Inspectors().end() : Inspectors().find(slot.page);
+  content::WebContents* frontend = found == Inspectors().end() ? nullptr : found->second.get();
+  if (!frontend) {
+    if (slot.inspector) {
+      slot.inspector->SetWebContents(nullptr);
+      slot.inspector->SetVisible(false);
+    }
+    return;
+  }
+  if (!slot.inspector) {
+    auto* contents = static_cast<Contents*>(delegate_.GetContentsView());
+    slot.inspector = contents->AddChildView(std::make_unique<views::WebView>(profile_));
+  }
+  if (slot.inspector->web_contents() != frontend) slot.inspector->SetWebContents(frontend);
+  slot.inspector->SetVisible(true);
+  slot.inspector->holder()->SetNativeViewCornerRadii(gfx::RoundedCornersF(slot.corner_radius));
+}
+
+void LinuxWindow::Place() {
   auto* contents = static_cast<Contents*>(delegate_.GetContentsView());
-  if (contents->pages.empty() || contents->pages.front().second == bounds) return;
-  contents->pages.front().second = bounds;
+  contents->pages.clear();
+  for (const Slot& slot : slots_) {
+    contents->pages.push_back(
+        PagePlace{.view = slot.view, .inspector = slot.inspector, .page = slot.page, .bounds = slot.bounds});
+  }
   contents->InvalidateLayout();
 }
 
@@ -665,12 +750,14 @@ void LinuxWindow::Attach(Slot& slot, const std::string& page, content::WebConten
   slot.view->holder()->SetNativeViewCornerRadii(gfx::RoundedCornersF(slot.corner_radius));
   slot.focus = std::make_unique<FocusObserver>(
       contents, base::BindRepeating(&LinuxWindow::PageFocused, base::Unretained(this), page));
+  ShowInspector(slot);
 }
 
 void LinuxWindow::Detach(Slot& slot) {
   slot.focus.reset();
   slot.page.clear();
   slot.above = false;
+  ShowInspector(slot);
   if (!slot.view) return;
   slot.view->SetWebContents(nullptr);
   slot.view->SetVisible(false);
@@ -685,13 +772,18 @@ LinuxWindow::Slot* LinuxWindow::SlotShowing(const std::string& page) {
 void LinuxWindow::Restack() {
   auto* contents = static_cast<Contents*>(delegate_.GetContentsView());
   std::vector<views::View*> order;
+  // A docked inspector goes just under its page.
+  const auto push = [&order](const Slot& slot) {
+    if (slot.inspector) order.push_back(slot.inspector);
+    order.push_back(slot.view);
+  };
   if (!overlay_raised_) order.push_back(ui_);
   for (const Slot& slot : slots_) {
-    if (!overlay_raised_ || !slot.above) order.push_back(slot.view);
+    if (!overlay_raised_ || !slot.above) push(slot);
   }
   if (overlay_raised_) order.push_back(ui_);
   for (const Slot& slot : slots_) {
-    if (overlay_raised_ && slot.above) order.push_back(slot.view);
+    if (overlay_raised_ && slot.above) push(slot);
   }
   order.push_back(float_);
   // The views' order is the native windows' order: the last child draws on
