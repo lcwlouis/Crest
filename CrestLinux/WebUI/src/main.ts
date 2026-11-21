@@ -33,6 +33,7 @@ import { PageStates } from "./page-states.js";
 import { WebNotifications } from "./notifications.js";
 import { MediaSessions } from "./media-sessions.js";
 import { NowPlayingDeck } from "./now-playing.js";
+import { AutomaticPictureInPicture } from "./picture-in-picture.js";
 import type { Space, Workspace } from "./model.js";
 import { InlineRename } from "./rename.js";
 import { element, Sidebar, symbol } from "./sidebar.js";
@@ -213,6 +214,14 @@ const sidebar = new Sidebar(
     },
     root,
 );
+
+// A playing video floats when its tab leaves the window's cards.
+const automaticPictureInPicture = new AutomaticPictureInPicture({
+    model,
+    windowId: () => windows.windowId,
+    isEnabled: () => preferences.app.automaticallyEntersPictureInPicture,
+    report,
+});
 
 // The widget deck above the Space switcher, with the pages' Now Playing cards.
 const mediaSessions: MediaSessions = new MediaSessions({ model, report, changed: () => nowPlaying.render() });
@@ -494,6 +503,7 @@ function followShownPage(): void {
     showStartPage(open && (!tab || (!page && tab.surface === "StartPage")));
     showFailure(page?.live.failure != null ? page : undefined);
     pageCards.follow();
+    automaticPictureInPicture.follow(pageCards.shownCards());
 }
 
 /** Whether the changes arriving are new, not the history a page that starts late replays. */
