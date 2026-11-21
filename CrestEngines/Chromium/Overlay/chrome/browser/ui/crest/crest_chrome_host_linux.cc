@@ -267,8 +267,10 @@ bool OpenSecondLaunch(const base::CommandLine& command_line, const base::FilePat
   return true;
 }
 
-// TODO(linux): Crest's quit preparation (downloads, unsaved pages) asks
-// through Crest's own dialogs, which the Linux shell does not draw yet.
+// TODO(linux): only the Mac's application menu asks this. A Linux quit is the
+// last browser window's close, which its WebUI prepares through the core
+// (PrepareToQuit); a quit Chromium starts itself, such as the session ending,
+// is not prepared yet.
 bool DeferQuit() {
   return IsEnabled() && State().started && !State().quitting && State().ui && State().ui->DeferQuit();
 }

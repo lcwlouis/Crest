@@ -25,6 +25,7 @@ import {
     setWindowTitle,
     stackedWindows,
 } from "./bridge.js";
+import { CloseGate } from "./close-gate.js";
 import { addressSeparator, ExternalOpening } from "./external-opening.js";
 import type { Model, Space, Workspace } from "./model.js";
 
@@ -84,6 +85,8 @@ export class Windows {
     /** Pages this window asked the core and the engine to move here, until they did. */
     private readonly claiming = new Set<Guid>();
     private title = "";
+    /** Asks the core whether the window may close, or Crest quit, before it does. */
+    private readonly closeGate = new CloseGate();
     /** What another app hands Crest through this window, opened where the core places it. */
     private readonly external: ExternalOpening;
 
@@ -181,7 +184,8 @@ export class Windows {
     }
 
     /** Follows the core: the window's title is what its shown tab shows, as BrowserWindowTitle names it. */
-    follow(_changes: readonly Change[]): void {
+    follow(changes: readonly Change[]): void {
+        this.closeGate.apply(changes);
         const tab = this.context.tab();
         const page = tab ? this.context.model.pageFor(tab.id) : undefined;
         const title = page?.live.title || tab?.displayTitle || "Crest";
@@ -278,14 +282,23 @@ export class Windows {
     }
 
     /**
-     * The person closed the window. The core forgets it for the next launch;
-     * the last browser window's close quits instead, which keeps the windows
-     * open now for the next launch, as a quit the core allowed does.
+     * The person closed the window. The core asks the pages that go with it
+     * first, as the Mac's close gate does, and forgets the window for the
+     * next launch; the last browser window's close quits instead, which the
+     * core prepares as the Mac's quit (pages, then downloads in progress),
+     * and keeps the windows open now for the next launch. A page or the
+     * person that declines keeps the window open.
      */
     private async closeAsked(last: boolean): Promise<void> {
+        if (this.closeGate.isAsking) return;
         try {
-            if (last) await dispatch({ kind: "RememberWindowsForLaunch", value: { windowIds: await stackedWindows() } });
-            else await dispatch({ kind: "CloseWindow", value: { windowId: this.id } });
+            if (last) {
+                if (!(await this.closeGate.mayQuit())) return;
+                await dispatch({ kind: "RememberWindowsForLaunch", value: { windowIds: await stackedWindows() } });
+            } else {
+                if (!(await this.closeGate.mayCloseWindows([this.id]))) return;
+                await dispatch({ kind: "CloseWindow", value: { windowId: this.id } });
+            }
         } catch (error) {
             console.error(error);
         }
