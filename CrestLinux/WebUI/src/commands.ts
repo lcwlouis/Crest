@@ -12,6 +12,8 @@ import { dispatch, pageRequest, query, Refused } from "./bridge.js";
 import { listKey } from "./model.js";
 import type { Model, Space, Workspace } from "./model.js";
 import { Notices, postNotice } from "./notices.js";
+import { PageOutput } from "./page-output.js";
+import type { DeveloperToolbar } from "./developer-toolbar.js";
 import { UtilitySurface } from "./utilities.js";
 
 /** What commands act on: the window's shown Space, tab and page. */
@@ -43,17 +45,15 @@ export interface CommandContext {
         handleKey(event: KeyLike, command: ShortcutCommand | null): boolean;
         jump(command: ShortcutCommand): Intent | null;
     };
+    /** Printing, exporting and saving pages. */
+    readonly output: PageOutput;
+    /** The developer toolbar, which also holds Capture Page's selection. */
+    readonly developer: DeveloperToolbar;
+    /** Whether the device's engines offer `capability`, as the Mac's commandPageSupports asks. */
+    readonly offers: (capability: "Print" | "Pdf" | "WebArchive" | "ViewportCapture") => boolean;
 }
 
-/**
- * The commands the Linux window performs; the rest wait for their surfaces.
- *
- * TODO(linux): PrintPage, ExportPDF, SaveWebArchive and CapturePage need the
- * host's print call and a save panel for ExportPage and CapturePage, and
- * ToggleDeveloperToolbar needs the Mac's BrowserDeveloperToolbar (viewport
- * presets and the capture tools), which the Settings toggle
- * automaticallyShowsDeveloperToolbar already names.
- */
+/** The commands the Linux window performs; the rest wait for their surfaces. */
 const known = new Set<string>([
     "NewTab", "OpenLocation", "CloseTabOrWindow", "ArchiveTab", "Back", "Forward", "ReloadPage", "ReloadFromOrigin",
     "StopLoading", "ToggleSelectedTabPinned", "DuplicateTab", "ReopenClosedTab", "ClearUnpinnedTabs", "PreviousTab",
@@ -62,6 +62,7 @@ const known = new Set<string>([
     "SplitWithNextTab", "FocusNextSplitCard", "FocusPreviousSplitCard", "RemoveTabFromSplit", "SeparateSplitTabs",
     "MoveSplitCardLeft", "MoveSplitCardRight", "NewWindow", "NewQuickWindow", "CloseWindow", "ShowWebInspector", "ToggleSidebar",
     "MostRecentTab", "MostRecentTabBackward", "NewPrivateWindow", "NewBlankWindow",
+    "PrintPage", "ExportPDF", "SaveWebArchive", "CapturePage", "ToggleDeveloperToolbar",
 ]);
 
 /** Whether the Linux window performs `command` at all. */
@@ -209,7 +210,8 @@ export class Commands {
             case "ZoomOut":
             case "ActualSize": {
                 const kind = facts.kind;
-                return page ? () => this.zoomPage(page, kind) : null;
+                // A viewport preview zooms the page itself, as the Mac's zoom waits on developerViewport.
+                return page && !this.context.developer.previews(page.id) ? () => this.zoomPage(page, kind) : null;
             }
             case "FindInPage":
                 return page ? () => this.context.find("open") : null;
@@ -279,6 +281,20 @@ export class Commands {
             }
             case "ShowWebInspector":
                 return page ? () => void this.toggleInspector(page.id).catch(this.context.report) : null;
+            case "PrintPage":
+                return PageOutput.hasDocument(page) && this.context.offers("Print") ? () => this.context.output.print(page) : null;
+            case "ExportPDF":
+                return PageOutput.hasDocument(page) && this.context.offers("Pdf") ? () => this.context.output.exportPDF(page) : null;
+            case "SaveWebArchive":
+                return PageOutput.hasDocument(page) && this.context.offers("WebArchive")
+                    ? () => this.context.output.saveWebArchive(page)
+                    : null;
+            case "CapturePage":
+                return PageOutput.hasDocument(page) && this.context.offers("ViewportCapture")
+                    ? () => this.context.developer.toggleRegionCapture(page)
+                    : null;
+            case "ToggleDeveloperToolbar":
+                return page ? () => this.context.developer.toggle(page) : null;
             default:
                 return null;
         }

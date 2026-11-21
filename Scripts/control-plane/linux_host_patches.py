@@ -74,12 +74,13 @@ PLATFORM_SOURCES = {
         f'      "{name}",\n' for name in ("ui/crest/crest_chrome_host_linux.cc", *LINUX_SHELL_SOURCES)),
 }
 # What the Linux shell links beyond the Mac host's dependencies: its page
-# views, the clipboard a copied password goes on, BoringSSL, which decrypts
-# the passwords setup imports, and D-Bus, which reaches the desktop's
-# notifications. libsecret and the system SQLite are loaded at run time, so
+# views, the clipboard a copied password or capture goes on, BoringSSL, which
+# decrypts the passwords setup imports, D-Bus, which reaches the desktop's
+# notifications, and the printing build flags, which gate a page's print
+# preview. libsecret and the system SQLite are loaded at run time, so
 # the build needs neither.
 LINUX_SHELL_DEPS = ("//ui/views/controls/webview", "//ui/base/clipboard", "//third_party/boringssl",
-                    "//components/dbus", "//dbus")
+                    "//components/dbus", "//dbus", "//printing/buildflags")
 
 
 def sections(text):

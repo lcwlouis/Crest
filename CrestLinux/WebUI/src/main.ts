@@ -35,6 +35,11 @@ import { WebNotifications } from "./notifications.js";
 import { MediaSessions } from "./media-sessions.js";
 import { NowPlayingDeck } from "./now-playing.js";
 import { AutomaticPictureInPicture } from "./picture-in-picture.js";
+import { PageOutput } from "./page-output.js";
+import { DeveloperToolbar } from "./developer-toolbar.js";
+import { TabPictures } from "./tab-pictures.js";
+import { TabPreviewLayer } from "./tab-preview-layer.js";
+import { DeviceAppearance } from "./device-appearance.js";
 import type { Space, Workspace } from "./model.js";
 import { InlineRename } from "./rename.js";
 import { element, Sidebar, symbol } from "./sidebar.js";
@@ -290,6 +295,22 @@ const nowPlaying: NowPlayingDeck = new NowPlayingDeck({
 });
 root.insertBefore(nowPlaying.root, root.querySelector(".switcher"));
 
+// What pages put out (print, export, capture) and the developer toolbar over them.
+const pageOutput = new PageOutput(report);
+const developerToolbar: DeveloperToolbar = new DeveloperToolbar({
+    model,
+    workspace: () => model.workspace,
+    space: shownSpace,
+    app: () => preferences.app,
+    offers: (capability) => preferences.offers(capability),
+    output: pageOutput,
+    relayout: () => pageCards.layout(),
+    frameOf: (pageId) => pageCards.frameOf(pageId),
+    zoomOf: (pageId) => commands.zoomOf(pageId),
+    send: (intent) => void dispatch(intent).catch(report),
+    report,
+});
+
 const commands = new Commands({
     model,
     windowId: () => windows.windowId,
@@ -318,6 +339,9 @@ const commands = new Commands({
         space: shownSpace,
         send: (intent) => void dispatch(intent).catch(report),
     }),
+    output: pageOutput,
+    developer: developerToolbar,
+    offers: (capability) => preferences.offers(capability),
 });
 
 // The rows Crest adds to the context menu Chromium shows over a page.
@@ -339,7 +363,35 @@ const pageCards: PageCards = new PageCards({
     report,
     peek: () => peek.placement(),
     shows: (pageId) => windows.shows(pageId),
+    decorations: developerToolbar,
 });
+// The sidebar's tab and folder preview cards, and the pictures of the tabs' pages they draw.
+const tabPictures: TabPictures = new TabPictures({
+    wanted: () => DeviceAppearance.tabHoverPreview.value,
+    shownCards: () => pageCards.shownCards(),
+    shownPage: (tabId) => {
+        const page = model.pageFor(tabId);
+        if (!page || page.phase !== "Live" || page.live.failure || !pageCards.frameOf(page.id)) return undefined;
+        return { id: page.id, url: page.live.url, isLoading: page.live.isLoading };
+    },
+    openTabs: () => new Set([...(model.workspace?.spaces.values() ?? [])].flatMap((space) => space.tabs.map((tab) => tab.id))),
+    capture: (pageId, width) => pageOutput.capture(pageId, null, width),
+    changed: () => tabPreview.follow(),
+});
+const tabPreview: TabPreviewLayer = new TabPreviewLayer({
+    model,
+    icons,
+    pictures: tabPictures,
+    space: shownSpace,
+    shownTabId,
+    sidebar: root,
+    tabRow: (space, tab) => sidebar.tabRow(space, tab, 0),
+});
+DeviceAppearance.listen(() => {
+    tabPictures.follow();
+    nowPlaying.render();
+});
+
 const peek: Peek = new Peek({
     model,
     windowId: () => windows.windowId,
@@ -368,6 +420,7 @@ const prompts = new Prompts({ model, page: shownPage }, surfaces);
 const pageStates = new PageStates({ model, tab: shownTab, page: shownPage, report }, surfaces);
 const webNotifications = new WebNotifications({
     model,
+    iconOf: (tabId) => icons.imageOf(tabId),
     windowId: () => windows.windowId,
     send: (intent) => void dispatch(intent).catch(report),
     report,
@@ -628,12 +681,15 @@ async function start(): Promise<void> {
             render();
             peek.apply(changes);
             followShownPage();
+            tabPictures.follow();
+            tabPreview.follow();
             findBar.follow();
             prompts.apply(changes);
             sitePermissions.apply(changes);
             siteControls.apply(changes);
             pageStates.apply(changes);
             credentialPrompts.apply(changes);
+            webNotifications.apply(changes);
             downloadDestinations.apply(changes);
             spaces.apply(changes);
             spaceEditor.follow();
@@ -648,6 +704,8 @@ async function start(): Promise<void> {
                 if (presentation.kind === "FindFinished") findBar.finished(presentation.value);
                 if (presentation.kind === "PeekRequested") peek.requested(presentation.value);
                 if (presentation.kind === "InspectorLayoutChanged") relayoutInspector(presentation.value.pageId);
+                if (presentation.kind === "InspectorClosed") developerToolbar.inspectorClosed(presentation.value.pageId);
+                pageOutput.present(presentation);
                 pageStates.present(presentation);
                 sitePermissions.present(presentation);
                 credentialPrompts.present(presentation);

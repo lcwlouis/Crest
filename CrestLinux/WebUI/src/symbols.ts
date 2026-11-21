@@ -187,6 +187,26 @@ Object.assign(paths, {
     xmark: '<path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/>',
     globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.5 2.7 3.8 5.7 3.8 9s-1.3 6.3-3.8 9c-2.5-2.7-3.8-5.7-3.8-9S9.5 5.7 12 3z"/>',
 });
+// Page output's and the developer toolbar's glyphs (page-output,
+// developer-toolbar, region-capture).
+Object.assign(paths, {
+    printer: '<path d="M7 9V3.5h10V9"/><rect x="3" y="9" width="18" height="8" rx="2"/><path d="M7 14h10v6.5H7z"/>',
+    camera: '<path d="M4 8h3l1.5-2.5h7L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.5"/>',
+    "camera.viewfinder": '<path d="M3 8V5a2 2 0 0 1 2-2h3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3"/><path d="M7 10h2l1-1.5h4l1 1.5h2v6H7z"/><circle cx="12" cy="13" r="1.6"/>',
+    "rectangle.inset.filled": '<rect x="3" y="5" width="18" height="14" rx="2"/><rect x="6" y="8" width="12" height="8" rx="1" fill="currentColor"/>',
+    "rectangle.portrait.on.rectangle.portrait": '<rect x="9" y="6" width="11" height="15" rx="2"/><path d="M15 6V5a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h3"/>',
+    "doc.on.clipboard": '<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1"/><path d="M9 11h6M9 15h4"/>',
+    "apple.terminal": '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9l3 3-3 3"/><path d="M12 15h5"/>',
+    network: '<circle cx="12" cy="5" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="19" cy="19" r="2"/><path d="M12 7v5M12 12l-6 5.5M12 12l6 5.5"/>',
+    scope: '<circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/>',
+    "macbook.and.iphone": '<rect x="2.5" y="5" width="13" height="9" rx="1.5"/><path d="M1 17h14"/><rect x="17" y="8" width="5.5" height="11" rx="1.2"/>',
+    rectangle: '<rect x="3" y="5" width="18" height="14" rx="2"/>',
+    iphone: '<rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 5h2"/>',
+    laptopcomputer: '<rect x="4.5" y="5" width="15" height="10" rx="1.5"/><path d="M2 18h20"/>',
+    display: '<rect x="2.5" y="4" width="19" height="12" rx="1.5"/><path d="M9 20h6M12 16v4"/>',
+    ruler: '<rect x="2.5" y="8" width="19" height="8" rx="1.5"/><path d="M6.5 8v3M10.5 8v4M14.5 8v3M18.5 8v4"/>',
+    "info.circle.fill": '<circle cx="12" cy="12" r="10" fill="currentColor" stroke="none"/><path class="symbol-knockout" d="M12 11v6"/><circle class="symbol-knockout" cx="12" cy="7.6" r="0.5"/>',
+});
 for (const name of [
     "gearshape", "briefcase", "person", "house", "graduationcap", "paintbrush", "gamecontroller", "sun.max", "sun.horizon", "moon", "star",
     "bolt", "flame", "drop", "key", "crown", "leaf", "mountain.2", "heart", "pin", "bookmark", "rectangle.stack",

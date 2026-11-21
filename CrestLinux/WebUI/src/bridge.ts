@@ -593,6 +593,8 @@ export interface NotificationDelivery {
     readonly site: string;
     readonly body: string;
     readonly silent: boolean;
+    /** The site's icon as a base64 PNG, or empty for none. */
+    readonly icon: string;
 }
 
 /**
@@ -610,7 +612,7 @@ export function isFrontWindow(): Promise<boolean> {
  * another window shows the notifications.
  */
 export function showNotification(key: string, delivery: NotificationDelivery): Promise<"shown" | "declined" | "elsewhere"> {
-    return send("showNotification", key, delivery.title, delivery.site, delivery.body, delivery.silent);
+    return send("showNotification", key, delivery.title, delivery.site, delivery.body, delivery.silent, delivery.icon);
 }
 
 /** Takes down the notification shown under `key`. */
@@ -692,4 +694,29 @@ export function listenToExtensions(events: ExtensionEvents): void {
         events.sidePanelClosed(pageId.toLowerCase(), extensionId);
     });
     listen("crest-extension-action", (extensionId) => events.actionKey(extensionId as string));
+}
+
+// --- Page output (Linux shell) ------------------------------------------------
+// Printing a page, saving what it exported and copying a capture of it, which
+// the Mac does with NSPrintOperation, NSSavePanel and NSPasteboard.
+
+/** Opens Chromium's print preview over the page `pageId`. */
+export function printPage(pageId: Guid): void {
+    chrome.send("printPage", [pageId]);
+}
+
+/** How a save of an export ended. */
+export type ExportSaved = "saved" | "cancelled" | "failed" | "unavailable";
+
+/**
+ * Asks where to save `contents` in a save dialog titled `title`, proposing
+ * `filename` with `extension` (without its dot), and writes it there.
+ */
+export function saveExport(title: string, filename: string, extension: string, contents: Uint8Array): Promise<ExportSaved> {
+    return send("saveExport", title, filename, extension, toBase64(contents));
+}
+
+/** Puts the PNG `png` on the clipboard. Answers whether it could. */
+export function copyImage(png: Uint8Array): Promise<boolean> {
+    return send("copyImage", toBase64(png));
 }

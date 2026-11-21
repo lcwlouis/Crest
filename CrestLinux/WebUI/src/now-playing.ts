@@ -6,13 +6,17 @@
 // serves every Space; a session the person hides stays hidden until its tab
 // plays again.
 //
-// TODO(linux): the Mac's deck also carries the software update card, and
-// Settings can turn the Now Playing card off; Linux has neither yet.
+// Settings' Sidebar widgets section turns the Now Playing card off, kept as
+// the Mac's BrowserSidebarWidgetPreferenceStore keeps it.
+//
+// TODO(linux): the Mac's deck also carries the software update card; Linux
+// has no updater of its own yet.
 
 import type { Guid, Intent, MediaSessionAction } from "../generated/crest_contracts.js";
 import type { TabIcons } from "./icons.js";
 import { exposesMute, mediaDisplayTitle, ownerDisplayTitle, secondaryMetadata } from "./media-sessions.js";
 import type { MediaSession, MediaSessions } from "./media-sessions.js";
+import { DeviceSetting } from "./device-appearance.js";
 import { element } from "./sidebar.js";
 import { sfSymbol } from "./symbols.js";
 
@@ -22,6 +26,22 @@ export interface NowPlayingHost {
     readonly windowId: () => Guid;
     readonly send: (intent: Intent) => void;
 }
+
+/** The widgets the person turned off, by kind, under the Mac's key (BrowserSidebarWidgetPreferenceStore). */
+const disabledWidgets = new DeviceSetting<string[]>("crest.sidebar-widgets.disabled-kind-identifiers", []);
+/** The Now Playing widget's kind (BrowserSidebarWidgetKindID.nowPlaying). */
+const nowPlayingKind = "crest.now-playing";
+
+/** Whether the sidebar shows the Now Playing card. */
+export const NowPlayingSetting = {
+    get isEnabled(): boolean {
+        return !disabledWidgets.value.includes(nowPlayingKind);
+    },
+    set(isEnabled: boolean): void {
+        const others = disabledWidgets.value.filter((kind) => kind !== nowPlayingKind);
+        disabledWidgets.set(isEnabled ? others : [...others, nowPlayingKind].sort());
+    },
+};
 
 /** How many cards the deck draws at once, the front one included (BrowserSidebarWidgetDeckStyle.visibleDepth). */
 const visibleDepth = 3;
@@ -49,7 +69,7 @@ export class NowPlayingDeck {
     }
 
     render(): void {
-        const shown = this.host.sessions.shown;
+        const shown = NowPlayingSetting.isEnabled ? this.host.sessions.shown : [];
         this.root.hidden = shown.length === 0;
         if (shown.length === 0) {
             this.selected = null;
