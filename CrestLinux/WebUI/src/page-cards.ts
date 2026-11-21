@@ -12,7 +12,7 @@ import type { PagePlacement } from "./bridge.js";
 import type { Guid, Intent, PageState, ShownCards, TabState } from "../generated/crest_contracts.js";
 import type { Model, Space, Workspace } from "./model.js";
 import { holdOverlay } from "./overlay.js";
-import { columnWidths, fractionsAfterResize, resizeHandleWidth, seedFractions, splitGap } from "./split-columns.js";
+import { columnWidths, equalFractions, fractionsAfterResize, resizeHandleWidth, seedFractions, splitGap } from "./split-columns.js";
 
 /** BrowserChromeLayout.pageCornerRadius. */
 export const pageCornerRadius = 13;
@@ -62,10 +62,15 @@ export class PageCards {
     private committed: { readonly groupId: Guid; readonly shares: readonly number[] } | null = null;
     /** What the window was last told, so a layout that changed nothing is not sent again. */
     private sent = "";
+    /** Where a tab dragged over the cards would join them, while one is (sidebar-drag.ts). */
+    private dropIndex: number | null = null;
+    /** The room the cards make for that tab (BrowserSplitPageSurface's placeholder). */
+    private readonly dropSlot = document.createElement("div");
 
     constructor(context: PageCardsContext) {
         this.context = context;
         this.row.className = "page-card-row";
+        this.dropSlot.className = "page-card-drop";
         this.page.append(this.row);
         new ResizeObserver(() => this.layout()).observe(this.page);
         window.addEventListener("resize", () => this.layout());
@@ -79,6 +84,24 @@ export class PageCards {
         if (cards && cards.tabIds.length > 0) return [...cards.tabIds];
         const shown = window ? this.context.shownTabId() : null;
         return shown ? [shown] : [];
+    }
+
+    /** The cards on show, as a tab dragged over them aims at them: the split's in order, or the page's card. */
+    frames(): DOMRect[] {
+        const tabs = this.shownCards();
+        if (tabs.length === 0) return [];
+        if (this.cards.size === 0) return [this.page.getBoundingClientRect()];
+        return tabs.map((tabId) => this.cards.get(tabId)?.getBoundingClientRect()).filter((frame): frame is DOMRect => frame !== undefined);
+    }
+
+    /**
+     * Opens room among the cards for a tab dragged over them, as the card at
+     * `index`, or closes it for null; the cards move aside while it is open.
+     */
+    previewDrop(index: number | null): void {
+        if (index === this.dropIndex) return;
+        this.dropIndex = index;
+        this.layout();
     }
 
     /** Whether the window shows a split's cards side by side. */
@@ -112,18 +135,32 @@ export class PageCards {
     layout(): void {
         const space = this.context.space();
         const tabs = space ? this.shownCards() : [];
-        const split = tabs.length > 1;
+        const drop = tabs.length > 0 ? this.dropIndex : null;
+        const split = tabs.length > 1 || drop !== null;
         document.body.classList.toggle("split-view", split);
+        document.body.classList.toggle("split-drop", drop !== null);
         this.drawCards(split ? tabs : []);
         const box = this.page.getBoundingClientRect();
         const placements: PagePlacement[] = [];
         const shown = this.context.shownTabId();
         let inUse = "";
         if (split) {
-            const widths = columnWidths(box.width, this.fractions(tabs.length));
+            const slots = tabs.length + (drop === null ? 0 : 1);
+            const widths = columnWidths(box.width, drop === null ? this.fractions(tabs.length) : equalFractions(slots));
             let x = 0;
+            if (drop === null) {
+                this.dropSlot.remove();
+            } else {
+                // The cards before the room keep their slots; those after it move one along.
+                const before = widths.slice(0, drop).reduce((sum, width) => sum + width + splitGap, 0);
+                this.dropSlot.style.left = `${before}px`;
+                this.dropSlot.style.width = `${widths[drop] ?? 0}px`;
+                if (this.dropSlot.parentElement !== this.row) this.row.append(this.dropSlot);
+            }
             tabs.forEach((tabId, index) => {
-                const width = widths[index] ?? 0;
+                const slot = drop !== null && index >= drop ? index + 1 : index;
+                if (slot !== index && index === drop) x += (widths[drop] ?? 0) + splitGap;
+                const width = widths[slot] ?? 0;
                 const card = this.cards.get(tabId)!;
                 card.style.left = `${x}px`;
                 card.style.width = `${width}px`;

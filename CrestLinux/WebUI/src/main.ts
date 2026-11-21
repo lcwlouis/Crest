@@ -205,6 +205,11 @@ const sidebar = new Sidebar(
         }),
         rename,
         utilities,
+        // A drag out of the sidebar reaches the page cards and opens a window of its own.
+        drag: {
+            cards: () => pageCards,
+            tearOff: (spaceId, tabId) => void windows.moveTab(spaceId, tabId, null),
+        },
         spaces,
     },
     root,

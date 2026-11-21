@@ -1,0 +1,223 @@
+/* Dragging in the sidebar (sidebar-drag.ts), with the Mac's metrics:
+   BrowserDragSourceLiftStyle, BrowserTabDragPreviewLayout,
+   BrowserFolderNestDropHighlight and BrowserSplitPageSurface's placeholder. */
+
+/* The pinned grid stands as a thin band with no pins in it, so a tab can be
+   dragged in (BrowserPinnedTabsDropSection). */
+.pinned.empty {
+  min-height: var(--tab-section-end-band);
+  margin-bottom: 0;
+}
+
+/* Each of the core's lists is a run a lift can aim at. */
+.list {
+  display: flex;
+  flex-direction: column;
+}
+
+/* The pointer drives the lift, never the page's own drag of an image. */
+#sidebar img {
+  -webkit-user-drag: none;
+}
+
+/* --- The lift --- */
+
+/* While a lift is held, the rows it passes step aside to open its gap. */
+#sidebar.lifting .row,
+#sidebar.lifting .seam,
+#sidebar.lifting .space-header-bar,
+#sidebar.lifting .pin {
+  transition: transform var(--crest-dur-drag-source) var(--crest-ease-snappy),
+    width var(--crest-dur-drag-source) var(--crest-ease-snappy);
+}
+
+#sidebar.lifting .row:hover:not(.drop-into),
+#sidebar.lifting .pin:hover,
+#sidebar.lifting .space-header-bar:hover,
+#sidebar.lifting .segment:not(.shown):hover {
+  background: none;
+}
+
+#sidebar.lifting .close {
+  display: none;
+}
+
+/* What the lift carries leaves its place, which the gap then holds. */
+.drag-source,
+.drag-landing {
+  visibility: hidden;
+}
+
+/* A collapsed folder a tab would land in lights up as a row does. */
+.folder-header.drop-into {
+  background: var(--crest-selection);
+}
+
+/* A folder a folder would land in, or an open tab a new folder would
+   gather, wears the drop outline (BrowserFolderNestDropHighlight). */
+.drop-nest {
+  background: rgb(255 250 240 / calc(var(--crest-opacity-drop-indicator) * 0.14));
+  box-shadow: inset 0 0 0 1.5px var(--crest-drop-indicator);
+}
+
+/* A Space the lift would move to. */
+.segment.drop-target {
+  background: color-mix(in srgb, var(--space-tint) 20%, transparent);
+  box-shadow: inset 0 0 0 1.5px var(--crest-drop-indicator);
+}
+
+/* The floating preview under the pointer, in the shape of where it would
+   land: a row, a pinned tile or a page card. */
+.drag-lift {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 1000;
+  box-sizing: border-box;
+  pointer-events: none;
+  transform-origin: top left;
+  transition: width var(--crest-dur-drag-preview) var(--crest-ease-smooth),
+    height var(--crest-dur-drag-preview) var(--crest-ease-smooth);
+}
+
+.drag-lift-body {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+  border-radius: var(--sidebar-row-radius);
+  background: var(--crest-paper, white);
+  box-shadow: 0 5px 10px rgb(0 0 0 / 0.22), inset 0 0 0 1px var(--crest-selected-border);
+  color: var(--text);
+  font-size: var(--sidebar-body-size);
+  scale: 1.04;
+}
+
+@media (prefers-color-scheme: dark) {
+  .drag-lift-body {
+    background: var(--crest-tab-selected-lift);
+  }
+}
+
+.drag-lift.tab .drag-lift-body {
+  padding: 0 var(--tab-row-padding-right) 0 var(--tab-row-padding-left);
+}
+
+.drag-lift.tab[data-shape="pin"] .drag-lift-body {
+  justify-content: center;
+  padding: 0;
+  border-radius: var(--crest-radius-control);
+}
+
+.drag-lift.tab[data-shape="pin"] .title {
+  display: none;
+}
+
+/* Over the page cards, a tab becomes the card it would be. */
+.drag-lift.tab[data-shape="card"] .drag-lift-body {
+  flex-direction: column;
+  justify-content: center;
+  padding: 0 var(--crest-space-m, 12px);
+  border-radius: 13px;
+  font: var(--crest-control-title-weight) var(--crest-text-body) / 1.3 var(--crest-font-ui);
+  text-align: center;
+}
+
+.drag-lift.tab[data-shape="card"] .title {
+  flex: none;
+  max-width: 100%;
+}
+
+.drag-lift:not(.tab) .drag-lift-body {
+  padding: 0;
+  background: color-mix(in srgb, var(--sidebar) 92%, transparent);
+}
+
+.drag-lift:not(.tab) .drag-lift-body > * {
+  flex: 1;
+  align-self: stretch;
+}
+
+/* A drop the core refuses keeps its place and says why. */
+.drag-lift-message {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  width: max-content;
+  max-width: 240px;
+  margin: 0;
+  padding: 4px 8px;
+  border-radius: var(--crest-radius-compact);
+  background: var(--crest-paper, white);
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.18);
+  color: var(--text);
+  font-size: var(--crest-text-caption);
+}
+
+.drag-lift-message:empty {
+  display: none;
+}
+
+@media (prefers-color-scheme: dark) {
+  .drag-lift-message {
+    background: var(--crest-tab-selected-lift);
+  }
+}
+
+.drag-lift.refused .drag-lift-body {
+  opacity: 0.6;
+}
+
+/* Released, the preview settles where it landed, or fades where it left. */
+.drag-lift.landing {
+  transition: transform var(--crest-dur-drag-preview) var(--crest-ease-smooth),
+    width var(--crest-dur-drag-preview) var(--crest-ease-smooth),
+    height var(--crest-dur-drag-preview) var(--crest-ease-smooth),
+    opacity var(--crest-dur-drag-preview) var(--crest-ease-smooth);
+}
+
+.drag-lift.landing .drag-lift-body {
+  scale: 1;
+  transition: scale var(--crest-dur-drag-preview) var(--crest-ease-smooth);
+}
+
+.drag-lift.leaving {
+  opacity: 0;
+}
+
+/* --- Split View drop --- */
+
+/* The room the cards make for a tab dragged over them. */
+.page-card-drop {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  box-sizing: border-box;
+  border-radius: 13px;
+  background: rgb(255 250 240 / calc(var(--crest-opacity-drop-indicator) * 0.14));
+  box-shadow: inset 0 0 0 1.5px var(--crest-drop-indicator), 0 0 0 4px var(--sidebar);
+}
+
+body.split-drop .page-card-divider {
+  display: none;
+}
+
+body.split-drop .page-card {
+  transition: left var(--crest-dur-drag-source) var(--crest-ease-snappy),
+    width var(--crest-dur-drag-source) var(--crest-ease-snappy);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #sidebar.lifting .row,
+  #sidebar.lifting .seam,
+  #sidebar.lifting .space-header-bar,
+  #sidebar.lifting .pin,
+  .drag-lift,
+  .drag-lift.landing,
+  body.split-drop .page-card {
+    transition: none;
+  }
+}

@@ -16,6 +16,8 @@ import type { InlineRename } from "./rename.js";
 import type { SidebarMenus } from "./sidebar-menus.js";
 import type { SpaceActions } from "./space-actions.js";
 import { SpaceGroups } from "./space-groups.js";
+import { SidebarDrag } from "./sidebar-drag.js";
+import type { SidebarDragHost } from "./sidebar-drag.js";
 import { SidebarPresentation } from "./sidebar-presentation.js";
 import { SpacePager } from "./space-pager.js";
 import { sfSymbol, sfSymbolPaths } from "./symbols.js";
@@ -38,6 +40,8 @@ export interface SidebarHost {
     readonly rename: InlineRename;
     /** The archive, history and downloads lists, which take the tabs' place while one is open. */
     readonly utilities: Utilities;
+    /** What a drag out of the sidebar reaches: the page cards and the other windows (sidebar-drag.ts). */
+    readonly drag: Omit<SidebarDragHost, "model" | "windowId" | "redraw" | "isLocked">;
 }
 
 export function element<K extends keyof HTMLElementTagNameMap>(
@@ -107,19 +111,33 @@ export class Sidebar {
     private readonly switcher = element("div", "switcher");
     /** Where the sidebar is: beside the page, floating over it, or put away. */
     readonly presentation: SidebarPresentation;
+    /** Drags of rows, folders, splits and pins (sidebar-drag.ts). */
+    private readonly drag: SidebarDrag;
+    /** Swipes between Spaces (space-pager.ts). */
+    private readonly pager: SpacePager;
 
     constructor(host: SidebarHost, root: HTMLElement) {
         this.host = host;
         root.append(this.page, this.switcher);
         this.presentation = new SidebarPresentation(root);
-        // Swipes between Spaces (space-pager.ts).
-        new SpacePager(
+        this.drag = new SidebarDrag(
+            {
+                ...host.drag,
+                model: host.model,
+                windowId: host.windowId,
+                redraw: () => this.render(),
+                isLocked: () => this.pager.isMoving || host.utilities.isOpen,
+            },
+            root,
+            this.page,
+        );
+        this.pager = new SpacePager(
             {
                 model: host.model,
                 windowId: host.windowId,
                 send: host.send,
                 pageOf: (space) => this.preview(space),
-                isLocked: () => host.utilities.isOpen,
+                isLocked: () => this.drag.isLifting || host.utilities.isOpen,
             },
             this.page,
         );
@@ -140,7 +158,10 @@ export class Sidebar {
     }
 
     render(): void {
+        // A lift holds the rows it measured still until it lands.
+        if (this.drag.holdsDrawing) return;
         this.host.rename.whileRedrawing(() => this.draw());
+        this.drag.decorate();
     }
 
     /**
@@ -155,8 +176,7 @@ export class Sidebar {
         if (space.state.settings.isSavedTabsExpanded) this.appendList(tabs, space, "Saved", null);
         tabs.append(this.seam(workspace, space), this.newTabRow());
         this.appendList(tabs, space, "Current", null);
-        const pinned = this.pinnedGrid(space);
-        page.append(...(pinned ? [pinned] : []), this.spaceHeader(workspace, space), tabs);
+        page.append(this.pinnedGrid(space), this.spaceHeader(workspace, space), tabs);
         return page;
     }
 
@@ -186,23 +206,30 @@ export class Sidebar {
         tabs.append(this.seam(workspace, space));
         tabs.append(this.newTabRow());
         this.appendList(tabs, space, "Current", null);
-        this.page.replaceChildren(...(pinned ? [pinned] : []), header, tabs);
+        this.page.replaceChildren(pinned, header, tabs);
         tabs.scrollTop = scroll;
     }
 
-    private pinnedGrid(space: Space): HTMLElement | null {
+    /**
+     * The pinned grid, which stands as a thin band with no pins in it, as the
+     * Mac's BrowserPinnedTabsDropSection does, so a tab can be dragged in.
+     */
+    private pinnedGrid(space: Space): HTMLElement {
         const list = space.lists.get(listKey("Pinned", null));
         const tabs = (list?.rows ?? [])
             .filter((row) => row.kind === "Tab")
             .map((row) => this.tab(space, row.id))
             .filter((tab): tab is TabState => tab !== undefined);
-        if (tabs.length === 0) return null;
-        const grid = element("div", "pinned");
+        const grid = element("div", tabs.length === 0 ? "pinned empty" : "pinned");
+        grid.dataset.placement = "Pinned";
+        grid.dataset.folder = "";
         const width = this.page.clientWidth - 2 * 8;
-        grid.style.gridTemplateColumns = `repeat(${pinnedColumns(tabs.length, width)}, minmax(0, 1fr))`;
+        grid.style.gridTemplateColumns = `repeat(${pinnedColumns(Math.max(1, tabs.length), width)}, minmax(0, 1fr))`;
         const selected = this.selectedTabId(space);
         for (const tab of tabs) {
             const tile = element("button", tab.id === selected ? "pin selected" : "pin");
+            tile.dataset.row = "tab";
+            tile.dataset.id = tab.id;
             tile.append(this.favicon(tab));
             tile.title = tab.displayTitle || tab.url || "";
             tile.setAttribute("aria-label", tile.title);
@@ -279,8 +306,13 @@ export class Sidebar {
         return row;
     }
 
-    private appendList(into: HTMLElement, space: Space, section: TabPlacement, folderId: Guid | null): void {
+    /** One of the core's lists, in a run of its own that a drag can aim at. */
+    private appendList(parent: HTMLElement, space: Space, section: TabPlacement, folderId: Guid | null): void {
         const list = space.lists.get(listKey(section, folderId));
+        const into = element("div", "list");
+        into.dataset.placement = section;
+        into.dataset.folder = folderId ?? "";
+        parent.append(into);
         for (const row of list?.rows ?? []) {
             switch (row.kind) {
                 case "Tab": {
@@ -302,6 +334,8 @@ export class Sidebar {
 
     private appendFolder(into: HTMLElement, space: Space, section: TabPlacement, folder: FolderState, row: SidebarRow): void {
         const group = element("div", "folder");
+        group.dataset.row = "folder";
+        group.dataset.id = folder.id;
         group.style.setProperty("--depth", String(row.depth));
         const header = element("button", "row folder-header");
         header.setAttribute("aria-expanded", String(!folder.isCollapsed));
@@ -347,10 +381,15 @@ export class Sidebar {
         const members = row.members.map((id) => this.tab(space, id)).filter((tab): tab is TabState => !!tab);
         const selected = this.selectedTabId(space);
         const element_ = element("div", "row split");
+        element_.dataset.row = "split";
+        element_.dataset.id = row.id;
+        element_.dataset.members = row.members.join(" ");
         element_.style.setProperty("--depth", String(row.depth));
         if (members.some((tab) => tab.id === selected)) element_.classList.add("selected");
         for (const tab of members) {
             const card = element("button", tab.id === selected ? "split-card selected" : "split-card");
+            card.dataset.row = "tab";
+            card.dataset.id = tab.id;
             card.append(this.favicon(tab), element("span", "title", tab.displayTitle || tab.url || "New Tab"));
             card.title = group?.displayTitle ?? tab.displayTitle;
             card.addEventListener("click", () => this.show(space, tab.id));
@@ -363,6 +402,8 @@ export class Sidebar {
     private tabRow(space: Space, tab: TabState, depth: number): HTMLElement {
         const selected = tab.id === this.selectedTabId(space);
         const row = element("div", selected ? "row tab selected" : "row tab");
+        row.dataset.row = "tab";
+        row.dataset.id = tab.id;
         row.style.setProperty("--depth", String(depth));
         row.tabIndex = 0;
         row.setAttribute("role", "button");
@@ -430,6 +471,7 @@ export class Sidebar {
             const id = other.state.id;
             const shown = id === space.state.id;
             const segment = element("button", shown ? "segment shown" : "segment");
+            segment.dataset.space = id;
             segment.append(spaceIcon(other.state.settings, size));
             segment.title = other.state.settings.name;
             segment.setAttribute("aria-label", other.state.settings.name);
